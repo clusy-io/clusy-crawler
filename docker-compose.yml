@@ -1,0 +1,25 @@
+services:
+  crawler:
+    build: .
+    image: clusy-crawler:latest
+    ports:
+      - "11235:11235"
+    env_file: .env
+    environment:
+      # Point the service at the bundled Redis for response caching.
+      REDIS_URL: redis://redis:6379/0
+    shm_size: 1gb
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:11235/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped

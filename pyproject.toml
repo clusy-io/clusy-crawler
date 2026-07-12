@@ -1,0 +1,83 @@
+[project]
+name = "clusy-crawler"
+version = "0.1.0"
+description = "SOTA web crawler service for Clusy platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn[standard]>=0.45.0,<1.0.0",
+    "pydantic>=2.10.0,<3.0.0",
+    "pydantic-settings>=2.7.0,<3.0.0",
+    "httpx>=0.28.0,<1.0.0",
+    # Content-encoding decoders. WITHOUT these, advertising `br`/`zstd` in
+    # Accept-Encoding causes httpx to receive undecodable bytes from any
+    # server that picks Brotli/zstd (Cloudflare's default) → binary garbage.
+    "brotli>=1.1.0",
+    "zstandard>=0.23.0",
+    # HTML → markdown. trafilatura (Apache-2.0) is the primary strategy;
+    # markdownify (MIT) is the permissive general-purpose fallback. Both are
+    # deliberately permissive — html2text was dropped because it is GPLv3 and
+    # would relicense the combined distribution.
+    "trafilatura>=2.0,<3.0",  # Apache-2.0 since 1.8; 2.0 measurably lifts article-body F1
+    "markdownify>=1.2.0,<2.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "readability-lxml>=0.8.1,<1.0.0",
+    "playwright>=1.48.0,<2.0.0",
+    # PDF / academic extraction (imported by app/services/academic.py).
+    # pypdfium2 (BSD-3-Clause, built on Google's PDFium) replaced PyMuPDF,
+    # which is AGPL-3.0 and incompatible with a permissive OSS release.
+    "pypdfium2>=4.30.0",
+    "structlog>=24.4.0,<26.0.0",
+    "tenacity>=9.0.0,<10.0.0",
+    "aiolimiter>=1.0.0,<2.0.0",
+    "lxml>=5.3.0,<6.0.0",
+    "redis>=5.2.0,<6.0.0",
+    "orjson>=3.10.0,<4.0.0",
+    "h2>=4.3.0",
+]
+
+[project.optional-dependencies]
+# Optional LLM structured extraction (the "json" output format). Install with
+# `pip install -e ".[llm]"`; the service runs fine without it (feature disabled).
+llm = [
+    "anthropic>=0.69.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "asgi-lifespan>=2.1.0,<3.0.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# Benchmark scripts are ad-hoc developer tooling, not part of the shipped
+# package, and are intentionally kept out of the release lint gate.
+extend-exclude = ["bench", "benchmark_compare.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/routers/*.py" = ["TC001"]
+"app/middleware/*.py" = ["TC002"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+# Third-party libraries without type stubs / py.typed markers. `anthropic` is an
+# optional dependency (the `llm` extra) that may not be installed at all.
+[[tool.mypy.overrides]]
+module = ["pypdfium2", "lxml", "lxml.*", "readability", "anthropic"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Make the `app` package importable without an editable install, so a bare
+# `uv run pytest` / `pytest` works on a fresh checkout (tests import `app.main`).
+pythonpath = ["."]

@@ -1,0 +1,21 @@
+.env
+.env.local
+.env.prod
+.env.*.local
+.DS_Store
+*.log
+.idea/
+.vscode/
+.coverage
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv-prof/
+.venv/
+.mypy_cache/
+
+# Benchmark run outputs — large (~12 MB) and embed third-party page text.
+# Kept out of the repo; regenerate with `python bench/benchmark_*.py`.
+bench/result_*.json
+bench/vendor_baseline*.json

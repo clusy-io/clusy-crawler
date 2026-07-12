@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 220" width="900" height="220" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-label="Crawl pipeline: URL in, guard (SSRF, per-hop), fetch (httpx HTTP/2), conditional JS render, multi-strategy extract, clean LLM-ready markdown out.">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#111726"/>
+      <stop offset="1" stop-color="#0b0f1a"/>
+    </linearGradient>
+    <linearGradient id="wire" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3b3f66"/>
+      <stop offset="0.5" stop-color="#6f78d6"/>
+      <stop offset="1" stop-color="#3b8f6d"/>
+    </linearGradient>
+    <radialGradient id="packet" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.35" stop-color="#b9c2ff"/>
+      <stop offset="1" stop-color="#7c8cff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect x="1" y="1" width="898" height="218" rx="16" fill="url(#panel)" stroke="rgba(255,255,255,.08)"/>
+  <text x="28" y="34" fill="#6b7391" font-size="11" font-weight="600" letter-spacing="2.4">CRAWL PIPELINE</text>
+
+  <!-- connector wire + flowing dashes -->
+  <path id="track" d="M104,120 H796" fill="none" stroke="url(#wire)" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M104,120 H796" fill="none" stroke="#7c8cff" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="2 12" opacity=".55">
+    <animate attributeName="stroke-dashoffset" from="0" to="-140" dur="2.6s" repeatCount="indefinite"/>
+  </path>
+
+  <!-- node centers 104 242 380 518 656 796 ; box 118x58 at y=91 ; pulse begins track the packet -->
+  <g>
+    <rect x="45" y="91" width="118" height="58" rx="11" fill="rgba(255,255,255,.028)" stroke="rgba(255,255,255,.12)"/>
+    <rect x="45" y="91" width="118" height="58" rx="11" fill="none" stroke="#7c8cff" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;.95;0;0" keyTimes="0;.05;.16;1" dur="4s" begin="-.04s" repeatCount="indefinite"/></rect>
+    <text x="59" y="112" fill="#aeb6ff" font-size="10" font-weight="700">01</text>
+    <text x="59" y="127" fill="#e8ecf6" font-size="14" font-weight="600">URL in</text>
+    <text x="59" y="140" fill="#8b93ab" font-size="10.5">scheme · normalize</text>
+  </g>
+  <g>
+    <rect x="183" y="91" width="118" height="58" rx="11" fill="rgba(255,255,255,.028)" stroke="rgba(255,255,255,.12)"/>
+    <rect x="183" y="91" width="118" height="58" rx="11" fill="none" stroke="#7c8cff" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;.95;0;0" keyTimes="0;.05;.16;1" dur="4s" begin=".69s" repeatCount="indefinite"/></rect>
+    <text x="197" y="112" fill="#aeb6ff" font-size="10" font-weight="700">02</text>
+    <text x="197" y="127" fill="#e8ecf6" font-size="14" font-weight="600">Guard</text>
+    <text x="197" y="140" fill="#8b93ab" font-size="10.5">SSRF · per-hop</text>
+  </g>
+  <g>
+    <rect x="321" y="91" width="118" height="58" rx="11" fill="rgba(255,255,255,.028)" stroke="rgba(255,255,255,.12)"/>
+    <rect x="321" y="91" width="118" height="58" rx="11" fill="none" stroke="#7c8cff" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;.95;0;0" keyTimes="0;.05;.16;1" dur="4s" begin="1.43s" repeatCount="indefinite"/></rect>
+    <text x="335" y="112" fill="#aeb6ff" font-size="10" font-weight="700">03</text>
+    <text x="335" y="127" fill="#e8ecf6" font-size="14" font-weight="600">Fetch</text>
+    <text x="335" y="140" fill="#8b93ab" font-size="10.5">httpx · HTTP/2</text>
+  </g>
+  <g>
+    <rect x="459" y="91" width="118" height="58" rx="11" fill="rgba(240,179,74,.05)" stroke="rgba(240,179,74,.45)" stroke-dasharray="4 4"/>
+    <rect x="459" y="91" width="118" height="58" rx="11" fill="none" stroke="#f0b34a" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;.95;0;0" keyTimes="0;.05;.16;1" dur="4s" begin="2.16s" repeatCount="indefinite"/></rect>
+    <text x="473" y="112" fill="#f0b34a" font-size="10" font-weight="700">04</text>
+    <text x="473" y="127" fill="#e8ecf6" font-size="14" font-weight="600">Render?</text>
+    <text x="473" y="140" fill="#8b93ab" font-size="10.5">JS · conditional</text>
+  </g>
+  <g>
+    <rect x="597" y="91" width="118" height="58" rx="11" fill="rgba(255,255,255,.028)" stroke="rgba(255,255,255,.12)"/>
+    <rect x="597" y="91" width="118" height="58" rx="11" fill="none" stroke="#7c8cff" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;.95;0;0" keyTimes="0;.05;.16;1" dur="4s" begin="2.90s" repeatCount="indefinite"/></rect>
+    <text x="611" y="112" fill="#aeb6ff" font-size="10" font-weight="700">05</text>
+    <text x="611" y="127" fill="#e8ecf6" font-size="14" font-weight="600">Extract</text>
+    <text x="611" y="140" fill="#8b93ab" font-size="10.5">multi-strategy</text>
+  </g>
+  <g>
+    <rect x="735" y="91" width="118" height="58" rx="11" fill="rgba(72,199,142,.06)" stroke="rgba(72,199,142,.5)"/>
+    <rect x="735" y="91" width="118" height="58" rx="11" fill="none" stroke="#48c78e" stroke-width="1.6" opacity="0">
+      <animate attributeName="opacity" values="0;.95;0;0" keyTimes="0;.05;.16;1" dur="4s" begin="3.64s" repeatCount="indefinite"/></rect>
+    <text x="749" y="112" fill="#7ee2b8" font-size="10" font-weight="700">06</text>
+    <text x="749" y="127" fill="#d7f5e8" font-size="14" font-weight="600">Markdown</text>
+    <text x="749" y="140" fill="#8b93ab" font-size="10.5">clean · LLM-ready</text>
+  </g>
+
+  <!-- traveling packet: glow + core, pauses briefly at the ends -->
+  <circle r="9" fill="url(#packet)" filter="url(#glow)">
+    <animateMotion dur="4s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;.04;.96;1" calcMode="linear"><mpath href="#track"/></animateMotion>
+  </circle>
+  <circle r="3.1" fill="#ffffff">
+    <animateMotion dur="4s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;.04;.96;1" calcMode="linear"><mpath href="#track"/></animateMotion>
+  </circle>
+</svg>
