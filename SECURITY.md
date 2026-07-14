@@ -7,7 +7,7 @@ for a vulnerability.
 
 - Use GitHub's **[Private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)**
   (the **Security** tab → *Report a vulnerability*), or
-- email **security@clusy.io**.
+- email **hi@clusy.io**.
 
 We aim to acknowledge within 3 business days and to ship a fix or mitigation for
 confirmed high-severity issues within 14 days. We're happy to credit reporters
