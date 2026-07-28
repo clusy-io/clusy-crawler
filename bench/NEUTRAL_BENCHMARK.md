@@ -99,26 +99,28 @@ It is a closed-loop bounded-worker microbenchmark, not an HTTP-service or
 Internet throughput benchmark. Static HTTP, browser rendering, and live-network
 capacity must be measured separately.
 
-## Current local validation
+## Current clean validation
 
-The final full 2026-07-27 working-tree run used the production asynchronous
-entry point, two workers, five warmup pages, and 10,000 paired bootstrap
-replicates:
+The full 2026-07-28 release-candidate run used clean public commit
+[`c3ae00d`](https://github.com/clusy-io/clusy-crawler/commit/c3ae00d90b19003b7c635af5dec87ba177abbd85),
+the production asynchronous entry point, two workers, five warmup pages, and
+10,000 paired-bootstrap replicates:
 
 | Mode | Precision | Recall | F1 | pages/s | p50 | p95 | errors |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| async | 0.951014 | 0.989665 | 0.969955 | 141.70 | 12.64 ms | 25.92 ms | 0 |
+| async | 0.951014 | 0.989665 | 0.969955 | 133.33 | 12.97 ms | 30.59 ms | 0 |
 
-The async result is byte-for-byte equivalent under AEB's metric to the pinned
-`rs_trafilatura` prediction. Versus Trafilatura 2.0, ΔF1 is +0.012452 with a
-paired-bootstrap 95% interval of [+0.002093, +0.023745] and win probability
-0.9892. Peak process RSS was 262,897,664 bytes.
+The result matches the pinned `rs_trafilatura` prediction on every aggregate
+AEB metric. Versus Trafilatura 2.0, ΔF1 is +0.012452 with a paired-bootstrap 95%
+interval of [+0.002093, +0.023745] and win probability 0.9892. Peak process RSS
+was 246,333,440 bytes.
 
 The artifact directory is
-`bench/results/aeb/final-production-frozen-20260727-v1/` (ignored by Git). The run is
-intentionally marked `NOT CLAIMABLE` because the optimized source is still an
-uncommitted working tree. Commit the implementation and rerun before publishing
-the number externally.
+`bench/results/aeb/public-c3ae00d-clean/` (ignored by Git). The harness marked
+the run `CLAIMABLE` within the scope **AEB article-body extraction only** after
+verifying the clean source revision, pinned corpus and evaluator, full page set,
+native backend, and unchanged relevant-source hash. Throughput is an in-memory
+extractor result on an Apple M4 Pro and is not a live-network crawling claim.
 
 ## Artifacts and publication rules
 

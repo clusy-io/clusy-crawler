@@ -14,8 +14,7 @@ docker run --rm -d --name clusy-crawler -p 11235:11235 \
   --user 10001:10001 --init --read-only --shm-size=1g \
   --tmpfs /tmp:size=512m,mode=1777 \
   --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
-  --security-opt no-new-privileges \
-  --security-opt seccomp="$(pwd)/seccomp_profile.json" --cap-drop ALL \
+  --security-opt seccomp="$(pwd)/seccomp_profile.json" \
   --pids-limit=256 --memory=4g --cpus=2 \
   -e ENVIRONMENT=prod \
   -e CRAWL4AI_API_TOKEN=your-token clusy-crawler
@@ -72,19 +71,41 @@ profiles and metrics are explicit because article-body text and general
 main-content Markdown are different output contracts; no label-dependent
 routing or scoring-only cleanup is used.
 
+### Clean release-candidate result
+
+The full AEB corpus was rerun from clean public commit
+[`c3ae00d`](https://github.com/clusy-io/clusy-crawler/commit/c3ae00d90b19003b7c635af5dec87ba177abbd85)
+through the production asynchronous entry point:
+
 | Suite / production profile | Pages | Metric | Precision | Recall | F1 | Extraction throughput |
 |---|---:|---|---:|---:|---:|---:|
-| AEB `article_body` | 181 | 4-token shingle | 0.951014 | 0.989665 | **0.969955** | 141.7 pages/s |
-| WCXB `balanced` | 2,008 | bag-of-words | 0.863443 | 0.906577 | **0.859450** | 82.0 pages/s |
-| Webis `balanced` | 3,985 | macro ROUGE-LSum | 0.867148 | 0.908456 | **0.854920** | 277.6 pages/s |
-| WebMainBench `balanced`, Direct-MD raw | 7,809 | macro ROUGE-5 | 0.615569 | 0.677841 | **0.606672** | 117.6 pages/s |
+| AEB `article_body` | 181 | 4-token shingle | 0.951014 | 0.989665 | **0.969955** | **133.3 pages/s** |
 
 On Zyte/ScrapingHub's Article Extraction Benchmark (AEB), Clusy exactly matches
 the pinned leading open-source `rs-trafilatura` result on every aggregate
 metric. Against Trafilatura 2.0, ΔF1 is +0.012452 with a paired-bootstrap 95% CI
 of [+0.002093, +0.023745] and `P(Clusy > Trafilatura) = 0.9892`. This is a
-**SOTA-matching article-body result**, not an independent algorithmic win:
-Clusy deliberately embeds that pinned Rust backend.
+result that **ties the pinned AEB article-body F1 leader**, not an independent
+algorithmic win: Clusy deliberately embeds that pinned Rust backend.
+
+The clean run used all 181 pages, two workers, five warmup pages, and 10,000
+paired-bootstrap replicates. It completed with zero extraction errors, p50
+12.97 ms, p95 30.59 ms, and 246,333,440 bytes peak RSS. The harness marked the
+result `CLAIMABLE` within the narrow scope **AEB article-body extraction only**.
+Throughput is an in-memory extractor measurement on an Apple M4 Pro and should
+not be generalized to live-network crawling or other hardware.
+
+### Broader full-corpus diagnostics
+
+The following complete runs are useful engineering evidence, but were produced
+from a dirty development tree and are therefore watermarked `NOT CLAIMABLE` by
+their harnesses. They are not release claims.
+
+| Suite / production profile | Pages | Metric | Precision | Recall | F1 | Extraction throughput |
+|---|---:|---|---:|---:|---:|---:|
+| WCXB `balanced` | 2,008 | bag-of-words | 0.863443 | 0.906577 | **0.859450** | 82.0 pages/s |
+| Webis `balanced` | 3,985 | macro ROUGE-LSum | 0.867148 | 0.908456 | **0.854920** | 277.6 pages/s |
+| WebMainBench `balanced`, Direct-MD raw | 7,809 | macro ROUGE-5 | 0.615569 | 0.677841 | **0.606672** | 117.6 pages/s |
 
 On WCXB's seven page types, the default `balanced` profile scores 0.848433 on
 development and 0.891727 on the public test split, with zero extraction errors.
@@ -111,17 +132,11 @@ leaderboard placement. A second annotation-marker-scrubbed track scores
 0.605703, showing the result does not rely on the released HTML's label
 artifacts.
 
-The older production path measured 20.8 pages/s on the same 181-page AEB input;
-the native/profiled path measures 141.4 pages/s (about 6.8×). Treat that
-before/after number as an engineering comparison because the older run predates
-the hardened provenance harness.
-
-All current validation runs record exact corpus, evaluator, source, lockfile,
-native-binary, environment, raw-prediction, and artifact hashes. The full-corpus
-runs summarized here were produced from a dirty development tree, so the
-harnesses correctly watermark them as non-publishable. Treat them as
-reproducibility targets, not release claims, until the corresponding suite is
-rerun from a clean commit. See
+Every validation harness records the exact corpus, evaluator, source, lockfile,
+native binary, environment, raw prediction, and artifact hashes. The AEB result
+above is clean and claimable only within its stated scope; the broader rows
+remain reproducibility targets until each suite is rerun from a clean commit.
+See
 [`bench/NEUTRAL_BENCHMARK.md`](bench/NEUTRAL_BENCHMARK.md) and
 [`bench/WCXB_BENCHMARK.md`](bench/WCXB_BENCHMARK.md),
 [`bench/WEBIS_BENCHMARK.md`](bench/WEBIS_BENCHMARK.md), and
@@ -775,9 +790,8 @@ docker run --rm -d --name clusy-crawler -p 11235:11235 --shm-size=1g \
   --user 10001:10001 --init --read-only \
   --tmpfs /tmp:size=512m,mode=1777 \
   --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
-  --security-opt no-new-privileges \
   --security-opt seccomp="$(pwd)/seccomp_profile.json" \
-  --cap-drop ALL --pids-limit=256 --memory=4g --cpus=2 \
+  --pids-limit=256 --memory=4g --cpus=2 \
   -e ENVIRONMENT=prod \
   -e CRAWL4AI_API_TOKEN=your-token clusy-crawler
 
@@ -796,7 +810,12 @@ not copied into the runtime stage. The service runs as the non-root `crawler`
 user (UID 10001). `seccomp_profile.json` is the Playwright 1.60 profile derived
 from Docker's default policy with `clone`, `setns`, and `unshare` permitted so
 Chromium can create its user namespace sandbox. The checked-in Compose service
-applies it automatically.
+applies it automatically. It intentionally does not set
+`no-new-privileges` or drop every Linux capability: on hosts that disable
+unprivileged user namespaces, either setting would prevent Chromium's
+version-matched SUID sandbox helper from providing the secure fallback. The
+application process still runs non-root, and Chromium's sandbox remains
+explicitly enabled.
 
 The default `runtime` image is deterministic and does not contain MinerU-HTML.
 Build the opt-in, revision-pinned quality image only when an operator endpoint

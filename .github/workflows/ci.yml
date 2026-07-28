@@ -87,9 +87,8 @@ jobs:
             --user 10001:10001 --init --read-only --shm-size=1g \
             --tmpfs /tmp:size=512m,mode=1777 \
             --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
-            --security-opt no-new-privileges \
             --security-opt "seccomp=${PWD}/seccomp_profile.json" \
-            --cap-drop ALL --pids-limit=256 --memory=4g --cpus=2 \
+            --pids-limit=256 --memory=4g --cpus=2 \
             --env ENVIRONMENT=prod \
             --env GIT_SHA="${GITHUB_SHA}" \
             --env CRAWL4AI_API_TOKEN=ci-smoke-token \

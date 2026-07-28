@@ -28,10 +28,7 @@ services:
       - /tmp:size=512m,mode=1777
       - /home/crawler:size=64m,mode=0700,uid=10001,gid=10001
     security_opt:
-      - no-new-privileges:true
       - seccomp:./seccomp_profile.json
-    cap_drop:
-      - ALL
     pids_limit: 256
     shm_size: 1gb
     mem_limit: 4g

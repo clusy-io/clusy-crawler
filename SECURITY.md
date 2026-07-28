@@ -48,9 +48,12 @@ Operators should still:
 4. Run it with **least-privilege egress** — the SSRF guard blocks the common
    cases, but network-level egress policy is defense in depth against novel
    DNS-rebinding or IPv6 edge cases.
-5. Keep the container **non-root**, retain `no-new-privileges`, and use the
-   checked-in `seccomp_profile.json`. The profile is Docker's default policy
-   plus the user-namespace syscalls required for Chromium's sandbox. Do not set
+5. Keep the container **non-root** and use the checked-in
+   `seccomp_profile.json`. The profile is Docker's default policy plus the
+   user-namespace syscalls required for Chromium's sandbox. When Playwright is
+   enabled, do not add `no-new-privileges` or drop every Linux capability:
+   either setting disables Chromium's version-matched SUID sandbox fallback on
+   hosts that restrict unprivileged user namespaces. Do not set
    `PLAYWRIGHT_DISABLE_SANDBOX=true` for ordinary crawling.
 
 Application checks are not a complete network sandbox. Chromium request
