@@ -1,25 +1,61 @@
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "25m"
+    max-file: "5"
+
 services:
   crawler:
-    build: .
+    build:
+      context: .
+      target: ${CRAWLER_DOCKER_TARGET:-runtime}
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     image: clusy-crawler:latest
     ports:
-      - "11235:11235"
+      - "127.0.0.1:11235:11235"
     env_file: .env
     environment:
-      # Point the service at the bundled Redis for response caching.
+      # The bundled Redis is optional but useful for a self-contained local
+      # deployment. Production rejects a cache namespace with an unknown SHA.
       REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      GIT_SHA: ${GIT_SHA:-unknown}
+    user: "10001:10001"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      - /home/crawler:size=64m,mode=0700,uid=10001,gid=10001
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./seccomp_profile.json
+    cap_drop:
+      - ALL
+    pids_limit: 256
     shm_size: 1gb
+    mem_limit: 4g
+    cpus: 2.0
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:11235/health', timeout=3).status == 200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:11235/health/ready', timeout=3).status == 200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
+    logging: *json-logging
+    stop_grace_period: 30s
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *json-logging
     restart: unless-stopped

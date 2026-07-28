@@ -1,7 +1,6 @@
 .env
-.env.local
-.env.prod
-.env.*.local
+.env.*
+!.env.example
 .git
 .gitignore
 .dockerignore
@@ -22,11 +21,13 @@ deploy/
 venv/
 .venv/
 node_modules/
-# Not needed at runtime — keep the build context tiny (only app/ + manifests)
+target/
+native/target/
+native/python/clusy_native/*.so
+# Not needed by the native build or runtime — keep the build context small.
 bench/
 tests/
 docs/
 *.md
-benchmark_compare.py
+!THIRD_PARTY_LICENSES.md
 docker-compose.yml
-uv.lock

@@ -1,0 +1,6 @@
+# Generated AEB predictions, raw page text, and benchmark reports.
+results/
+artifacts/
+
+# Interrupted atomic artifact writes.
+*.tmp

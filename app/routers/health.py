@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import cast
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as distribution_version
 
 import trafilatura
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
+from app.cache import get_cache
 from app.config import settings
+from app.services.extractor import native_backend_version
+from app.services.renderer import renderer_is_ready
 
 router = APIRouter(tags=["health"])
 
@@ -18,34 +22,20 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/health/ready")
-async def ready() -> dict[str, object]:
+async def ready(response: Response) -> dict[str, object]:
     checks: dict[str, str] = {"http_client": "ok"}
+    checks["native_extractor"] = "ok" if native_backend_version() != "unavailable" else "error"
 
     if settings.redis_url:
-        try:
-            import redis.asyncio as aioredis
-
-            # redis.asyncio.from_url ships without type annotations.
-            r = aioredis.from_url(settings.redis_url)  # type: ignore[no-untyped-call]
-            await r.ping()
-            await r.aclose()
-            checks["redis"] = "ok"
-        except Exception:
-            checks["redis"] = "error"
+        checks["redis"] = "ok" if await get_cache().healthcheck() else "error"
 
     if settings.playwright_enabled:
-        try:
-            from playwright.async_api import async_playwright
-
-            async with async_playwright() as pw:
-                browser = await pw.chromium.launch(headless=True)
-                await browser.close()
-            checks["playwright"] = "ok"
-        except Exception:
-            checks["playwright"] = "error"
+        checks["playwright"] = "ok" if renderer_is_ready() else "error"
 
     all_ok = all(v == "ok" for v in checks.values())
     status = "ready" if all_ok else "degraded"
+    if not all_ok:
+        response.status_code = 503
 
     return {"status": status, "checks": checks}
 
@@ -57,6 +47,7 @@ async def version() -> dict[str, str]:
         "sha": sha,
         "environment": settings.environment,
         "python_version": sys.version,
+        "native_extractor_version": native_backend_version(),
         "trafilatura_version": trafilatura.__version__,
         "playwright_version": _playwright_version(),
     }
@@ -64,10 +55,9 @@ async def version() -> dict[str, str]:
 
 def _playwright_version() -> str:
     try:
-        # Private playwright module; `version` is absent in some releases, hence
-        # the ImportError guard. cast keeps the return typed without a runtime op.
-        from playwright._impl._api_structures import version  # type: ignore[attr-defined]
-
-        return cast("str", version)
-    except ImportError:
+        # Playwright does not expose a stable public ``__version__`` attribute.
+        # Distribution metadata is the supported packaging-level source and
+        # remains available even when the browser driver is not running.
+        return distribution_version("playwright")
+    except PackageNotFoundError:
         return "not installed"

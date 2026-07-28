@@ -1,0 +1,21 @@
+[package]
+name = "clusy-native"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+dom_query = "=0.24.0"
+pyo3 = { version = "=0.27.2", features = ["abi3-py312", "extension-module"] }
+rs-trafilatura-broad = { package = "rs-trafilatura", version = "=0.2.2" }
+# This exact revision is the independently recorded top open-source backend on
+# the Article Extraction Benchmark.  Keep it alongside the newer, multi-type
+# release: the former is precision-tuned for articles while the latter adds
+# page classification and richer non-article Markdown.
+rs-trafilatura-article = { package = "rs-trafilatura", git = "https://github.com/Murrough-Foley/rs-trafilatura", rev = "9261e087deca9c7a38ddc284a60dd62a47de7b33" }

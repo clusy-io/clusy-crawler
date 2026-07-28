@@ -1,35 +1,90 @@
 # Third-Party Licenses
 
-Clusy Crawler is released under the Apache License 2.0. It depends only on
-third-party packages under permissive licenses (Apache-2.0, MIT, BSD, MPL-2.0,
-LGPL). No copyleft (GPL/AGPL) code is bundled or required.
+Clusy Crawler is released under the Apache License 2.0. Its direct application
+dependencies use the licenses listed below. No GPL/AGPL direct runtime
+dependency is intentionally bundled or required. The exact Python and Rust
+dependency graphs are recorded in [`uv.lock`](uv.lock) and
+[`native/Cargo.lock`](native/Cargo.lock);
+distributors remain responsible for preserving all applicable notices,
+including notices for transitive dependencies and Chromium.
 
-## Runtime dependencies
+## Direct Python runtime dependencies
 
 | Package | Version constraint | License |
 |---------|--------------------|---------|
+| clusy-native | 0.1.0 (local path package) | Apache-2.0 |
 | fastapi | >=0.115,<1.0 | MIT |
 | uvicorn[standard] | >=0.45,<1.0 | BSD-3-Clause |
 | pydantic | >=2.10,<3.0 | MIT |
-| pydantic-settings | >=2.7,<3.0 | MIT |
+| pydantic-settings | >=2.14.2,<3.0 | MIT |
+| starlette | >=1.3.1,<2.0 | BSD-3-Clause |
 | httpx | >=0.28,<1.0 | BSD-3-Clause |
 | h2 | >=4.3 | MIT |
 | brotli | >=1.1 | MIT |
 | zstandard | >=0.23 | BSD-3-Clause |
-| trafilatura | >=1.8,<2.0 | Apache-2.0 |
+| trafilatura | >=2.0,<3.0 | Apache-2.0 |
 | markdownify | >=1.2,<2.0 | MIT |
 | beautifulsoup4 | >=4.12,<5.0 | MIT |
 | readability-lxml | >=0.8.1,<1.0 | Apache-2.0 |
+| lxml-html-clean | >=0.4.5,<1.0 | BSD-3-Clause |
 | pypdfium2 | >=4.30 | BSD-3-Clause / Apache-2.0 (bundles Google PDFium, BSD-3-Clause) |
 | playwright | >=1.48,<2.0 | Apache-2.0 |
-| lxml | >=5.3,<6.0 | BSD-3-Clause |
+| lxml | >=6.0.2,<7.0 | BSD-3-Clause |
 | structlog | >=24.4,<26.0 | Apache-2.0 / MIT |
 | tenacity | >=9.0,<10.0 | Apache-2.0 |
 | aiolimiter | >=1.0,<2.0 | MIT |
 | redis | >=5.2,<6.0 | MIT |
 | orjson | >=3.10,<4.0 | Apache-2.0 / MIT |
 
-Optional extra `[llm]` (off by default): `anthropic` (MIT).
+Optional extra `[llm]` (off by default for source installs):
+`anthropic>=0.69` (MIT). The checked-in Dockerfile installs this package in the
+runtime image, but the feature remains inactive unless configured.
+
+Optional extra `[quality]` (off by default) pins
+`mineru-html[openai]` (Apache-2.0) to upstream revision
+`73cf266690befd209cae7e6fdff9716d5b31a976`. It provides the MinerU-HTML v1.1
+preprocessing, OpenAI-compatible inference adapter, label mapping, and
+Markdown conversion pipeline. Its transitive dependency graph is recorded in
+`uv.lock`; preserve the packages' notices when distributing this extra.
+
+No model weights are bundled. In particular, the upstream v1.1 compact model
+is a Tencent Hunyuan derivative under the Tencent Hunyuan Community License,
+not Apache-2.0; that license excludes the EU, UK, and South Korea and imposes
+additional use restrictions. Configuring a remote or local checkpoint is an
+operator decision and requires a separate model/data/license review.
+
+The architecture record also evaluates model candidates without adding them as
+dependencies. Pulpie Orange's published weights are CC BY-NC 4.0 and therefore
+must not be used in commercial deployments without separate rights. mmBERT
+(MIT) and Qwen3.5-0.8B-Base (Apache-2.0) are permissively licensed candidate
+bases, but no weights are copied into this repository and checkpoint licensing
+does not replace review of training data, synthetic labels, or output terms.
+
+## Native Rust backend
+
+`clusy-native` is built from source as an ABI3 Python 3.12 extension. Its direct
+Rust dependencies are:
+
+| Crate | Pinned version/source | License |
+|-------|-----------------------|---------|
+| clusy-native | 0.1.0 (workspace) | Apache-2.0 |
+| dom_query | =0.24.0 | MIT |
+| pyo3 | =0.27.2 | MIT OR Apache-2.0 |
+| rs-trafilatura | =0.2.2 (crates.io) | MIT OR Apache-2.0 |
+| rs-trafilatura | git revision `9261e087deca9c7a38ddc284a60dd62a47de7b33` | MIT OR Apache-2.0 |
+
+[`native/Cargo.lock`](native/Cargo.lock) also pins the complete transitive
+graph. License expressions reported by Cargo metadata include MIT, Apache-2.0,
+BSD-3-Clause, MPL-2.0, Unicode-3.0, Unlicense, and Zlib variants. Consult each
+crate's packaged license files when preparing binary-distribution notices; this
+summary is not a substitute for those files.
+
+## Build-only tools
+
+| Tool | Version | License / role |
+|------|---------|----------------|
+| Rust toolchain | >=1.85 | Required only to build `clusy-native`; not copied into the final Docker stage |
+| maturin | >=1.9,<2.0 (Docker pins 1.14.1) | MIT OR Apache-2.0; builds the Python wheel |
 
 ## Deliberately excluded copyleft dependencies
 
@@ -48,6 +103,8 @@ effective license of your distribution.
 
 ## Bundled browser
 
-Playwright downloads a Chromium build at install time (`playwright install
-chromium`). Chromium is BSD-3-Clause with additional third-party notices; it is
-fetched at runtime, not vendored in this repository.
+Playwright downloads its matching Chromium build during local setup
+(`playwright install chromium`) or during the Docker image build. The resulting
+browser binaries are included in the runtime Docker image. Chromium uses the
+BSD license and contains components under additional licenses; retain
+Chromium's bundled third-party notices when redistributing the image.

@@ -1,12 +1,145 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+
+import orjson
 import pytest
 
 from app.config import settings
-from app.services.crawler import _crawl_single_url, _get_semaphore, crawl_urls
+from app.models.responses import CrawlResult, ExtractionMetadata
+from app.services.crawler import (
+    _apply_response_budget,
+    _crawl_single_url,
+    _get_semaphore,
+    _resolve_js_policy,
+    _run_executor_holding_cancellation,
+    crawl_urls,
+)
+from app.services.document_policy import (
+    DocumentPolicyBlockReason,
+    DocumentPolicyDecision,
+    DocumentPolicyDeniedError,
+)
+from app.services.extractor import ExtractionResult
 
 
 class TestCrawler:
+    @pytest.mark.anyio
+    async def test_cancelled_academic_parser_returns_but_retains_cpu_permit(
+        self,
+        monkeypatch,
+    ):
+        from app.services import crawler as crawler_module
+
+        started = threading.Event()
+        release = threading.Event()
+        semaphore = asyncio.Semaphore(1)
+
+        def worker():
+            started.set()
+            release.wait(timeout=1)
+            return "done"
+
+        monkeypatch.setattr(crawler_module, "_academic_parser_semaphore", semaphore)
+        monkeypatch.setattr(
+            crawler_module,
+            "_academic_parser_loop",
+            asyncio.get_running_loop(),
+        )
+        task = asyncio.create_task(
+            _run_executor_holding_cancellation(
+                asyncio.get_running_loop(),
+                worker,
+            )
+        )
+        assert await asyncio.to_thread(started.wait, 0.5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=0.1)
+        assert semaphore.locked()
+        release.set()
+        await asyncio.sleep(0.02)
+        assert not semaphore.locked()
+
+    @pytest.mark.anyio
+    async def test_crawl_urls_propagates_cancelled_work(self, monkeypatch):
+        from app.services import crawler as crawler_module
+
+        async def cancelled(*_args, **_kwargs):
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(crawler_module, "_crawl_single_url", cancelled)
+
+        with pytest.raises(asyncio.CancelledError):
+            await crawl_urls(["https://example.com"])
+
+    def test_response_budget_counts_json_escaping_metadata_and_envelope(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(settings, "max_response_output_bytes", 1024)
+        result = CrawlResult(
+            url="https://example.com/private",
+            markdown="\\" * 900,
+            metadata=ExtractionMetadata(title="x" * 5000),
+        )
+
+        results = [result]
+        _apply_response_budget(results)
+        encoded = orjson.dumps(
+            {
+                "status": "ok",
+                "results": [item.model_dump(mode="json") for item in results],
+                "total_time_ms": settings.crawl_request_timeout_s * 1000,
+                "total_pages": 1,
+            }
+        )
+
+        assert len(encoded) <= settings.max_response_output_bytes
+        assert result.error == "response output budget exceeded"
+        assert result.metadata is None
+
+    def test_configured_text_cap_is_explicit_in_metadata(self, monkeypatch):
+        monkeypatch.setattr(settings, "extract_max_text_length", 96)
+        monkeypatch.setattr(settings, "max_response_output_bytes", 64 * 1024)
+        result = CrawlResult(
+            url="https://example.com/large",
+            markdown=("bounded paragraph content " * 20).strip(),
+            metadata=ExtractionMetadata(word_count=60),
+        )
+
+        results = [result]
+        _apply_response_budget(results)
+
+        assert len(result.markdown) <= settings.extract_max_text_length
+        assert result.markdown.endswith("[content truncated at configured limit]")
+        assert result.metadata is not None
+        assert result.metadata.truncated is True
+        assert result.metadata.truncation_reason == "configured text limit"
+
+    @pytest.mark.parametrize(
+        ("mode", "requested", "url", "expected"),
+        [
+            ("force", False, "https://medium.com/post", (False, False)),
+            ("never", True, "https://example.com/", (True, False)),
+            ("force", None, "https://example.com/", (True, False)),
+            ("never", None, "https://medium.com/post", (False, False)),
+            ("conditional", None, "https://medium.com/post", (True, False)),
+            ("conditional", None, "https://example.com/", (False, True)),
+        ],
+    )
+    def test_js_policy_precedence(
+        self,
+        monkeypatch,
+        mode,
+        requested,
+        url,
+        expected,
+    ):
+        monkeypatch.setattr(settings, "js_render_mode", mode)
+        assert _resolve_js_policy(url, requested) == expected
+
     @pytest.mark.anyio
     async def test_crawl_single_error_on_bad_url(self):
         result = await _crawl_single_url("http://127.0.0.1/forbidden")
@@ -40,6 +173,7 @@ class TestCrawler:
             assert r.error is None
             assert r.markdown
             assert r.metadata is not None
+            assert r.metadata.origin_status_code == 200
 
     @pytest.mark.anyio
     async def test_crawl_exception_returned_as_error(self, monkeypatch):
@@ -53,8 +187,412 @@ class TestCrawler:
         results = await crawl_urls(["https://example.com"])
         assert len(results) == 1
         assert results[0].error is not None
-        assert "boom" in results[0].error
+        assert results[0].error == "crawl failed (RuntimeError)"
+
+    @pytest.mark.anyio
+    async def test_final_url_and_actual_render_state_propagate(self, monkeypatch):
+        from app.services import fetcher
+
+        async def mock_fetch(url, js_render=False, wait_for_selector=None):
+            from app.services.fetcher import FetchResult
+
+            assert js_render is True
+            return FetchResult(
+                html='<html><body><a href="source">source</a></body></html>',
+                status_code=200,
+                content_type="text/html",
+                final_url="https://canonical.example/articles/one/",
+                # Simulate browser failure followed by a successful static
+                # fallback: request intent must not be reported as rendering.
+                rendered=False,
+            )
+
+        async def mock_extract(html, url, extraction_profile="balanced"):
+            assert url == "https://canonical.example/articles/one/"
+            assert extraction_profile == "article_body"
+            return ExtractionResult(
+                text="final content from the canonical page",
+                word_count=7,
+                strategy="test",
+            )
+
+        monkeypatch.setattr(fetcher, "fetch_url", mock_fetch)
+        monkeypatch.setattr(
+            "app.services.crawler.extract_content_async",
+            mock_extract,
+        )
+
+        result = await _crawl_single_url(
+            "https://example.com/redirect",
+            js_render=True,
+            formats=["markdown", "links"],
+            max_age=0,
+            extraction_profile="article_body",
+        )
+
+        assert result.error is None
+        assert result.metadata is not None
+        assert result.metadata.source_url == "https://canonical.example/articles/one/"
+        assert result.metadata.rendered is False
+        assert result.metadata.origin_status_code == 200
+        assert result.links == ["https://canonical.example/articles/one/source"]
+
+    @pytest.mark.anyio
+    async def test_direct_arxiv_pdf_prefers_abs_page_metadata(self, monkeypatch):
+        from app.services import crawler as crawler_module
+        from app.services.academic import AcademicPaper, Section
+        from app.services.fetcher import FetchResult
+
+        pdf_url = "https://arxiv.org/pdf/1706.03762"
+        abs_url = "https://arxiv.org/abs/1706.03762"
+        calls: list[str] = []
+
+        async def fetch(url, js_render=False, wait_for_selector=None):
+            calls.append(url)
+            if url == pdf_url:
+                return FetchResult(
+                    raw_bytes=b"%PDF-test",
+                    status_code=200,
+                    content_type="application/pdf",
+                    final_url=pdf_url,
+                )
+            assert url == abs_url
+            return FetchResult(
+                html=(
+                    "<html><body><article>"
+                    + ("structured landing metadata " * 30)
+                    + "</article></body></html>"
+                ),
+                status_code=200,
+                content_type="text/html",
+                final_url=abs_url,
+            )
+
+        def extract_pdf(_contents, _url):
+            return AcademicPaper(
+                title="Google PDF Producer Notice",
+                authors=["Google Brain"],
+                full_text="decoded PDF body",
+                sections=[Section(heading="Body", content="decoded PDF body")],
+                word_count=3,
+                arxiv_id="1706.03762",
+                canonical_url=abs_url,
+            )
+
+        async def parse_landing(_html, _url, _loop):
+            return AcademicPaper(
+                title="Attention Is All You Need",
+                authors=["Ashish Vaswani", "Noam Shazeer"],
+                publication_date="2017-06-12",
+                arxiv_id="1706.03762",
+                canonical_url=abs_url,
+            )
+
+        monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", fetch)
+        monkeypatch.setattr(crawler_module.academic_module, "extract_pdf", extract_pdf)
+        monkeypatch.setattr(
+            crawler_module,
+            "_extract_academic_html_safely",
+            parse_landing,
+        )
+        monkeypatch.setattr(crawler_module, "_crawl_semaphore", None)
+
+        result = await crawler_module._crawl_uncached(
+            url=pdf_url,
+            decide_js=False,
+            auto_render=False,
+            wait_for_selector=None,
+            word_count_threshold=10,
+            extraction_profile="balanced",
+        )
+
+        assert calls == [pdf_url, abs_url]
+        assert result.error is None
+        assert result.metadata is not None
+        assert result.metadata.title == "Attention Is All You Need"
+        assert result.metadata.authors == ["Ashish Vaswani", "Noam Shazeer"]
+        assert result.metadata.published_at == "2017-06-12"
+        assert result.metadata.extraction_strategy == "pypdfium2+academic"
+        assert result.metadata.origin_status_code == 200
+        assert result.links == [abs_url]
+        assert "decoded PDF body" in result.markdown
+
+    @pytest.mark.anyio
+    async def test_github_login_page_is_an_honest_unsupported_result(
+        self,
+        monkeypatch,
+    ):
+        from app.services import crawler as crawler_module
+        from app.services.fetcher import FetchResult
+
+        async def fetch(url, js_render=False, wait_for_selector=None):
+            return FetchResult(
+                html="<html><body>Sign in to GitHub</body></html>",
+                status_code=200,
+                content_type="text/html",
+                final_url=url,
+            )
+
+        async def must_not_extract(*_args, **_kwargs):
+            raise AssertionError("account chrome must not enter content extraction")
+
+        monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", fetch)
+        monkeypatch.setattr(crawler_module, "extract_content_async", must_not_extract)
+        monkeypatch.setattr(crawler_module, "_crawl_semaphore", None)
+
+        result = await crawler_module._crawl_uncached(
+            url="https://github.com/login",
+            decide_js=False,
+            auto_render=True,
+            wait_for_selector=None,
+            word_count_threshold=10,
+            extraction_profile="balanced",
+        )
+
+        assert result.markdown == ""
+        assert result.metadata is None
+        assert result.error is not None
+        assert "unsupported authentication" in result.error
+
+    @pytest.mark.anyio
+    async def test_structured_html_doi_reaches_exact_metadata_fallback(
+        self,
+        monkeypatch,
+    ):
+        from app.services import crawler as crawler_module
+        from app.services.academic import AcademicPaper
+        from app.services.scholarly_metadata import ScholarlyMetadataResult
+
+        doi = "10.1002/example.12345"
+        captured: dict[str, str] = {}
+
+        async def lookup(url, *, trusted_title="", trusted_doi=""):
+            captured["url"] = url
+            captured["trusted_title"] = trusted_title
+            captured["trusted_doi"] = trusted_doi
+            return ScholarlyMetadataResult(
+                AcademicPaper(
+                    title="Exact structured DOI record",
+                    doi=doi,
+                    canonical_url=f"https://doi.org/{doi}",
+                ),
+                "academic-metadata-crossref",
+            )
+
+        monkeypatch.setattr(
+            crawler_module.scholarly_metadata_module,
+            "lookup_publisher_metadata",
+            lookup,
+        )
+
+        result = await crawler_module._try_scholarly_metadata_fallback(
+            requested_url="https://onlinelibrary.wiley.com/article/opaque-id",
+            effective_url="https://onlinelibrary.wiley.com/article/opaque-id",
+            trusted_title="",
+            trusted_html=(
+                "<html><head>"
+                f'<meta name="citation_doi" content="{doi}">'
+                "</head></html>"
+            ),
+            rendered=False,
+            origin_status_code=403,
+            origin_error="HTTP 403",
+        )
+
+        assert result is not None
+        assert captured["trusted_doi"] == doi
+        assert result.metadata is not None
+        assert result.metadata.doi == doi
+        assert result.metadata.content_scope == "metadata_only"
+        assert result.metadata.origin_status_code == 403
 
     def test_semaphore_caps_concurrency(self):
         sem = _get_semaphore()
         assert sem._value == settings.max_concurrent_tasks
+
+
+@pytest.mark.anyio
+async def test_recursive_cached_final_url_is_rechecked_before_return(monkeypatch):
+    from app.services import crawler as crawler_module
+
+    requested = "https://example.com/start"
+    cached_final = "https://outside.example/final"
+    cached = CrawlResult(
+        url=requested,
+        markdown="cached content",
+        metadata=ExtractionMetadata(source_url=cached_final),
+    )
+
+    class FakeCache:
+        async def get(self, _key):
+            return orjson.dumps(
+                {
+                    "t": 9_999_999_999,
+                    "r": cached.model_dump(),
+                }
+            )
+
+        async def set(self, _key, _value):
+            raise AssertionError("cache hit must not write")
+
+    policy_calls: list[str] = []
+
+    async def document_policy(url):
+        policy_calls.append(url)
+        return DocumentPolicyDecision(
+            allowed=False,
+            reason=DocumentPolicyBlockReason.OFF_SITE,
+            error="cached final URL leaves recursive scope",
+        )
+
+    async def must_not_crawl(**_kwargs):
+        raise AssertionError("denied cached result must not start a live crawl")
+
+    monkeypatch.setattr(crawler_module, "get_cache", lambda: FakeCache())
+    monkeypatch.setattr(crawler_module, "_crawl_uncached", must_not_crawl)
+
+    with pytest.raises(DocumentPolicyDeniedError, match="cached final"):
+        await crawler_module._crawl_single_url(
+            requested,
+            document_policy=document_policy,
+        )
+
+    assert policy_calls == [cached_final]
+
+
+@pytest.mark.anyio
+async def test_recursive_policy_flight_never_joins_concurrent_flat_flight(monkeypatch):
+    from app.services import crawler as crawler_module
+
+    url = "https://flight-partition.example/page"
+    both_started = asyncio.Event()
+    release = asyncio.Event()
+    policy_modes: list[bool] = []
+
+    class FakeCache:
+        async def get(self, _key):
+            return None
+
+        async def set(self, _key, _value):
+            pass
+
+    async def fake_uncached(**kwargs):
+        policy_modes.append(kwargs["document_policy"] is not None)
+        if len(policy_modes) == 2:
+            both_started.set()
+        await release.wait()
+        return CrawlResult(url=url, markdown="content")
+
+    async def document_policy(_url):
+        return DocumentPolicyDecision(allowed=True)
+
+    monkeypatch.setattr(crawler_module, "get_cache", lambda: FakeCache())
+    monkeypatch.setattr(crawler_module, "_crawl_uncached", fake_uncached)
+
+    flat = asyncio.create_task(
+        crawler_module._crawl_single_url(
+            url,
+            max_age=0,
+        )
+    )
+    await asyncio.sleep(0)
+    recursive = asyncio.create_task(
+        crawler_module._crawl_single_url(
+            url,
+            max_age=0,
+            document_policy=document_policy,
+        )
+    )
+    await asyncio.wait_for(both_started.wait(), timeout=1)
+    release.set()
+    await asyncio.gather(flat, recursive)
+
+    assert sorted(policy_modes) == [False, True]
+
+
+@pytest.mark.anyio
+async def test_optional_github_raw_policy_denial_falls_back_to_fetched_html(
+    monkeypatch,
+):
+    from app.services import crawler as crawler_module
+    from app.services.fetcher import FetchResult
+
+    blob_url = "https://github.com/acme/repo/blob/main/src/example.py"
+    raw_url = "https://raw.githubusercontent.com/acme/repo/main/src/example.py"
+    fetched_blob = FetchResult(
+        html=(
+            "<html><body>"
+            f'<a data-testid="raw-button" href="{raw_url}">Raw</a>'
+            "<article>usable server-rendered blob page</article>"
+            "</body></html>"
+        ),
+        status_code=200,
+        content_type="text/html",
+        final_url=blob_url,
+    )
+
+    async def denied_fetch(*_args, **_kwargs):
+        raise DocumentPolicyDeniedError(
+            DocumentPolicyDecision(
+                allowed=False,
+                reason=DocumentPolicyBlockReason.OFF_SITE,
+                error="raw host outside recursive scope",
+            )
+        )
+
+    async def allow(_url):
+        return DocumentPolicyDecision(allowed=True)
+
+    monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", denied_fetch)
+
+    result = await crawler_module._try_github_source(
+        requested_url=blob_url,
+        fetch_result=fetched_blob,
+        effective_url=blob_url,
+        document_policy=allow,
+    )
+
+    assert result is None
+
+
+@pytest.mark.anyio
+async def test_optional_academic_pdf_policy_denial_keeps_landing_fallback(
+    monkeypatch,
+):
+    from app.services import crawler as crawler_module
+    from app.services.academic import AcademicPaper
+
+    landing_url = "https://papers.example/article/one"
+    pdf_url = "https://cdn.example/article/one.pdf"
+
+    async def denied_fetch(*_args, **_kwargs):
+        raise DocumentPolicyDeniedError(
+            DocumentPolicyDecision(
+                allowed=False,
+                reason=DocumentPolicyBlockReason.OFF_SITE,
+                error="PDF host outside recursive scope",
+            )
+        )
+
+    async def allow(_url):
+        return DocumentPolicyDecision(allowed=True)
+
+    monkeypatch.setattr(
+        crawler_module.academic_module,
+        "academic_pdf_candidates",
+        lambda _html, _url: [pdf_url],
+    )
+    monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", denied_fetch)
+
+    result = await crawler_module._try_academic_pdf_candidates(
+        html="<html><body>landing</body></html>",
+        landing_url=landing_url,
+        landing_paper=AcademicPaper(
+            title="Useful landing record",
+            abstract="A useful abstract remains available after policy denial.",
+        ),
+        loop=asyncio.get_running_loop(),
+        document_policy=allow,
+    )
+
+    assert result is None

@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""Rigorous Clusy Crawler vs Exa vs Firecrawl benchmark.
+"""Small, non-claimable Clusy/Exa/Firecrawl live smoke test.
 
-Unlike benchmark_compare.py (single-run, word-count-as-quality), this harness:
+This legacy harness is useful for catching obvious regressions on eight known
+URLs, but it is not a credible SOTA or vendor-win benchmark.  The URL set is
+hand-picked, the expected phrases are author-written, vendor results are sampled
+once and cached, and the providers are not matched for cache/freshness/region or
+repeated in randomized order.  See ``LIVE_VENDOR_BENCHMARK.md`` for the
+claimable protocol.
+
+Within that limited scope this harness:
   * Runs the local crawler N times per URL and reports p50/p95 latency.
   * Measures competitors ONCE and caches the result (they are the fixed
     reference baseline and cost money per call) — see --refresh-vendors.
@@ -78,8 +85,14 @@ CASES: list[Case] = [
 # ── Quality scoring (deterministic) ─────────────────────────────────
 
 # Heuristic detectors for content that should NOT be in clean markdown.
-_CSS_RULE = re.compile(r"\{[^{}]*(?:color|margin|padding|font|background|width|display|border)\s*:[^{}]*\}")
-_JS_LEAK = re.compile(r"\b(function\s*\(|var\s+\w+\s*=|document\.|window\.|=>\s*\{|addEventListener)\b")
+_CSS_RULE = re.compile(
+    r"\{[^{}]*(?:color|margin|padding|font|background|width|display|border)"
+    r"\s*:[^{}]*\}"
+)
+_JS_LEAK = re.compile(
+    r"\b(function\s*\(|var\s+\w+\s*=|document\.|window\.|=>\s*\{"
+    r"|addEventListener)\b"
+)
 _NAV_BOILERPLATE = re.compile(
     r"\b(skip to (main )?content|cookie|accept all|sign in|sign up|subscribe|"
     r"privacy policy|terms of service|all rights reserved|toggle navigation)\b",
@@ -194,7 +207,13 @@ async def fetch_firecrawl(client: httpx.AsyncClient, case: Case, key: str) -> Sa
         md = (d.get("data") or {}).get("markdown", "") or ""
         return Sample("firecrawl", case.name, case.url, dt, md=md)
     except Exception as e:
-        return Sample("firecrawl", case.name, case.url, (time.monotonic() - t0) * 1000, error=str(e))
+        return Sample(
+            "firecrawl",
+            case.name,
+            case.url,
+            (time.monotonic() - t0) * 1000,
+            error=str(e),
+        )
 
 
 async def fetch_exa(client: httpx.AsyncClient, case: Case, key: str) -> Sample:
@@ -272,9 +291,19 @@ def p(values: list[float], pct: float) -> float:
 
 def report(label: str, crawler: dict[str, list[Sample]], vendors: dict, runs: int) -> None:
     print("\n" + "=" * 100)
-    print(f"BENCHMARK [{label}]  —  crawler runs={runs}, quality = 0.4·coverage + 0.3·structure + 0.3·(1-noise)")
+    print(
+        "NON-CLAIMABLE LIVE SMOKE TEST — eight hand-picked URLs; "
+        "do not use for SOTA/vendor claims"
+    )
+    print(
+        f"RUN [{label}]  —  crawler runs={runs}, "
+        "quality = 0.4·coverage + 0.3·structure + 0.3·(1-noise)"
+    )
     print("=" * 100)
-    hdr = f"{'Case':<26}{'Vendor':<11}{'p50 ms':>8}{'p95 ms':>8}{'Qual':>6}{'Cov':>6}{'Str':>6}{'Noise':>6}{'Words':>7}"
+    hdr = (
+        f"{'Case':<26}{'Vendor':<11}{'p50 ms':>8}{'p95 ms':>8}"
+        f"{'Qual':>6}{'Cov':>6}{'Str':>6}{'Noise':>6}{'Words':>7}"
+    )
     print(hdr)
     print("-" * 100)
 
@@ -334,6 +363,13 @@ def report(label: str, crawler: dict[str, list[Sample]], vendors: dict, runs: in
     payload = {
         "label": label,
         "runs": runs,
+        "claimable": False,
+        "limitations": [
+            "eight hand-picked URLs",
+            "author-written expected phrases and heuristic quality score",
+            "vendor results sampled once and cached",
+            "cache, freshness, region, and provider call order are not matched",
+        ],
         "crawler": {k: [asdict(s) for s in v] for k, v in crawler.items()},
         "aggregate": {
             "crawler": {"p50_ms": statistics.mean(crawler_lat) if crawler_lat else 0,

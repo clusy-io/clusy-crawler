@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ExtractionMetadata(BaseModel):
@@ -15,6 +15,26 @@ class ExtractionMetadata(BaseModel):
     word_count: int = 0
     rendered: bool = False
     extraction_strategy: str = ""
+    authors: list[str] = Field(default_factory=list)
+    doi: str = ""
+    pmid: str = ""
+    pmcid: str = ""
+    arxiv_id: str = ""
+    journal: str = ""
+    published_at: str = ""
+    canonical_url: str = ""
+    license: str = ""
+    content_scope: Literal[
+        "main_content",
+        "source",
+        "full_text",
+        "landing",
+        "metadata_only",
+    ] = "main_content"
+    truncated: bool = False
+    truncation_reason: str = ""
+    origin_status_code: int = 0
+    origin_error: str = ""
 
 
 class CrawlResult(BaseModel):
@@ -30,7 +50,7 @@ class CrawlResult(BaseModel):
 
 class CrawlResponse(BaseModel):
     status: str = "ok"
-    results: list[CrawlResult] = []
+    results: list[CrawlResult] = Field(default_factory=list)
     total_time_ms: float = 0
     total_pages: int = 0
 
@@ -50,7 +70,7 @@ class HTMLResponse(BaseModel):
 class MapResponse(BaseModel):
     status: str = "ok"
     url: str = ""
-    links: list[str] = []
+    links: list[str] = Field(default_factory=list)
     count: int = 0
 
 

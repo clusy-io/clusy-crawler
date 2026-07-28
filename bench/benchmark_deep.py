@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Deep, category-stratified benchmark on the platform's REAL crawl mix.
+"""Category-stratified, non-claimable live vendor smoke test.
 
-The crawler is wired into the agent as `clusy_crawler_scrape` for web research during
-data-science / notebook work, so this corpus reflects what the agent actually
-fetches: library & API docs, ML papers, GitHub repos, Stack Overflow, tutorials,
-Wikipedia reference, data/stats sites, news, and deliberately-hard bot-walled
-pages (to characterize failure modes honestly).
+The crawler is now the primary plain-text path behind the platform's stable
+`web_extract` tool. This hand-picked corpus approximates that workload, but it
+is neither sampled nor blinded and therefore cannot establish a SOTA or vendor
+win. See ``LIVE_VENDOR_BENCHMARK.md`` for the claimable protocol.
 
 Reuses the scoring + vendor adapters from benchmark_sota.py. Adds:
   * per-CATEGORY quality & latency aggregation (where are we strong/weak?)
@@ -160,11 +159,10 @@ def pct(values: list[float], p: float) -> float:
 
 
 def report(crawler: dict, vendors: dict, runs: int) -> None:
-    by_name = {c.name: c for c in CASES}
-
     # Per-URL rows (crawler median across runs vs vendor single run)
     print("\n" + "=" * 104)
-    print(f"DEEP BENCHMARK — {len(CASES)} URLs, crawler runs={runs}")
+    print("NON-CLAIMABLE LIVE SMOKE TEST — hand-picked URLs; not SOTA/vendor evidence")
+    print(f"CATEGORY RUN — {len(CASES)} URLs, crawler runs={runs}")
     print("quality = 0.40·coverage + 0.30·structure + 0.30·(1−noise)")
     print("=" * 104)
     print(f"{'Category':<16}{'Case':<30}{'crawler':>9}{'exa':>7}{'fire':>7}{'c.p50ms':>9}{'words':>7}")
@@ -220,7 +218,10 @@ def report(crawler: dict, vendors: dict, runs: int) -> None:
     print("\n" + "=" * 104)
     print("PER-CATEGORY QUALITY (mean) + crawler latency")
     print("-" * 104)
-    print(f"{'Category':<16}{'n':>3}{'crawler':>9}{'exa':>7}{'fire':>7}{'c.p50':>8}{'c.p95':>8}  winner")
+    print(
+        f"{'Category':<16}{'n':>3}{'crawler':>9}{'exa':>7}"
+        f"{'fire':>7}{'c.p50':>8}{'c.p95':>8}  winner"
+    )
     for cat in sorted(cat_q):
         n = len(cat_q[cat]["crawler"]) or len(next(iter(cat_q[cat].values()), []))
         cm = statistics.mean(cat_q[cat]["crawler"]) if cat_q[cat]["crawler"] else 0
@@ -242,8 +243,10 @@ def report(crawler: dict, vendors: dict, runs: int) -> None:
     cq, cn = overall("crawler")
     eq, en = overall("exa")
     fq, fn = overall("firecrawl")
-    print(f"crawler  : quality {cq:5.1f}  | p50 {pct(all_lat,0.5):.0f}ms p95 {pct(all_lat,0.95):.0f}ms"
-          f"  | success {cn}/{len(CASES)}")
+    print(
+        f"crawler  : quality {cq:5.1f}  | p50 {pct(all_lat,0.5):.0f}ms "
+        f"p95 {pct(all_lat,0.95):.0f}ms  | success {cn}/{len(CASES)}"
+    )
     print(f"exa      : quality {eq:5.1f}  | success {en}/{len(CASES)}")
     print(f"firecrawl: quality {fq:5.1f}  | success {fn}/{len(CASES)}")
     print(f"\nper-URL wins (≤2pt = tie): {wins}")
@@ -253,14 +256,30 @@ def report(crawler: dict, vendors: dict, runs: int) -> None:
             if fl:
                 print(f"  {v}: {', '.join(fl)}")
 
-    (HERE / "result_deep.json").write_text(json.dumps({
-        "runs": runs,
-        "overall": {"crawler": cq, "exa": eq, "firecrawl": fq,
-                    "crawler_p50": pct(all_lat, 0.5), "crawler_p95": pct(all_lat, 0.95)},
-        "wins": wins,
-        "fails": fails,
-        "crawler": {k: [asdict(s) for s in v] for k, v in crawler.items()},
-    }, indent=2))
+    (HERE / "result_deep.json").write_text(
+        json.dumps(
+            {
+                "runs": runs,
+                "claimable": False,
+                "limitations": [
+                    "hand-picked URLs",
+                    "author-written expected phrases and heuristic quality score",
+                    "vendor results sampled once and cached",
+                ],
+                "overall": {
+                    "crawler": cq,
+                    "exa": eq,
+                    "firecrawl": fq,
+                    "crawler_p50": pct(all_lat, 0.5),
+                    "crawler_p95": pct(all_lat, 0.95),
+                },
+                "wins": wins,
+                "fails": fails,
+                "crawler": {k: [asdict(s) for s in v] for k, v in crawler.items()},
+            },
+            indent=2,
+        )
+    )
     print(f"\nSaved → {HERE / 'result_deep.json'}")
 
 
@@ -283,7 +302,10 @@ async def main() -> None:
                     s["quality"] = quality(s.get("md", ""), by_name[name])
     else:
         print("Measuring vendors (Exa + Firecrawl) — costs API credits...")
-        vendors = await measure_vendors(os.getenv("EXA_API_KEY", ""), os.getenv("FIRECRAWL_API_KEY", ""))
+        vendors = await measure_vendors(
+            os.getenv("EXA_API_KEY", ""),
+            os.getenv("FIRECRAWL_API_KEY", ""),
+        )
         VENDOR_CACHE.write_text(json.dumps(vendors, indent=2))
 
     print(f"Measuring local crawler ({args.runs} runs/URL + warmup)...")

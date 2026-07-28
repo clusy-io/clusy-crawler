@@ -66,3 +66,34 @@ class TestHTMLEndpoint:
         data = resp.json()
         assert data["status"] == "ok"
         assert "raw html" in data["html"]
+
+    @pytest.mark.anyio
+    async def test_html_uses_bounded_crawl_path(self, client, monkeypatch):
+        from app.models.responses import CrawlResult, ExtractionMetadata
+
+        captured = {}
+
+        async def mock_crawl_urls(**kwargs):
+            captured.update(kwargs)
+            return [
+                CrawlResult(
+                    url=kwargs["urls"][0],
+                    html="<html><body>bounded</body></html>",
+                    metadata=ExtractionMetadata(title="Bounded"),
+                )
+            ]
+
+        monkeypatch.setattr("app.routers.extract.crawl_urls", mock_crawl_urls)
+
+        resp = await client.post(
+            "/html",
+            json={"url": "https://example.com", "js_render": True},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["html"] == "<html><body>bounded</body></html>"
+        assert captured == {
+            "urls": ["https://example.com"],
+            "js_render": True,
+            "formats": ["html"],
+        }
