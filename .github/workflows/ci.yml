@@ -13,7 +13,7 @@ concurrency:
 jobs:
   lint-type-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -25,8 +25,15 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      - name: Set up Rust
+        run: >-
+          rustup toolchain install 1.85
+          --profile minimal
+          --component rustfmt
+          --component clippy
+
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --locked --extra dev
 
       - name: Ruff (lint)
         run: uv run ruff check .
@@ -34,8 +41,97 @@ jobs:
       - name: Mypy (types)
         run: uv run mypy app
 
+      - name: Rust format
+        run: cargo +1.85 fmt --manifest-path native/Cargo.toml --check
+
+      - name: Rust clippy
+        run: cargo +1.85 clippy --manifest-path native/Cargo.toml --locked --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo +1.85 test --manifest-path native/Cargo.toml --locked
+
       - name: Install Playwright Chromium
         run: uv run playwright install --with-deps chromium
 
       - name: Pytest
         run: uv run pytest -q
+
+  container-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build deterministic runtime image
+        run: >-
+          docker build
+          --build-arg GIT_SHA="${GITHUB_SHA}"
+          --target runtime
+          --tag clusy-crawler:ci
+          .
+
+      - name: Verify image identity and non-root runtime
+        run: |
+          test "$(docker image inspect clusy-crawler:ci --format '{{.Config.User}}')" = "crawler"
+          docker image inspect clusy-crawler:ci --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep -Fx "GIT_SHA=${GITHUB_SHA}"
+          test "$(docker image inspect clusy-crawler:ci --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${GITHUB_SHA}"
+          for notice in LICENSE NOTICE THIRD_PARTY_LICENSES.md; do
+            docker run --rm --entrypoint test clusy-crawler:ci -r "/licenses/${notice}"
+          done
+
+      - name: Runtime, auth, SSRF, static, and sandboxed JS smoke
+        run: |
+          docker run --detach --name clusy-crawler-ci \
+            --publish 127.0.0.1:11235:11235 \
+            --user 10001:10001 --init --read-only --shm-size=1g \
+            --tmpfs /tmp:size=512m,mode=1777 \
+            --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
+            --security-opt "seccomp=${PWD}/seccomp_profile.json" \
+            --pids-limit=256 --memory=4g --cpus=2 \
+            --env ENVIRONMENT=prod \
+            --env GIT_SHA="${GITHUB_SHA}" \
+            --env CRAWL4AI_API_TOKEN=ci-smoke-token \
+            clusy-crawler:ci
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11235/health/ready > /tmp/ready.json; then
+              break
+            fi
+            if [ "${attempt}" = 60 ]; then
+              docker logs clusy-crawler-ci
+              exit 1
+            fi
+            sleep 1
+          done
+          jq -e '.status == "ready" and .checks.playwright == "ok"' /tmp/ready.json
+
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header 'content-type: application/json' \
+            --data '{"urls":["https://example.com"]}' \
+            http://127.0.0.1:11235/crawl)" = "401"
+
+          curl --fail --silent \
+            --header 'authorization: Bearer ci-smoke-token' \
+            --header 'content-type: application/json' \
+            --data '{"urls":["http://169.254.169.254/latest/meta-data/"]}' \
+            http://127.0.0.1:11235/crawl \
+            | jq -e '.status == "ok" and (.results[0].error | length > 0)'
+
+          curl --fail --silent \
+            --header 'authorization: Bearer ci-smoke-token' \
+            --header 'content-type: application/json' \
+            --data '{"urls":["https://example.com"],"js_render":false}' \
+            http://127.0.0.1:11235/crawl \
+            | jq -e '.status == "ok" and .results[0].error == null and (.results[0].markdown | length > 0)'
+
+          curl --fail --silent \
+            --header 'authorization: Bearer ci-smoke-token' \
+            --header 'content-type: application/json' \
+            --data '{"urls":["https://example.com"],"js_render":true}' \
+            http://127.0.0.1:11235/crawl \
+            | jq -e '.status == "ok" and .results[0].error == null and .results[0].metadata.rendered == true'
+
+      - name: Stop smoke container
+        if: always()
+        run: docker rm --force clusy-crawler-ci 2>/dev/null || true

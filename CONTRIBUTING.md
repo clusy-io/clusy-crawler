@@ -5,12 +5,13 @@ are welcome — bug reports, docs, tests, and code.
 
 ## Development setup
 
-Requires Python 3.12+ and [uv](https://github.com/astral-sh/uv).
+Requires Python 3.12+, Rust 1.85+, and
+[uv](https://github.com/astral-sh/uv).
 
 ```bash
 git clone https://github.com/clusy-io/clusy-crawler
 cd clusy-crawler
-uv sync --extra dev
+uv sync --locked --extra dev
 uv run playwright install chromium   # for JS-rendering tests
 
 # Run the service
@@ -25,6 +26,10 @@ Everything CI checks, run locally:
 uv run ruff check .        # lint (must be clean)
 uv run mypy app            # types (strict; must be clean)
 uv run pytest -q           # tests (must pass)
+cargo fmt --manifest-path native/Cargo.toml --check
+cargo clippy --manifest-path native/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path native/Cargo.toml --locked
+docker build --build-arg GIT_SHA="$(git rev-parse HEAD)" --target runtime .
 ```
 
 New behavior needs tests. Bug fixes should include a regression test.
@@ -36,13 +41,16 @@ neutral benchmark so we don't regress article-body quality:
 
 ```bash
 git clone https://github.com/scrapinghub/article-extraction-benchmark /tmp/aeb
-uv run python bench/neutral_benchmark.py /tmp/aeb
-cd /tmp/aeb && python evaluate.py     # our row is `clusy_crawler`
+git -C /tmp/aeb checkout --detach 4a3bc979f76c0df73cb95fe272e2fc1b96f9f010
+uv run python bench/neutral_benchmark.py /tmp/aeb \
+  --mode async --extraction-profile article_body
 ```
 
 See [`bench/NEUTRAL_BENCHMARK.md`](bench/NEUTRAL_BENCHMARK.md). Report the F1
-before/after in your PR. Beware of overfitting to the 181-page corpus — validate
-that gains hold on the held-out `test` half and don't regress other page types.
+before/after in your PR. Beware of overfitting to the 181-page public corpus:
+develop against the deterministic development half, inspect the public test
+half only as a final regression check, and use the broader WCXB, Webis, and
+WebMainBench harnesses for changes that affect general main-content extraction.
 
 ## Guidelines
 

@@ -1,7 +1,6 @@
 .env
-.env.local
-.env.prod
-.env.*.local
+.env.*
+!.env.example
 .DS_Store
 *.log
 .idea/
@@ -11,11 +10,16 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+# Local virtual environments
 .venv-prof/
 .venv/
 .mypy_cache/
+target/
+native/target/
+native/python/clusy_native/*.so
 
 # Benchmark run outputs — large (~12 MB) and embed third-party page text.
 # Kept out of the repo; regenerate with `python bench/benchmark_*.py`.
 bench/result_*.json
 bench/vendor_baseline*.json
+bench/artifacts/

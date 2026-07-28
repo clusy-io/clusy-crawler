@@ -31,14 +31,16 @@ The service ships with defenses on by default:
 - **Scheme allow-list**: only `http`/`https`.
 - **Response size cap** on the decompressed body (defends against
   decompression bombs).
-- The Playwright renderer runs **with the same-origin policy enabled** and a
-  request guard that aborts sub-resource loads to non-public IP literals.
+- The Playwright renderer runs **with Chromium's sandbox and same-origin policy
+  enabled**, creates and destroys a fresh browser context for every render,
+  blocks service workers and WebSockets, and validates document and subresource
+  destinations before allowing a request.
 
 Operators should still:
 
-1. **Set `CRAWL4AI_API_TOKEN`** so the endpoints require a bearer token. With no
-   token set, every endpoint except `/health` is unauthenticated — only
-   acceptable on a trusted private network.
+1. **Set `CRAWL4AI_API_TOKEN`** so crawl/extraction endpoints require a bearer
+   token. Health diagnostics and OpenAPI discovery remain public; with no token,
+   the data endpoints are unauthenticated and safe only on a trusted network.
 2. **Do not expose the service directly to the public internet** without an
    auth token and, ideally, network egress restrictions.
 3. **Leave `CORS_ALLOW_ORIGINS` empty** unless a specific browser origin needs
@@ -46,6 +48,27 @@ Operators should still:
 4. Run it with **least-privilege egress** — the SSRF guard blocks the common
    cases, but network-level egress policy is defense in depth against novel
    DNS-rebinding or IPv6 edge cases.
+5. Keep the container **non-root** and use the checked-in
+   `seccomp_profile.json`. The profile is Docker's default policy plus the
+   user-namespace syscalls required for Chromium's sandbox. When Playwright is
+   enabled, do not add `no-new-privileges` or drop every Linux capability:
+   either setting disables Chromium's version-matched SUID sandbox fallback on
+   hosts that restrict unprivileged user namespaces. Do not set
+   `PLAYWRIGHT_DISABLE_SANDBOX=true` for ordinary crawling.
+
+Application checks are not a complete network sandbox. Chromium request
+destinations are resolved and filtered before they are allowed, but DNS can
+change between that check and the browser's connection. The renderer also caps
+the final DOM/HTML rather than the aggregate bytes of every script or XHR.
+Production deployments should enforce an egress policy that denies private,
+loopback, link-local, and cloud-metadata ranges and should bound container
+network usage.
+
+Native HTML extraction and PDFium parsing run in bounded worker threads.
+Cancellation and request deadlines return control without allowing unbounded
+new workers, but Python cannot forcibly terminate a native call that never
+returns. Deploy multiple worker processes with health-based recycling if
+hard-kill isolation for hostile HTML/PDF inputs is required.
 
 ## Out of scope
 
@@ -53,6 +76,9 @@ Operators should still:
   impersonation; sites behind Cloudflare/DataDome may block it. That's expected.
 - Denial of service from a caller you have *already* authenticated — apply your
   own rate limiting / quotas at the edge.
+- Cross-replica rate limiting, persistent crawl queues, and restart recovery.
+  Recursive requests enforce robots policy, but the frontier and limiter remain
+  process-local.
 
 ## Supported versions
 

@@ -22,10 +22,15 @@ async def crawl(req: CrawlRequest) -> CrawlResponse:
         js_render=req.js_render,
         wait_for_selector=req.wait_for_selector,
         word_count_threshold=req.word_count_threshold,
-        formats=req.formats,
+        extraction_profile=req.extraction_profile,
+        formats=[str(output_format) for output_format in req.formats],
         max_age=req.max_age,
         json_schema=req.json_schema,
         extraction_prompt=req.extraction_prompt,
+        max_depth=req.max_depth,
+        allow_subdomains=req.allow_subdomains,
+        max_pages=req.max_pages,
+        priority=req.priority,
     )
     elapsed_ms = (time.monotonic() - start) * 1000
 
@@ -33,5 +38,5 @@ async def crawl(req: CrawlRequest) -> CrawlResponse:
         status="ok",
         results=results,
         total_time_ms=round(elapsed_ms, 1),
-        total_pages=len(req.urls),
+        total_pages=len(results) if req.max_depth > 0 else len(req.urls),
     )

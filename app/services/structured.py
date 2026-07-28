@@ -16,6 +16,7 @@ extraction; set it to ``claude-opus-4-8`` for maximum extraction quality.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -27,6 +28,17 @@ logger = structlog.get_logger()
 
 _client: Any = None
 _client_init = False
+_semaphore: asyncio.Semaphore | None = None
+_semaphore_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _semaphore, _semaphore_loop
+    loop = asyncio.get_running_loop()
+    if _semaphore is None or _semaphore_loop is not loop:
+        _semaphore = asyncio.Semaphore(settings.structured_extraction_max_concurrency)
+        _semaphore_loop = loop
+    return _semaphore
 
 
 def _get_client() -> Any:
@@ -40,9 +52,13 @@ def _get_client() -> Any:
     try:
         from anthropic import AsyncAnthropic
 
-        _client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        _client = AsyncAnthropic(
+            api_key=settings.anthropic_api_key,
+            max_retries=1,
+            timeout=settings.structured_extraction_timeout_s,
+        )
     except Exception as e:  # pragma: no cover - import/usage guard
-        logger.warning("anthropic_unavailable", error=str(e))
+        logger.warning("anthropic_unavailable", error_type=type(e).__name__)
         _client = None
     return _client
 
@@ -93,13 +109,21 @@ async def extract_structured(
     if json_schema:
         kwargs["output_config"] = {
             "format": {"type": "json_schema", "schema": _ensure_strict(json_schema)}
-        }
+    }
 
     try:
-        resp = await client.messages.create(**kwargs)
+        async with asyncio.timeout(settings.structured_extraction_timeout_s):
+            async with _get_semaphore():
+                resp = await client.messages.create(**kwargs)
+    except TimeoutError:
+        logger.warning("structured_extraction_timeout")
+        return {"error": "structured extraction timed out"}
     except Exception as e:
-        logger.warning("structured_extraction_failed", error=str(e))
-        return {"error": f"extraction failed: {e}"}
+        logger.warning(
+            "structured_extraction_failed",
+            error_type=type(e).__name__,
+        )
+        return {"error": "structured extraction failed"}
 
     text = ""
     for block in getattr(resp, "content", []) or []:
@@ -113,3 +137,14 @@ async def extract_structured(
         except json.JSONDecodeError:
             return {"error": "model did not return valid JSON", "raw": text[:2000]}
     return {"result": text}
+
+
+async def close_structured_client() -> None:
+    """Close the optional process-global SDK client during graceful shutdown."""
+    global _client, _client_init
+    client = _client
+    _client = None
+    _client_init = False
+    close = getattr(client, "close", None)
+    if callable(close):
+        await close()
