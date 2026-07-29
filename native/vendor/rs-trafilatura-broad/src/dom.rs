@@ -290,7 +290,7 @@ pub fn strip_tags(sel: &Selection, tags: &[&str]) {
 ///
 /// Go equivalent: `dom.Clone(n, true)`
 pub fn clone_document(doc: &Document) -> Document {
-    Document::from(doc.html().to_string())
+    doc.clone()
 }
 
 /// Append HTML content
@@ -775,16 +775,53 @@ mod tests {
 
     #[test]
     fn test_clone_document() {
-        let doc = parse(r#"<div id="original">content</div>"#);
+        let doc = parse(
+            r#"<div id="original"><span id="child">content</span><b id="remove">bold</b></div>"#,
+        );
         let cloned = clone_document(&doc);
 
         // Both should have the same content
-        assert_eq!(doc.select("#original").text(), cloned.select("#original").text());
+        assert_eq!(doc.html(), cloned.html());
+        assert_eq!(
+            doc.select("#original").text(),
+            cloned.select("#original").text()
+        );
 
-        // Modifying clone shouldn't affect original
+        // Attribute, text, topology, and appended-node mutations are isolated.
         cloned.select("#original").set_attr("id", "cloned");
+        set_inner_html(&cloned.select("#child"), "changed");
+        remove(&cloned.select("#remove"));
+        append_html(&cloned.select("#cloned"), "<em id=\"appended\">new</em>");
+
         assert_eq!(doc.select("#original").attr("id"), Some("original".into()));
         assert_eq!(cloned.select("#cloned").attr("id"), Some("cloned".into()));
+        assert_eq!(doc.select("#child").text().as_ref(), "content");
+        assert_eq!(cloned.select("#child").text().as_ref(), "changed");
+        assert!(doc.select("#remove").exists());
+        assert!(cloned.select("#remove").is_empty());
+        assert!(doc.select("#appended").is_empty());
+        assert!(cloned.select("#appended").exists());
+
+        // Mutating the original after cloning is isolated in the other direction.
+        doc.select("#child").set_attr("data-origin", "original");
+        assert_eq!(
+            cloned.select("#child").attr("data-origin"),
+            None,
+            "clone must not share mutable node storage with the original"
+        );
+    }
+
+    #[test]
+    fn test_clone_document_preserves_plaintext_parser_state() {
+        let doc = parse("<form><plaintext>fallback body");
+        let cloned = clone_document(&doc);
+
+        assert_eq!(cloned.html(), doc.html());
+        assert_eq!(cloned.text().as_ref(), "fallback body");
+        assert!(
+            !cloned.text().contains("</plaintext>"),
+            "cloning must not reparse serializer-inserted closing tags as plaintext"
+        );
     }
 }
 

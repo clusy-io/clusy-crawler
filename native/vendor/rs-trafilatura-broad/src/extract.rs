@@ -3841,6 +3841,26 @@ mod tests {
     }
 
     #[test]
+    fn extract_plaintext_form_fallback_does_not_emit_serializer_closing_tags() {
+        let html = concat!(
+            "<html><body><form><plaintext>",
+            "Fallback content remains source text even when the form is removed by cleaning."
+        );
+        let options = Options {
+            min_extracted_len: 1,
+            min_output_size: 1,
+            ..Options::default()
+        };
+
+        let result = extract_content(html, &options).expect("plaintext fallback should extract");
+        assert!(result.content_text.contains("Fallback content remains source text"));
+        assert!(!result.content_text.contains("</plaintext>"));
+        assert!(!result.content_text.contains("</form>"));
+        assert!(!result.content_text.contains("</body>"));
+        assert!(!result.content_text.contains("</html>"));
+    }
+
+    #[test]
     fn extract_handles_malformed_html_broken_attributes() {
         let html = "<div class=\"test id=broken>";
         let result = extract_content(html, &Options::default());
