@@ -16,6 +16,7 @@ from app.services.document_policy import (
     enforce_document_policy,
 )
 from app.services.github import GitHubPageKind, classify_github_url
+from app.services.rendering.contract import RenderResult
 
 if TYPE_CHECKING:
     from typing import Any
@@ -478,36 +479,6 @@ class OptimizedRenderer:
                     error_type=type(exc).__name__,
                 )
         logger.info("playwright_stopped")
-
-
-class RenderResult:
-    __slots__ = (
-        "html",
-        "title",
-        "rendered",
-        "latency_ms",
-        "status_code",
-        "content_type",
-        "final_url",
-    )
-
-    def __init__(
-        self,
-        html: str = "",
-        title: str = "",
-        rendered: bool = False,
-        latency_ms: float = 0.0,
-        status_code: int = 0,
-        content_type: str = "",
-        final_url: str = "",
-    ) -> None:
-        self.html = html
-        self.title = title
-        self.rendered = rendered
-        self.latency_ms = latency_ms
-        self.status_code = status_code
-        self.content_type = content_type
-        self.final_url = final_url
 
 
 _renderer: OptimizedRenderer | None = None

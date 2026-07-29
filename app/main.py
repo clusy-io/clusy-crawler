@@ -22,7 +22,12 @@ from app.routers import crawl, extract, health
 from app.routers import map as map_router
 from app.services.crawler import shutdown_crawler, start_crawler
 from app.services.quality_extractor import close_quality_extractor
-from app.services.renderer import start_renderer, stop_renderer
+from app.services.rendering.manager import (
+    start_render_manager as start_renderer,
+)
+from app.services.rendering.manager import (
+    stop_render_manager as stop_renderer,
+)
 from app.services.robots import close_robots_policy
 from app.services.structured import close_structured_client
 

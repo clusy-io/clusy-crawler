@@ -20,7 +20,7 @@ from app.services.extractor import (
     native_backend_version,
 )
 from app.services.quality_extractor import quality_dependency_available
-from app.services.renderer import renderer_is_ready
+from app.services.rendering.manager import render_manager_is_ready as renderer_is_ready
 
 router = APIRouter(tags=["health"])
 _LOCAL_FINGERPRINT_HMAC_KEY = secrets.token_bytes(32)

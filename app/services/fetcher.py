@@ -459,13 +459,13 @@ async def _try_direct_render(
     HTML, allowing the caller to fall back to the bounded static fetch path.
     """
     try:
-        from app.services.renderer import get_renderer
+        from app.services.rendering.manager import get_render_manager
 
         if document_policy is None:
-            rendered = await get_renderer().render(url, wait_for_selector)
+            rendered = await get_render_manager().render(url, wait_for_selector)
         else:
             await enforce_document_policy(document_policy, url)
-            rendered = await get_renderer().render(
+            rendered = await get_render_manager().render(
                 url,
                 wait_for_selector,
                 document_policy=document_policy,
