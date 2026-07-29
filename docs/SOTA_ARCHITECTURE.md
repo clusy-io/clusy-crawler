@@ -86,12 +86,16 @@ Clusy will use a cascaded, uncertainty-routed extraction system:
 2. Route known source families to deterministic specialists.
 3. Run the Rust extractor for the general case.
 4. Estimate extraction risk from label-free document and output signals.
-5. Escalate only risky pages to a compact hierarchical selector: block
-   classification first, then source-offset boundary refinement only where a
-   block mixes main and auxiliary text.
-6. Verify the model output and fall back to the deterministic result on errors
-   or implausible output.
-7. Return completeness, provenance, cache, render, and routing metadata so the
+5. Escalate only risky pages to a compact dual-head source-pointer selector:
+   query-free main-content labels or query-conditioned relevant-content
+   intervals, followed by source-offset refinement only where a block mixes
+   target and auxiliary text.
+6. Decode those scores with an exact, resource-bounded interval/lattice
+   optimizer and reconstruct through typed source-backed serializers; the
+   model never emits page text.
+7. Verify the selection and fall back to the deterministic result on errors,
+   resource-limit rejection, or implausible output.
+8. Return completeness, provenance, cache, render, and routing metadata so the
    caller can make a safe fallback decision.
 
 This preserves the current fast path while adding model capacity where
@@ -122,10 +126,14 @@ document graph / ordered block IR
         |                 |
       low risk          high risk
         |                 |
-        |          compact hierarchical selector
-        |          (blocks -> boundary spans)
+        |          dual-head source-pointer selector
+        |          (main/query blocks -> boundary spans)
         |                 |
-        +------ verifier / safe fallback
+        +------ exact bounded decoder
+                         |
+                  typed serializer
+                         |
+                  verifier / safe fallback
                          |
                          v
             Markdown + content contract + telemetry
@@ -264,6 +272,28 @@ reproduction or a full-corpus leaderboard comparison. The released Pulpie
 weights are also CC BY-NC 4.0, so they are a useful architectural reference but
 cannot be the project's commercially usable default.
 
+IndexLM supplies complementary evidence for predicting addresses instead of
+regenerating content. Its authors report that a Qwen3-based interval predictor
+emits about 25 tokens for main-content extraction versus 2,308 for ReaderLM-v2
+and runs up to 10x faster than generative approaches on an A800. Clusy should
+adopt the compact interval objective for both main-content and query-relevant
+extraction, but not IndexLM's reconstruction policy: it heuristically restores
+parent/child structure and appends text recovered from JavaScript at the end of
+the document. Clusy's pointers must resolve to the ordered source graph, and
+typed serializers must preserve original position or reject the selection.
+These are author-reported results from a different corpus and hardware, not a
+Clusy benchmark comparison.
+
+The newly released news-crawler-LM study narrows where generation can still be
+useful. It trains on roughly 100,000 Fundus-derived examples from 93 publishers
+and 25 languages with publisher-separated splits, but reports only 53.33%
+valid JSON for its principal model and explicitly notes that Fundus-derived
+references can favor the learned policy. This supports an optional
+publisher/news metadata specialist, not a generative main-content path. Any
+such specialist must use grammar-constrained decoding, attach every returned
+field to source spans, and discard the whole generated object when syntax,
+grounding, or field-policy checks fail.
+
 Recent controlled pretraining work also finds that different deterministic
 extractors retain complementary pages and structures: a union increased usable
 token yield by up to 71%, while table and code handling materially changed
@@ -279,6 +309,8 @@ Primary references:
 - [WCXB paper](https://arxiv.org/abs/2605.21097)
 - [Beyond a Single Extractor](https://arxiv.org/abs/2602.19548)
 - [Pulpie Orange Small model card](https://huggingface.co/feyninc/pulpie-orange-small)
+- [Index-based web content extraction](https://arxiv.org/abs/2512.06641)
+- [news-crawler-LM](https://arxiv.org/abs/2607.21284)
 - [mmBERT model card](https://huggingface.co/jhu-clsp/mmBERT-base)
 - [mmBERT paper](https://arxiv.org/abs/2509.06888)
 - [Qwen3.5-0.8B-Base model card](https://huggingface.co/Qwen/Qwen3.5-0.8B-Base)
@@ -521,6 +553,42 @@ uncertain boundary blocks and returns BIO labels or start/end offsets over
 source-backed text runs. Neither stage returns free-form page text. This keeps
 tokens, hallucination surface, latency, and reconstruction error bounded while
 allowing precise mixed-block boundaries.
+
+The target execution shape is a **dual-source-pointer cascade**:
+
+1. A shared multilingual encoder produces one representation per stable block
+   ID. A query-free head scores main content; a separately versioned
+   query-conditioned pointer head scores relevance when the caller supplies a
+   retrieval question. The ordinary crawl path never pays for query encoding.
+2. Boundary refinement is sparse. Only blocks whose keep/drop margin or
+   deterministic/model disagreement crosses a calibrated threshold enter a
+   text-run head; all other output remains block-addressed.
+3. An exact decoder selects ordered source intervals under typed structure,
+   fragmentation, minimum-content, and output-budget constraints. Its objective
+   and tie breaks are deterministic. Page, candidate, edge, numeric magnitude,
+   and arithmetic-work caps are checked before allocation or coercion; exceeding
+   any cap rejects the semantic route rather than approximating silently.
+4. The decoder emits a selection certificate containing source/model/config
+   digests, selected IDs and spans, objective components, applied limits, and
+   verifier outcome. The same certificate is sufficient to replay
+   reconstruction without model access.
+5. The native serializer resolves the certificate against the immutable source
+   graph. It preserves DOM order and typed tables, lists, code, math, and
+   figures; it neither heuristically reparents fragments nor appends recovered
+   payloads out of position.
+
+This unifies three products without three extractors: `balanced` remains the
+deterministic fast lane, `quality` invokes the query-free semantic head, and a
+future `relevant` mode invokes the query-conditioned head over the same source
+IDs. Cache identity for the latter includes a canonical query digest. Shared
+IR, decoder, serializer, verification, and telemetry prevent the query path
+from acquiring a second grounding or formatting contract.
+
+The exact interval/lattice decoder is a target component under adversarial
+resource and correctness audit; its current reference implementation is not a
+production route. Promotion requires exhaustive equivalence to brute force on
+bounded instances, stable tie behavior, fail-closed hostile-number tests,
+resource-scaling evidence, and a comparison against frozen non-oracle baselines.
 
 An OpenAI-compatible frontier model endpoint could be evaluated as a separately
 licensed fallback or teacher, but it is not the desired per-page production
