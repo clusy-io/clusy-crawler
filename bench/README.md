@@ -54,11 +54,13 @@ Cloud hardware makes a run easier to isolate; it does not make absolute rates
 portable across machines. Only protocol-matched comparisons receive a
 performance interpretation.
 
-## Checked-in result bundles
+## Local result bundles
 
-Source-bound AEB and WCXB artifacts are under [`results`](results). Large raw
-Webis and WebMainBench result bundles are not included; their harnesses and
-reproduction protocols remain available.
+Benchmark runs may write source-bound artifacts under `bench/results/`. That
+directory is intentionally ignored and is not present in a clean checkout.
+Only the immutable evidence records linked below are checked in; larger AEB,
+WCXB, Webis, and WebMainBench raw bundles must be retained separately with
+their hashes and the corresponding reproduction protocol.
 
 ## Immutable implementation evidence
 

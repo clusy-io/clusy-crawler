@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -41,6 +42,23 @@ SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 INLINE_LINK_RE = re.compile(r"!?\[([^\]]*)]\([^)]*\)")
 INLINE_HTML_RE = re.compile(r"<[^>]+>")
 PUNCTUATION_RE = re.compile(r"[^\w\s-]", re.UNICODE)
+
+
+def _tracked_paths() -> frozenset[Path]:
+    completed = subprocess.run(
+        ["git", "ls-files", "--cached", "-z"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    )
+    return frozenset(
+        Path(item)
+        for item in completed.stdout.decode("utf-8").split("\0")
+        if item
+    )
+
+
+TRACKED_PATHS = _tracked_paths()
 
 
 def _is_excluded(path: Path) -> bool:
@@ -138,6 +156,13 @@ def _validate_target(source: Path, target: str) -> str | None:
 
     if not destination.exists():
         return f"missing local target: {target}"
+
+    relative_destination = destination.relative_to(ROOT)
+    if relative_destination not in TRACKED_PATHS and not (
+        destination.is_dir()
+        and any(relative_destination in tracked.parents for tracked in TRACKED_PATHS)
+    ):
+        return f"local target is not tracked: {target}"
 
     if separator and fragment and destination.suffix.lower() == ".md":
         decoded_fragment = unquote(fragment)

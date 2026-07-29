@@ -47,11 +47,11 @@ leaderboard placement. These reference values define the present gap; they do
 not turn a later incremental gain into a SOTA result. See the
 [upstream benchmark card](https://huggingface.co/datasets/opendatalab/WebMainBench).
 
-The current repository checks in the source-bound AEB and WCXB result bundles
-under [`../bench/results`](../bench/results). The larger Webis and
-WebMainBench raw bundles are not checked in; their harnesses and exact
-reproduction contracts are. Do not present the summary rows as locally
-auditable raw artifacts when the corresponding bundle is absent.
+The repository does not check in the generated AEB, WCXB, Webis, or
+WebMainBench raw result bundles. Their harnesses and exact reproduction
+contracts are present; immutable implementation A/B records are checked in
+under `bench/evidence/`. Do not present a summary row as locally auditable raw
+evidence when its corresponding bundle is absent.
 
 The WCXB embedded page classifier publishes no item-level training manifest.
 Its reported training size and page-type distribution create material overlap
