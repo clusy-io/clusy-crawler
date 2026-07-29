@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 [dependencies]
 dom_query = "=0.24.0"
 pyo3 = { version = "=0.27.2", features = ["abi3-py312", "extension-module"] }
-rs-trafilatura-broad = { package = "rs-trafilatura", version = "=0.2.2" }
+rs-trafilatura-broad = { package = "rs-trafilatura", version = "=0.2.2", path = "vendor/rs-trafilatura-broad" }
 # This exact revision is the independently recorded top open-source backend on
 # the Article Extraction Benchmark.  Keep it alongside the newer, multi-type
 # release: the former is precision-tuned for articles while the latter adds

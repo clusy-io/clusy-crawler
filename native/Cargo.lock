@@ -828,8 +828,6 @@ dependencies = [
 [[package]]
 name = "rs-trafilatura"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7349ec610fed6e49c175da51034aca74c02ec3951a7acbbf10eb2ac3ee04e3b"
 dependencies = [
  "chrono",
  "dom_query",

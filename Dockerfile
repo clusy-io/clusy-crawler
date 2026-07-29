@@ -121,6 +121,10 @@ COPY --chown=crawler:crawler \
     native/vendor/rs-trafilatura/LICENSE-MIT \
     /licenses/native-vendor/rs-trafilatura/
 COPY --chown=crawler:crawler \
+    native/vendor/rs-trafilatura-broad/LICENSE-APACHE \
+    native/vendor/rs-trafilatura-broad/LICENSE-MIT \
+    /licenses/native-vendor/rs-trafilatura-broad/
+COPY --chown=crawler:crawler \
     native/vendor/html-cleaning/LICENSE-APACHE \
     native/vendor/html-cleaning/LICENSE-MIT \
     /licenses/native-vendor/html-cleaning/
