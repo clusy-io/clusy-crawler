@@ -20,3 +20,7 @@ rs-trafilatura-broad = { package = "rs-trafilatura", version = "=0.2.2", path = 
 # page classification and richer non-article Markdown.
 rs-trafilatura-article = { package = "rs-trafilatura", path = "vendor/rs-trafilatura" }
 sha2 = "=0.10.9"
+
+[build-dependencies]
+glob = "=0.3.2"
+sha2 = "=0.10.9"

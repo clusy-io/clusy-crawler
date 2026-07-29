@@ -46,6 +46,8 @@ sys.path.insert(0, str(ROOT))
 from bench.source_provenance import (  # noqa: E402
     SourceInventoryError,
     git_visible_vendor_files,
+    native_source_files,
+    verify_loaded_native_source_binding,
 )
 
 WCXB_REPOSITORY = (
@@ -398,8 +400,9 @@ def _source_hashes() -> dict[str, str]:
     paths.update((ROOT / "native" / "python").rglob("*.pyi"))
     try:
         paths.update(git_visible_vendor_files(ROOT))
+        paths.update(native_source_files(ROOT))
     except SourceInventoryError as error:
-        raise BenchmarkError(f"native vendor source inventory failed: {error}") from error
+        raise BenchmarkError(f"native source inventory failed: {error}") from error
     py_typed = ROOT / "native" / "python" / "clusy_native" / "py.typed"
     if py_typed.is_file():
         paths.add(py_typed)
@@ -411,6 +414,10 @@ def _source_hashes() -> dict[str, str]:
 
 
 def _source_provenance() -> dict[str, Any]:
+    try:
+        native_binding = verify_loaded_native_source_binding(ROOT)
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native source binding failed: {error}") from error
     commit_result = _run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=False)
     status_result = _run(["git", "status", "--porcelain"], cwd=ROOT, check=False)
     status = [line for line in status_result.stdout.splitlines() if line]
@@ -420,6 +427,7 @@ def _source_provenance() -> dict[str, Any]:
         "git_dirty": bool(status),
         "git_status": status,
         "source_sha256": _source_hashes(),
+        "native_source_binding": native_binding,
     }
 
 

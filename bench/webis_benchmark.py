@@ -44,6 +44,8 @@ sys.path.insert(0, str(ROOT))
 from bench.source_provenance import (  # noqa: E402
     SourceInventoryError,
     git_visible_vendor_files,
+    native_source_files,
+    verify_loaded_native_source_binding,
 )
 
 OFFICIAL_REPOSITORY = "https://github.com/chatnoir-eu/web-content-extraction-benchmark"
@@ -984,8 +986,9 @@ def _source_paths() -> list[Path]:
             paths.update(path for path in base.rglob(pattern) if path.is_file())
     try:
         paths.update(git_visible_vendor_files(ROOT))
+        paths.update(native_source_files(ROOT))
     except SourceInventoryError as error:
-        raise BenchmarkError(f"native vendor source inventory failed: {error}") from error
+        raise BenchmarkError(f"native source inventory failed: {error}") from error
     return sorted(path for path in paths if path.is_file())
 
 
@@ -994,6 +997,10 @@ def _source_hashes() -> dict[str, str]:
 
 
 def _source_provenance() -> dict[str, Any]:
+    try:
+        native_binding = verify_loaded_native_source_binding(ROOT)
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native source binding failed: {error}") from error
     head = _git(ROOT, "rev-parse", "HEAD")
     status = _git(ROOT, "status", "--porcelain=v1")
     return {
@@ -1003,6 +1010,7 @@ def _source_provenance() -> dict[str, Any]:
         "git_status_porcelain": status.splitlines(),
         "worktree_clean": not bool(status),
         "files": _source_hashes(),
+        "native_source_binding": native_binding,
     }
 
 

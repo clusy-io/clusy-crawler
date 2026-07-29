@@ -46,6 +46,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from bench.source_provenance import (  # noqa: E402
     SourceInventoryError,
     git_visible_vendor_files,
+    native_source_files,
+    verify_loaded_native_source_binding,
 )
 
 AEB_REPOSITORY = "https://github.com/scrapinghub/article-extraction-benchmark.git"
@@ -520,8 +522,9 @@ def _source_hashes() -> dict[str, str]:
     paths.update((PROJECT_ROOT / "native" / "python").rglob("*.pyi"))
     try:
         paths.update(git_visible_vendor_files(PROJECT_ROOT))
+        paths.update(native_source_files(PROJECT_ROOT))
     except SourceInventoryError as error:
-        raise BenchmarkError(f"native vendor source inventory failed: {error}") from error
+        raise BenchmarkError(f"native source inventory failed: {error}") from error
     py_typed = PROJECT_ROOT / "native" / "python" / "clusy_native" / "py.typed"
     if py_typed.is_file():
         paths.add(py_typed)
@@ -533,6 +536,10 @@ def _source_hashes() -> dict[str, str]:
 
 
 def _source_provenance() -> dict[str, Any]:
+    try:
+        native_binding = verify_loaded_native_source_binding(PROJECT_ROOT)
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native source binding failed: {error}") from error
     commit_result = _run(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, check=False)
     commit = commit_result.stdout.strip() or None
     status_result = _run(
@@ -547,6 +554,7 @@ def _source_provenance() -> dict[str, Any]:
         "git_dirty": bool(status),
         "git_status": status,
         "source_sha256": _source_hashes(),
+        "native_source_binding": native_binding,
     }
 
 

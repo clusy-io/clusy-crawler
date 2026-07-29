@@ -52,6 +52,8 @@ from bench.source_provenance import (  # noqa: E402
     SourceInventoryError,
     git_visible_vendor_files,
     git_visible_vendor_runtime_text_files,
+    native_source_files,
+    verify_loaded_native_source_binding,
 )
 
 DATASET_REPOSITORY = "https://huggingface.co/datasets/opendatalab/WebMainBench"
@@ -592,8 +594,9 @@ def _source_paths() -> list[Path]:
             paths.update(path for path in base.rglob(pattern) if path.is_file())
     try:
         paths.update(git_visible_vendor_files(ROOT))
+        paths.update(native_source_files(ROOT))
     except SourceInventoryError as error:
-        raise BenchmarkError(f"native vendor source inventory failed: {error}") from error
+        raise BenchmarkError(f"native source inventory failed: {error}") from error
     return sorted(paths)
 
 
@@ -602,6 +605,10 @@ def _source_hashes() -> dict[str, str]:
 
 
 def source_provenance() -> dict[str, Any]:
+    try:
+        native_binding = verify_loaded_native_source_binding(ROOT)
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native source binding failed: {error}") from error
     commit_result = _run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=False)
     status_result = _run(
         ["git", "status", "--porcelain"],
@@ -620,6 +627,7 @@ def source_provenance() -> dict[str, Any]:
         "lock_sha256": {
             relative: hashes.get(relative) for relative in ("uv.lock", "native/Cargo.lock")
         },
+        "native_source_binding": native_binding,
         "native_source_sha256": {
             relative: digest
             for relative, digest in hashes.items()

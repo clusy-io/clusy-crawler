@@ -40,6 +40,13 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from bench.source_provenance import (  # noqa: E402
+    SourceInventoryError,
+    git_visible_vendor_files,
+    native_source_files,
+    verify_loaded_native_source_binding,
+)
+
 DATASET_REPOSITORY = "https://huggingface.co/datasets/opendatalab/WebMainBench"
 DATASET_REVISION = "5da0972e9b58d0c7891ae75053ced97c268f52e3"
 DATASET_FILENAME = "WebMainBench_545.jsonl"
@@ -114,6 +121,7 @@ BREAKDOWN_FIELDS = ("language", "style", "level", "table", "code", "equation")
 SOURCE_FIXED_FILES = (
     "bench/webmainbench_finegrained_benchmark.py",
     "bench/WEBMAINBENCH_FINEGRAINED_BENCHMARK.md",
+    "bench/source_provenance.py",
     "app/config.py",
     "app/services/extractor.py",
     "pyproject.toml",
@@ -403,10 +411,19 @@ def _source_paths() -> list[Path]:
         base = ROOT / base_relative
         if base.is_dir():
             paths.update(path for path in base.rglob(pattern) if path.is_file())
+    try:
+        paths.update(git_visible_vendor_files(ROOT))
+        paths.update(native_source_files(ROOT))
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native source inventory failed: {error}") from error
     return sorted(paths)
 
 
 def source_provenance() -> dict[str, Any]:
+    try:
+        native_binding = verify_loaded_native_source_binding(ROOT)
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native source binding failed: {error}") from error
     commit = _run(["git", "rev-parse", "HEAD"], cwd=ROOT)
     status = _run(["git", "status", "--porcelain"], cwd=ROOT)
     hashes = {path.relative_to(ROOT).as_posix(): _sha256(path) for path in _source_paths()}
@@ -416,6 +433,7 @@ def source_provenance() -> dict[str, Any]:
         "git_dirty": bool(status_lines) or status.returncode != 0,
         "git_status": status_lines,
         "file_sha256": hashes,
+        "native_source_binding": native_binding,
         "source_digest": _hash_json(hashes),
     }
 

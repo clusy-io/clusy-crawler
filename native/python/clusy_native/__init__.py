@@ -21,6 +21,7 @@ from ._native import (
     extract_document_blocks,
     extract_document_ir_v2_native,
     extract_html,
+    packaged_source_digest,
 )
 from .document_ir import (
     DEFAULT_DOCUMENT_IR_LIMITS,
@@ -92,6 +93,7 @@ __all__ = [
     "extract_document_ir_v2",
     "extract_document_ir_v2_native",
     "extract_html",
+    "packaged_source_digest",
     "reconstruct_document_ir_v2",
     "verify_and_replay_selection_certificate_v0",
     "verify_and_replay_local_atomic_selection_certificate_v0",

@@ -96,6 +96,7 @@ name = "clusy-native"
 version = "0.1.0"
 dependencies = [
  "dom_query",
+ "glob",
  "pyo3",
  "rs-trafilatura 0.1.0",
  "rs-trafilatura 0.2.2",
@@ -332,6 +333,12 @@ name = "gjson"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43503cc176394dd30a6525f5f36e838339b8b5619be33ed9a7783841580a97b6"
+
+[[package]]
+name = "glob"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 
 [[package]]
 name = "heck"
