@@ -1010,6 +1010,8 @@ def _finalize_result(
     result: ExtractionResult,
     html_content: str,
     news: bool,
+    *,
+    assess_source_completeness: bool | None = None,
 ) -> ExtractionResult:
     if result.strategy == "rs-trafilatura":
         result.text = _post_process_native(result.text)
@@ -1047,7 +1049,11 @@ def _finalize_result(
     _annotate_completeness(
         result,
         html_content,
-        include_structure=result.strategy != "rs-trafilatura",
+        include_structure=(
+            result.strategy != "rs-trafilatura"
+            if assess_source_completeness is None
+            else assess_source_completeness
+        ),
     )
     return result
 
@@ -1428,16 +1434,19 @@ def _should_try_native_article_rescue(
 def _select_native_article_rescue(
     broad: ExtractionResult,
     article: ExtractionResult | None,
+    *,
+    measure_candidate_disagreement: bool = True,
 ) -> ExtractionResult:
     """Select a source-backed article rescue only at the fixed 1.25x boundary."""
     if article is None or article.word_count < _MIN_ACCEPT_WORDS:
         return broad
 
-    candidate_count, disagreement = _candidate_disagreement([broad, article])
-    broad.candidate_count = candidate_count
-    broad.candidate_disagreement = disagreement
-    article.candidate_count = candidate_count
-    article.candidate_disagreement = disagreement
+    if measure_candidate_disagreement:
+        candidate_count, disagreement = _candidate_disagreement([broad, article])
+        broad.candidate_count = candidate_count
+        broad.candidate_disagreement = disagreement
+        article.candidate_count = candidate_count
+        article.candidate_disagreement = disagreement
 
     if (
         len(article.text) * _ADAPTIVE_ARTICLE_RESCUE_LENGTH_DENOMINATOR
@@ -1738,6 +1747,8 @@ async def _extract_deterministic_after_specialized(
     semaphore: asyncio.Semaphore,
     allow_article_shortcut: bool = True,
     enable_article_rescue: bool = False,
+    measure_candidate_disagreement: bool = True,
+    assess_source_completeness: bool | None = None,
 ) -> ExtractionResult:
     native = await _to_thread_holding_cancellation(
         _extract_with_native,
@@ -1755,13 +1766,22 @@ async def _extract_deterministic_after_specialized(
             "article_body",
             semaphore=semaphore,
         )
-        native = _select_native_article_rescue(native, article)
+        native = _select_native_article_rescue(
+            native,
+            article,
+            measure_candidate_disagreement=measure_candidate_disagreement,
+        )
     if _native_is_confident(
         native,
         allow_article_shortcut=allow_article_shortcut,
     ):
         assert native is not None
-        return _finalize_result(native, html_content, news)
+        return _finalize_result(
+            native,
+            html_content,
+            news,
+            assess_source_completeness=assess_source_completeness,
+        )
 
     if not settings.parallel_extraction_enabled:
         fallback = await _to_thread_holding_cancellation(
@@ -1780,12 +1800,18 @@ async def _extract_deterministic_after_specialized(
             selected = native
         else:
             selected = fallback
-        finalized = _finalize_result(selected, html_content, news)
-        candidates = [candidate for candidate in (native, fallback) if candidate is not None]
-        (
-            finalized.candidate_count,
-            finalized.candidate_disagreement,
-        ) = _candidate_disagreement(candidates)
+        finalized = _finalize_result(
+            selected,
+            html_content,
+            news,
+            assess_source_completeness=assess_source_completeness,
+        )
+        if measure_candidate_disagreement:
+            candidates = [candidate for candidate in (native, fallback) if candidate is not None]
+            (
+                finalized.candidate_count,
+                finalized.candidate_disagreement,
+            ) = _candidate_disagreement(candidates)
         return finalized
 
     try:
@@ -1801,11 +1827,21 @@ async def _extract_deterministic_after_specialized(
             page_type,
             semaphore=semaphore,
         )
-        return _finalize_result(fallback, html_content, news)
+        return _finalize_result(
+            fallback,
+            html_content,
+            news,
+            assess_source_completeness=assess_source_completeness,
+        )
 
     if not results:
         result = native or _extract_raw_text(html_content)
-        return _finalize_result(result, html_content, news)
+        return _finalize_result(
+            result,
+            html_content,
+            news,
+            assess_source_completeness=assess_source_completeness,
+        )
 
     if settings.extraction_merge_mode == "union":
         merged = _merge_union(results, news)
@@ -1823,11 +1859,18 @@ async def _extract_deterministic_after_specialized(
         selected = native
     else:
         selected = merged
-    finalized = _finalize_result(selected, html_content, news)
-    candidates = [candidate for candidate in (native, *results) if candidate is not None]
-    finalized.candidate_count, finalized.candidate_disagreement = _candidate_disagreement(
-        candidates
+    finalized = _finalize_result(
+        selected,
+        html_content,
+        news,
+        assess_source_completeness=assess_source_completeness,
     )
+    if measure_candidate_disagreement:
+        candidates = [candidate for candidate in (native, *results) if candidate is not None]
+        (
+            finalized.candidate_count,
+            finalized.candidate_disagreement,
+        ) = _candidate_disagreement(candidates)
     return finalized
 
 
@@ -1839,6 +1882,9 @@ async def extract_content_async(
     page_type = _detect_page_type(html_content, url)
     news = _is_news_article(html_content)
     semaphore = _get_extraction_semaphore()
+    adaptive_backend_disabled = (
+        extraction_profile == "adaptive" and not _quality_backend_configured()
+    )
 
     # GitHub's server-rendered route-specific subtrees are both cleaner and
     # cheaper than model inference. Fall through to generic extraction only
@@ -1851,7 +1897,18 @@ async def extract_content_async(
             semaphore=semaphore,
         )
         if specialized is not None:
-            return _finalize_result(specialized, html_content, news)
+            finalized = _finalize_result(
+                specialized,
+                html_content,
+                news,
+                assess_source_completeness=(False if adaptive_backend_disabled else None),
+            )
+            if adaptive_backend_disabled:
+                finalized.route_reasons = (
+                    *finalized.route_reasons,
+                    "adaptive_quality_backend_disabled_fast_path",
+                )
+            return finalized
 
     if extraction_profile == "quality":
         # Quality inference must compete against a complete deterministic
@@ -1891,6 +1948,35 @@ async def extract_content_async(
         return deterministic
 
     if extraction_profile == "adaptive":
+        if adaptive_backend_disabled:
+            # With no possible model upgrade, preserve the established async
+            # deterministic selector: balanced native extraction, the bounded
+            # article-body rescue, and the stricter adaptive confidence gate.
+            # Avoid candidate comparison and source-wide routing/completeness
+            # scans that cannot affect the returned body when the quality lane
+            # is unavailable. Low-confidence/native-unavailable cases still
+            # keep the deterministic Python fallback rather than returning
+            # partial or model-shaped output.
+            deterministic = await _extract_deterministic_after_specialized(
+                html_content,
+                url,
+                "balanced",
+                page_type=page_type,
+                news=news,
+                semaphore=semaphore,
+                allow_article_shortcut=False,
+                enable_article_rescue=True,
+                measure_candidate_disagreement=False,
+                assess_source_completeness=False,
+            )
+            deterministic.quality_attempted = False
+            deterministic.quality_succeeded = False
+            deterministic.route_reasons = (
+                *deterministic.route_reasons,
+                "adaptive_quality_backend_disabled_fast_path",
+            )
+            return deterministic
+
         deterministic = await _extract_deterministic_after_specialized(
             html_content,
             url,

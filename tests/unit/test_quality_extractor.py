@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from app.config import settings
 from app.services import extractor as extractor_module
 from app.services import quality_extractor as quality_module
 from app.services.extractor import ExtractionResult, extract_content, extract_content_async
@@ -904,6 +905,7 @@ def _adaptive_candidate(
 async def test_adaptive_high_confidence_page_stays_on_fast_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _configure_quality_backend(monkeypatch)
     monkeypatch.setattr(
         extractor_module,
         "_extract_with_native",
@@ -924,6 +926,195 @@ async def test_adaptive_high_confidence_page_stays_on_fast_path(
     assert result.strategy == "rs-trafilatura"
     assert result.text.startswith("Deterministic content")
     assert result.route_reasons == ("adaptive_fast_path",)
+    assert result.quality_attempted is False
+    assert result.model_assisted is False
+    assert result.candidate_count == 2
+    assert result.candidate_disagreement == 0.0
+    assert result.completeness_coverage == "source_full"
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_adaptive_native_hit_skips_upgrade_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "quality_extraction_base_url", "")
+    monkeypatch.setattr(settings, "quality_extraction_api_key", "")
+    monkeypatch.setattr(settings, "quality_extraction_model", "")
+    profiles: list[str] = []
+
+    def candidate() -> ExtractionResult:
+        text = " ".join(f"nativeword{index:04d}" for index in range(400))
+        return ExtractionResult(
+            text=text,
+            title="Stable native title",
+            description="Stable native description",
+            language="en",
+            word_count=400,
+            strategy="rs-trafilatura",
+            confidence=0.95,
+            page_type="product",
+        )
+
+    def native(_: str, __: str, profile: str) -> ExtractionResult:
+        profiles.append(profile)
+        return candidate()
+
+    def forbidden_upgrade_work(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("disabled adaptive path must skip upgrade-only work")
+
+    async def forbidden_quality(*_args: object) -> None:
+        raise AssertionError("disabled adaptive path must not call quality")
+
+    monkeypatch.setattr(extractor_module, "_extract_with_native", native)
+    monkeypatch.setattr(
+        extractor_module,
+        "_adaptive_risk_decision",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_candidate_disagreement",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_structural_loss_score",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_bounded_grounding_coverage",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_python_cascade",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_parallel_extract",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        quality_module,
+        "extract_quality_content",
+        forbidden_quality,
+    )
+    html = (
+        "<html><body><main><p>Product information remains source-backed.</p></main></body></html>"
+    )
+
+    result = await extract_content_async(
+        html,
+        "https://example.test/product",
+        extraction_profile="adaptive",
+    )
+
+    assert profiles == ["balanced"]
+    assert result.text == candidate().text
+    assert result.strategy == "rs-trafilatura"
+    assert result.route_reasons == ("adaptive_quality_backend_disabled_fast_path",)
+    assert result.quality_attempted is False
+    assert result.quality_succeeded is False
+    assert result.model_assisted is False
+    assert result.completeness_score == 0.0
+    assert result.completeness_coverage == "output_only"
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_adaptive_low_confidence_article_preserves_async_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "quality_extraction_base_url", "")
+    monkeypatch.setattr(settings, "quality_extraction_api_key", "")
+    monkeypatch.setattr(settings, "quality_extraction_model", "")
+    monkeypatch.setattr(
+        settings,
+        "parallel_extraction_enabled",
+        False,
+    )
+    profiles: list[str] = []
+    fallback_calls = 0
+    native_text = " ".join(f"nativearticle{index:04d}" for index in range(400))
+    fallback_text = " ".join(f"fallbackbody{index:04d}" for index in range(450))
+
+    def native(_: str, __: str, profile: str) -> ExtractionResult:
+        profiles.append(profile)
+        return ExtractionResult(
+            text=native_text,
+            word_count=400,
+            strategy="rs-trafilatura",
+            confidence=0.2,
+            page_type="article",
+        )
+
+    def fallback(_: str, __: str, page_type: str) -> ExtractionResult:
+        nonlocal fallback_calls
+        fallback_calls += 1
+        return ExtractionResult(
+            text=fallback_text,
+            word_count=450,
+            strategy="trafilatura",
+            confidence=0.0,
+            page_type=page_type,
+        )
+
+    def forbidden_upgrade_work(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("disabled adaptive path must skip upgrade-only work")
+
+    async def forbidden_quality(*_args: object) -> None:
+        raise AssertionError("disabled adaptive path must not call quality")
+
+    monkeypatch.setattr(extractor_module, "_extract_with_native", native)
+    monkeypatch.setattr(extractor_module, "_python_cascade", fallback)
+    monkeypatch.setattr(
+        extractor_module,
+        "_adaptive_risk_decision",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_candidate_disagreement",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_structural_loss_score",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_bounded_grounding_coverage",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_parallel_extract",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        quality_module,
+        "extract_quality_content",
+        forbidden_quality,
+    )
+
+    result = await extract_content_async(
+        "<html><body><article>Low-confidence source.</article></body></html>",
+        "https://example.test/low-confidence-article",
+        extraction_profile="adaptive",
+    )
+
+    assert profiles == ["balanced"]
+    assert fallback_calls == 1
+    assert result.text == fallback_text
+    assert result.strategy == "trafilatura"
+    assert result.route == "deterministic_fallback"
+    assert result.route_reasons == ("adaptive_quality_backend_disabled_fast_path",)
+    assert result.candidate_count == 1
+    assert result.candidate_disagreement == 0.0
+    assert result.completeness_score == 0.0
+    assert result.completeness_coverage == "output_only"
     assert result.quality_attempted is False
     assert result.model_assisted is False
 
@@ -1082,7 +1273,7 @@ async def test_unconfigured_adaptive_fallback_is_stable_and_not_marked_attempted
     assert result.text == candidate.text
     assert result.quality_attempted is False
     assert result.quality_succeeded is False
-    assert result.route_reasons[-1] == "quality_backend_disabled"
+    assert result.route_reasons[-1] == "adaptive_quality_backend_disabled_fast_path"
 
 
 @pytest.mark.asyncio

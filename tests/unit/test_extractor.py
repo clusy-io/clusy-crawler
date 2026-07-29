@@ -5,6 +5,7 @@ import threading
 
 import pytest
 
+from app.config import settings
 from app.services import extractor as extractor_module
 from app.services import quality_extractor as quality_module
 from app.services.extractor import (
@@ -67,6 +68,76 @@ async def test_cancelled_queued_thread_waiter_does_not_start_work():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert calls == 0
+
+
+@pytest.mark.asyncio
+async def test_cancelled_disabled_adaptive_retains_permit_until_native_worker_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    queued_started = threading.Event()
+    call_lock = threading.Lock()
+    profiles: list[str] = []
+    semaphore = asyncio.Semaphore(1)
+
+    def native(_: str, __: str, profile: str) -> ExtractionResult:
+        with call_lock:
+            call_index = len(profiles)
+            profiles.append(profile)
+        if call_index == 0:
+            started.set()
+            release.wait(timeout=1)
+        else:
+            queued_started.set()
+        return _native_candidate("native", 500)
+
+    monkeypatch.setattr(settings, "quality_extraction_base_url", "")
+    monkeypatch.setattr(settings, "quality_extraction_api_key", "")
+    monkeypatch.setattr(settings, "quality_extraction_model", "")
+    monkeypatch.setattr(extractor_module, "_extract_with_native", native)
+    monkeypatch.setattr(
+        extractor_module,
+        "_get_extraction_semaphore",
+        lambda: semaphore,
+    )
+
+    first = asyncio.create_task(
+        extract_content_async(
+            "<html><body><article>first</article></body></html>",
+            "https://example.test/first",
+            extraction_profile="adaptive",
+        )
+    )
+    second: asyncio.Task[ExtractionResult] | None = None
+    try:
+        assert await asyncio.to_thread(started.wait, 0.5)
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(first, timeout=0.1)
+        assert semaphore.locked()
+
+        second = asyncio.create_task(
+            extract_content_async(
+                "<html><body><article>second</article></body></html>",
+                "https://example.test/second",
+                extraction_profile="adaptive",
+            )
+        )
+        await asyncio.sleep(0.02)
+        assert not queued_started.is_set()
+        assert profiles == ["balanced"]
+
+        release.set()
+        result = await asyncio.wait_for(second, timeout=0.5)
+        assert queued_started.is_set()
+        assert profiles == ["balanced", "balanced"]
+        assert result.route_reasons == ("adaptive_quality_backend_disabled_fast_path",)
+        assert not semaphore.locked()
+    finally:
+        release.set()
+        if second is not None and not second.done():
+            await asyncio.gather(second, return_exceptions=True)
 
 
 SAMPLE_HTML = """<!DOCTYPE html>
@@ -341,9 +412,57 @@ async def test_adaptive_profile_preserves_selected_native_article_rescue(
         return article if profile == "article_body" else broad
 
     async def unavailable_quality(*_args: object) -> None:
-        return None
+        raise AssertionError("disabled adaptive path must not call quality")
+
+    def forbidden_upgrade_work(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("disabled adaptive path must skip upgrade-only work")
 
     monkeypatch.setattr(extractor_module, "_extract_with_native", native)
+    monkeypatch.setattr(
+        settings,
+        "quality_extraction_base_url",
+        "",
+    )
+    monkeypatch.setattr(
+        settings,
+        "quality_extraction_api_key",
+        "",
+    )
+    monkeypatch.setattr(
+        settings,
+        "quality_extraction_model",
+        "",
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_adaptive_risk_decision",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_candidate_disagreement",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_structural_loss_score",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_bounded_grounding_coverage",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_python_cascade",
+        forbidden_upgrade_work,
+    )
+    monkeypatch.setattr(
+        extractor_module,
+        "_parallel_extract",
+        forbidden_upgrade_work,
+    )
     monkeypatch.setattr(
         quality_module,
         "extract_quality_content",
@@ -362,7 +481,11 @@ async def test_adaptive_profile_preserves_selected_native_article_rescue(
     assert result.route == "native_article_rescue"
     assert "experimental_adaptive_article_rescue" in result.route_reasons
     assert result.quality_attempted is False
-    assert result.route_reasons[-1] == "quality_backend_disabled"
+    assert result.route_reasons[-1] == "adaptive_quality_backend_disabled_fast_path"
+    assert result.candidate_count == 1
+    assert result.candidate_disagreement == 0.0
+    assert result.completeness_score == 0.0
+    assert result.completeness_coverage == "output_only"
 
 
 def test_native_fast_path_reports_unassessed_source_completeness(
