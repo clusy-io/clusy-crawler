@@ -210,7 +210,7 @@ def test_certificate_is_deterministic_across_parallel_native_calls() -> None:
     assert len(set(outputs)) == 1
 
 
-def test_local_atomic_certificate_ignores_unrelated_parse_error_only() -> None:
+def test_local_atomic_certificate_rejects_any_document_parse_error() -> None:
     html = _document(
         "<div><span>broken outside</div>"
         '<pre><code class="language-python">def safe():\n  return 1</code></pre>'
@@ -223,25 +223,15 @@ def test_local_atomic_certificate_ignores_unrelated_parse_error_only() -> None:
     with pytest.raises(ValueError, match="HTML parse errors"):
         create_selection_certificate_v0(document, [pre_id])
 
-    certificate = create_local_atomic_selection_certificate_v0(document, [pre_id])
-    replay = verify_and_replay_local_atomic_selection_certificate_v0(
-        document,
-        certificate,
-    )
-
-    assert replay.receipt.verified
-    assert certificate.validation_scope == "local_atomic"
-    assert replay.receipt.validation_scope == "local_atomic"
-    assert replay.markdown == "```python\ndef safe():\n  return 1\n```"
-    with pytest.raises(ValueError, match="scope"):
-        verify_and_replay_selection_certificate_v0(document, certificate)
+    with pytest.raises(ValueError, match="HTML parse errors"):
+        create_local_atomic_selection_certificate_v0(document, [pre_id])
 
 
 def test_local_atomic_certificate_allows_only_standard_implicit_tbody() -> None:
     document = extract_document_ir_v2(
         _document(
             "<table>\n<tr><th>A</th><th>B</th></tr>\n"
-            "<!-- inter-row -->\n<tr><td>1</td><td>2</td></tr>\n</table>"
+            "\n<tr><td>1</td><td>2</td></tr>\n</table>"
         )
     )
     implicit = [element for element in document.elements if element.implicit]
@@ -318,6 +308,49 @@ def test_local_atomic_certificate_accepts_quote_aware_canonical_attributes() -> 
     )
 
     assert certificate.validation_scope == "local_atomic"
+
+
+def test_local_atomic_end_tags_are_ascii_case_insensitive_with_exact_trivia() -> None:
+    document = extract_document_ir_v2(
+        _document("<pre><code>x</CoDe \t\n></PrE\f>")
+    )
+
+    certificate = create_local_atomic_selection_certificate_v0(
+        document,
+        [_tag_id(document, "pre")],
+    )
+
+    assert certificate.validation_scope == "local_atomic"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<pre><code>x</code data-x></pre>",
+        "<pre><code>x</code\r></pre>",
+        "<pre><code>x</code\x00></pre>",
+        "<pre><code>x</code/></pre>",
+        "<pre><code>x</code><!-- hidden token --></pre>",
+        "<pre><code>x</code><!bogus></pre>",
+        "<pre><code>x</code><?target?></pre>",
+        "<table><tr><th>A</th><th>B</th></tr>"
+        "<tr><td>1</td><td>2</td junk></tr></table>",
+    ],
+)
+def test_local_atomic_rejects_noncanonical_end_tags_and_unpaired_token_events(
+    body: str,
+) -> None:
+    document = extract_document_ir_v2(_document(body))
+    selected_tag = "table" if body.startswith("<table") else "pre"
+
+    with pytest.raises(
+        ValueError,
+        match="end tag|parse errors|comments|declarations|tokenizer|source|repair",
+    ):
+        create_local_atomic_selection_certificate_v0(
+            document,
+            [_tag_id(document, selected_tag)],
+        )
 
 
 @pytest.mark.parametrize(

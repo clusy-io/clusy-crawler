@@ -19,14 +19,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import time
-import unicodedata
 from bisect import bisect_right
-from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import asdict, dataclass, replace
-from functools import partial
-from html import unescape
 from typing import Literal
 
 from clusy_native import (
@@ -102,11 +96,12 @@ _LIST_RE = re.compile(r"^\s{0,3}(?:[-+*]|\d{1,9}[.)])\s+")
 _GFM_TABLE_SEPARATOR_RE = re.compile(
     r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
 )
+_MARKDOWN_ESCAPABLE_ASCII = frozenset(
+    "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+)
+_WHITESPACE_IDENTITY_TOKEN = "\x00clusy-whitespace\x00"
 
 type AtomKindV0 = Literal["code", "table"]
-
-
-type AtomicOverlayTimingHookV0 = Callable[[str, int], object | None]
 
 
 def _validate_int(name: str, value: int, hard_maximum: int) -> None:
@@ -202,6 +197,47 @@ class AtomicStructureOverlayV0Config:
 
 
 DEFAULT_ATOMIC_STRUCTURE_OVERLAY_V0_CONFIG = AtomicStructureOverlayV0Config()
+
+
+def _canonical_config(
+    config: AtomicStructureOverlayV0Config,
+) -> AtomicStructureOverlayV0Config:
+    """Copy and revalidate every primitive field at a public trust boundary."""
+
+    if type(config) is not AtomicStructureOverlayV0Config:
+        raise TypeError("config must be AtomicStructureOverlayV0Config")
+    return AtomicStructureOverlayV0Config(
+        enabled=object.__getattribute__(config, "enabled"),
+        enable_code=object.__getattribute__(config, "enable_code"),
+        enable_tables=object.__getattribute__(config, "enable_tables"),
+        max_source_bytes=object.__getattribute__(config, "max_source_bytes"),
+        max_candidate_bytes=object.__getattribute__(config, "max_candidate_bytes"),
+        max_output_bytes=object.__getattribute__(config, "max_output_bytes"),
+        max_atoms=object.__getattribute__(config, "max_atoms"),
+        max_tokens=object.__getattribute__(config, "max_tokens"),
+        max_atom_tokens=object.__getattribute__(config, "max_atom_tokens"),
+        max_code_bytes=object.__getattribute__(config, "max_code_bytes"),
+        max_replacement_bytes=object.__getattribute__(
+            config,
+            "max_replacement_bytes",
+        ),
+        max_certificate_bytes=object.__getattribute__(
+            config,
+            "max_certificate_bytes",
+        ),
+        max_total_certificate_bytes=object.__getattribute__(
+            config,
+            "max_total_certificate_bytes",
+        ),
+        max_table_rows=object.__getattribute__(config, "max_table_rows"),
+        max_table_columns=object.__getattribute__(config, "max_table_columns"),
+        max_table_cells=object.__getattribute__(config, "max_table_cells"),
+        max_growth_bytes=object.__getattribute__(config, "max_growth_bytes"),
+        max_growth_ratio_milli=object.__getattribute__(
+            config,
+            "max_growth_ratio_milli",
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,6 +345,7 @@ class _CandidateSpan:
 @dataclass(frozen=True, slots=True)
 class _MarkdownVisibilityPlan:
     mask: str
+    ignored_scalars: tuple[bool, ...]
     protected_spans: tuple[tuple[int, int], ...]
 
 
@@ -359,19 +396,15 @@ def propose_atomic_structure_overlay_v0(
     candidate_markdown: str,
     *,
     config: AtomicStructureOverlayV0Config = DEFAULT_ATOMIC_STRUCTURE_OVERLAY_V0_CONFIG,
-    timing_hook: AtomicOverlayTimingHookV0 | None = None,
 ) -> AtomicStructureOverlayDecisionV0:
-    """Propose overlays and publish timing only after the decision is immutable."""
+    """Propose an all-or-nothing overlay without invoking caller-controlled code."""
 
-    timings: list[tuple[str, int]] = []
-    decision = _propose_atomic_structure_overlay_v0(
+    canonical_config = _canonical_config(config)
+    return _propose_atomic_structure_overlay_v0(
         html,
         candidate_markdown,
-        config=config,
-        timing_hook=lambda stage, elapsed: timings.append((stage, elapsed)),
+        config=canonical_config,
     )
-    _publish_timings(timing_hook, timings)
-    return decision
 
 
 def _propose_atomic_structure_overlay_v0(
@@ -379,7 +412,6 @@ def _propose_atomic_structure_overlay_v0(
     candidate_markdown: str,
     *,
     config: AtomicStructureOverlayV0Config,
-    timing_hook: AtomicOverlayTimingHookV0 | None,
 ) -> AtomicStructureOverlayDecisionV0:
     """Compute an exact decision without invoking caller-controlled code."""
 
@@ -387,9 +419,6 @@ def _propose_atomic_structure_overlay_v0(
         raise TypeError("html must be a string")
     if type(candidate_markdown) is not str:
         raise TypeError("candidate_markdown must be a string")
-    if type(config) is not AtomicStructureOverlayV0Config:
-        raise TypeError("config must be AtomicStructureOverlayV0Config")
-
     source_identity = _text_identity(html, config.max_source_bytes)
     candidate_identity = _text_identity(
         candidate_markdown,
@@ -454,24 +483,17 @@ def _propose_atomic_structure_overlay_v0(
     candidate_bytes = candidate_identity.materialized
 
     try:
-        candidate_tokens = _timed(
-            timing_hook,
-            "candidate_tokens",
-            lambda: _visible_tokens(candidate_markdown, config.max_tokens),
-        )
-        visibility_plan = _timed(
-            timing_hook,
-            "candidate_visibility_plan",
-            lambda: _markdown_visibility_plan(candidate_markdown),
-        )
-        candidate_visible_token_spans = _timed(
-            timing_hook,
-            "candidate_visible_token_index",
-            lambda: _raw_token_spans(
+        visibility_plan = _markdown_visibility_plan(candidate_markdown)
+        candidate_visible_token_spans = _trim_identity_spans(
+            _raw_token_spans(
                 visibility_plan.mask,
                 config.max_tokens,
                 offset_source=candidate_markdown,
-            ),
+                ignored_scalars=visibility_plan.ignored_scalars,
+            )
+        )
+        candidate_tokens = tuple(
+            token.value for token in candidate_visible_token_spans
         )
     except _BudgetExceededError:
         return _fallback(
@@ -481,15 +503,6 @@ def _propose_atomic_structure_overlay_v0(
             config_digest,
             "candidate_token_budget",
         )
-    if tuple(token.value for token in candidate_visible_token_spans) != candidate_tokens:
-        return _fallback(
-            candidate_markdown,
-            source_digest,
-            input_digest,
-            config_digest,
-            "candidate_token_mapping_ambiguous",
-        )
-
     ir_limits = DocumentIRV2Limits(
         max_input_bytes=config.max_source_bytes,
         max_nodes=200_000,
@@ -502,11 +515,7 @@ def _propose_atomic_structure_overlay_v0(
         max_table_columns=config.max_table_columns,
     )
     try:
-        document = _timed(
-            timing_hook,
-            "extract_ir_v2",
-            lambda: extract_document_ir_v2(html, limits=ir_limits),
-        )
+        document = extract_document_ir_v2(html, limits=ir_limits)
     except Exception:
         return _fallback(
             candidate_markdown,
@@ -584,18 +593,13 @@ def _propose_atomic_structure_overlay_v0(
                 )
             )
             continue
-        proposal = _timed(
-            timing_hook,
-            f"proposal_{atom.kind}",
-            partial(
-                _evaluate_atom,
-                atom,
-                context=context,
-                source_digest=source_digest,
-                input_digest=input_digest,
-                config_digest=config_digest,
-                config=config,
-            ),
+        proposal = _evaluate_atom(
+            atom,
+            context=context,
+            source_digest=source_digest,
+            input_digest=input_digest,
+            config_digest=config_digest,
+            config=config,
         )
         next_certificate_bytes = total_certificate_bytes + len(proposal.certificate)
         if next_certificate_bytes > config.max_total_certificate_bytes:
@@ -691,11 +695,7 @@ def _propose_atomic_structure_overlay_v0(
             "global_growth_budget",
         )
     try:
-        output_tokens = _timed(
-            timing_hook,
-            "verify_visible_tokens",
-            lambda: _visible_tokens(output_markdown, config.max_tokens),
-        )
+        output_tokens = _visible_tokens(output_markdown, config.max_tokens)
     except _BudgetExceededError:
         return _global_rejection(
             candidate_markdown,
@@ -736,20 +736,16 @@ def verify_atomic_structure_overlay_v0(
     decision: object,
     *,
     config: AtomicStructureOverlayV0Config,
-    timing_hook: AtomicOverlayTimingHookV0 | None = None,
 ) -> AtomicStructureOverlayReplayV0:
-    """Verify a decision and publish timing only after the receipt is immutable."""
+    """Verify a decision without invoking caller-controlled code."""
 
-    timings: list[tuple[str, int]] = []
-    replay = _verify_atomic_structure_overlay_v0(
+    canonical_config = _canonical_config(config)
+    return _verify_atomic_structure_overlay_v0(
         html,
         candidate_markdown,
         decision,
-        config=config,
-        timing_hook=lambda stage, elapsed: timings.append((stage, elapsed)),
+        config=canonical_config,
     )
-    _publish_timings(timing_hook, timings)
-    return replay
 
 
 def _verify_atomic_structure_overlay_v0(
@@ -758,7 +754,6 @@ def _verify_atomic_structure_overlay_v0(
     decision: object,
     *,
     config: AtomicStructureOverlayV0Config,
-    timing_hook: AtomicOverlayTimingHookV0 | None,
 ) -> AtomicStructureOverlayReplayV0:
     """Recompute and verify a decision; failure returns *candidate_markdown*.
 
@@ -770,8 +765,6 @@ def _verify_atomic_structure_overlay_v0(
         raise TypeError("html must be a string")
     if type(candidate_markdown) is not str:
         raise TypeError("candidate_markdown must be a string")
-    if type(config) is not AtomicStructureOverlayV0Config:
-        raise TypeError("config must be AtomicStructureOverlayV0Config")
     candidate_identity = _text_identity(
         candidate_markdown,
         config.max_candidate_bytes,
@@ -799,15 +792,10 @@ def _verify_atomic_structure_overlay_v0(
             output_digest=fallback_digest,
             decision_digest="",
         )
-    expected = _timed(
-        timing_hook,
-        "replay_decision",
-        lambda: propose_atomic_structure_overlay_v0(
-            html,
-            candidate_markdown,
-            config=config,
-            timing_hook=timing_hook,
-        ),
+    expected = propose_atomic_structure_overlay_v0(
+        html,
+        candidate_markdown,
+        config=config,
     )
     if expected != decision:
         return AtomicStructureOverlayReplayV0(
@@ -1474,10 +1462,17 @@ def _source_tokens(
 ) -> tuple[str, ...]:
     output: list[str] = []
     for run in sorted(document.text_runs, key=lambda item: item.order):
+        run_tokens = _tokens(run.text, maximum)
+        if not run_tokens:
+            continue
+        if output:
+            output.append(_WHITESPACE_IDENTITY_TOKEN)
         remaining = maximum - len(output)
         if remaining <= 0:
             raise _BudgetExceededError
-        output.extend(_tokens(run.text, remaining))
+        if len(run_tokens) > remaining:
+            raise _BudgetExceededError
+        output.extend(run_tokens)
         if len(output) > maximum:
             raise _BudgetExceededError
     return tuple(output)
@@ -1574,117 +1569,102 @@ def _raw_token_spans(
     maximum: int,
     *,
     offset_source: str | None = None,
+    ignored_scalars: tuple[bool, ...] | None = None,
 ) -> tuple[_TokenSpan, ...]:
     if offset_source is None:
         offset_source = value
     if len(offset_source) != len(value):
         raise ValueError("offset_source must have the same character length as value")
+    if ignored_scalars is not None and len(ignored_scalars) != len(value):
+        raise ValueError("ignored_scalars must have the same length as value")
     tokens: list[_TokenSpan] = []
-    buffer: list[str] = []
-    buffer_start = 0
-    buffer_end = 0
-    buffer_byte_start = 0
-    buffer_byte_end = 0
+    whitespace_start: int | None = None
+    whitespace_byte_start = 0
+    whitespace_end = 0
+    whitespace_byte_end = 0
 
-    def flush() -> None:
-        nonlocal buffer_byte_end, buffer_byte_start, buffer_end, buffer_start
-        if buffer:
-            tokens.append(
-                _TokenSpan(
-                    "".join(buffer),
-                    buffer_start,
-                    buffer_end,
-                    buffer_byte_start,
-                    buffer_byte_end,
-                )
+    def flush_whitespace() -> None:
+        nonlocal whitespace_start
+        if whitespace_start is None:
+            return
+        tokens.append(
+            _TokenSpan(
+                _WHITESPACE_IDENTITY_TOKEN,
+                whitespace_start,
+                whitespace_end,
+                whitespace_byte_start,
+                whitespace_byte_end,
             )
-            buffer.clear()
-            if len(tokens) > maximum:
-                raise _BudgetExceededError
+        )
+        whitespace_start = None
 
     source_byte_start = 0
     for source_index, source_character in enumerate(value):
         offset_character = offset_source[source_index]
         source_byte_end = source_byte_start + len(offset_character.encode("utf-8"))
-        normalized_piece = unicodedata.normalize("NFKC", source_character).casefold()
-        for character in normalized_piece:
-            category = unicodedata.category(character)
-            if _is_cjk(character):
-                flush()
-                tokens.append(
-                    _TokenSpan(
-                        character,
-                        source_index,
-                        source_index + 1,
-                        source_byte_start,
-                        source_byte_end,
-                    )
+        if ignored_scalars is not None and ignored_scalars[source_index]:
+            source_byte_start = source_byte_end
+            continue
+        if source_character.isspace():
+            if whitespace_start is None:
+                whitespace_start = source_index
+                whitespace_byte_start = source_byte_start
+            whitespace_end = source_index + 1
+            whitespace_byte_end = source_byte_end
+        else:
+            flush_whitespace()
+            tokens.append(
+                _TokenSpan(
+                    source_character,
+                    source_index,
+                    source_index + 1,
+                    source_byte_start,
+                    source_byte_end,
                 )
-            elif category[0] in {"L", "N"} or category.startswith("M") or character == "_":
-                if not buffer:
-                    buffer_start = source_index
-                    buffer_byte_start = source_byte_start
-                buffer.append(character)
-                buffer_end = source_index + 1
-                buffer_byte_end = source_byte_end
-            elif character in {"'", "’"} and buffer:
-                buffer.append("'")
-                buffer_end = source_index + 1
-                buffer_byte_end = source_byte_end
-            elif category.startswith("S") or character in "+*/=<>^":
-                flush()
-                tokens.append(
-                    _TokenSpan(
-                        character,
-                        source_index,
-                        source_index + 1,
-                        source_byte_start,
-                        source_byte_end,
-                    )
-                )
-            else:
-                flush()
-            if len(tokens) > maximum:
-                raise _BudgetExceededError
+            )
+        if len(tokens) > maximum:
+            raise _BudgetExceededError
         source_byte_start = source_byte_end
-    flush()
+    flush_whitespace()
+    if len(tokens) > maximum:
+        raise _BudgetExceededError
     return tuple(tokens)
 
 
 def _visible_tokens(value: str, maximum: int) -> tuple[str, ...]:
-    return _tokens(_visible_markdown(value), maximum)
+    plan = _markdown_visibility_plan(value)
+    return tuple(
+        token.value
+        for token in _trim_identity_spans(
+            _raw_token_spans(
+                plan.mask,
+                maximum,
+                offset_source=value,
+                ignored_scalars=plan.ignored_scalars,
+            )
+        )
+    )
 
 
 def _tokens(value: str, maximum: int) -> tuple[str, ...]:
-    normalized = unicodedata.normalize("NFKC", value).casefold()
-    output: list[str] = []
-    buffer: list[str] = []
+    return tuple(
+        token.value
+        for token in _trim_identity_spans(
+            _raw_token_spans(value, maximum)
+        )
+    )
 
-    def flush() -> None:
-        if buffer:
-            output.append("".join(buffer))
-            buffer.clear()
-            if len(output) > maximum:
-                raise _BudgetExceededError
 
-    for character in normalized:
-        category = unicodedata.category(character)
-        if _is_cjk(character):
-            flush()
-            output.append(character)
-        elif category[0] in {"L", "N"} or category.startswith("M") or character == "_":
-            buffer.append(character)
-        elif character in {"'", "’"} and buffer:
-            buffer.append("'")
-        elif category.startswith("S") or character in "+*/=<>^":
-            flush()
-            output.append(character)
-        else:
-            flush()
-        if len(output) > maximum:
-            raise _BudgetExceededError
-    flush()
-    return tuple(output)
+def _trim_identity_spans(
+    spans: tuple[_TokenSpan, ...],
+) -> tuple[_TokenSpan, ...]:
+    start = 0
+    end = len(spans)
+    while start < end and spans[start].value == _WHITESPACE_IDENTITY_TOKEN:
+        start += 1
+    while end > start and spans[end - 1].value == _WHITESPACE_IDENTITY_TOKEN:
+        end -= 1
+    return spans[start:end]
 
 
 _ENTITY_RE = re.compile(
@@ -1705,20 +1685,15 @@ def _markdown_visibility_plan(value: str) -> _MarkdownVisibilityPlan:
     """
 
     mask = list(value)
+    ignored_scalars = [False] * len(value)
     protected: list[tuple[int, int]] = []
 
     def mask_range(start: int, end: int) -> None:
         for index in range(start, end):
             if mask[index] not in _LINE_BREAK_CHARACTERS:
-                mask[index] = " "
+                ignored_scalars[index] = True
 
     for match in _ENTITY_RE.finditer(value):
-        decoded = unescape(match.group(0))
-        if decoded == match.group(0) or len(decoded) > match.end() - match.start():
-            continue
-        mask_range(match.start(), match.end())
-        for offset, character in enumerate(decoded):
-            mask[match.start() + offset] = character
         protected.append((match.start(), match.end()))
 
     lines: list[tuple[int, int, int, str]] = []
@@ -1870,6 +1845,7 @@ def _markdown_visibility_plan(value: str) -> _MarkdownVisibilityPlan:
             )
             html_cursor = tag_end
 
+        inline_code_ranges: list[tuple[int, int]] = []
         code_cursor = 0
         while code_cursor < len(raw_line):
             opening = raw_line.find("`", code_cursor)
@@ -1883,16 +1859,36 @@ def _markdown_visibility_plan(value: str) -> _MarkdownVisibilityPlan:
             if closing < 0:
                 code_cursor = run_end
                 continue
+            inline_code_ranges.append((opening, closing + len(marker)))
             protected.append(
                 (line_start + opening, line_start + closing + len(marker))
             )
             code_cursor = closing + len(marker)
+
+        escape_cursor = 0
+        while escape_cursor + 1 < len(raw_line):
+            if (
+                raw_line[escape_cursor] == "\\"
+                and raw_line[escape_cursor + 1] in _MARKDOWN_ESCAPABLE_ASCII
+                and not any(
+                    start <= escape_cursor < end
+                    for start, end in inline_code_ranges
+                )
+            ):
+                mask_range(
+                    line_start + escape_cursor,
+                    line_start + escape_cursor + 1,
+                )
+                escape_cursor += 2
+                continue
+            escape_cursor += 1
 
     if fence_character is not None:
         protected.append((fence_start, len(value)))
 
     return _MarkdownVisibilityPlan(
         mask="".join(mask),
+        ignored_scalars=tuple(ignored_scalars),
         protected_spans=_merge_spans(protected),
     )
 
@@ -1966,7 +1962,7 @@ def _visible_markdown(value: str) -> str:
             line = line[1:].lstrip()
         line = _strip_markdown_link_destinations(line)
         output.append(_strip_html_tags(line))
-    return unescape("\n".join(output))
+    return "\n".join(output)
 
 
 def _gfm_table_line_indexes(lines: list[str]) -> tuple[set[int], set[int]]:
@@ -2106,17 +2102,6 @@ def _strip_html_tags(value: str) -> str:
     return "".join(output)
 
 
-def _is_cjk(character: str) -> bool:
-    codepoint = ord(character)
-    return (
-        0x3400 <= codepoint <= 0x4DBF
-        or 0x4E00 <= codepoint <= 0x9FFF
-        or 0xF900 <= codepoint <= 0xFAFF
-        or 0x3040 <= codepoint <= 0x30FF
-        or 0xAC00 <= codepoint <= 0xD7AF
-    )
-
-
 def _substring_positions(value: str, needle: str, limit: int) -> tuple[int, ...]:
     if not needle:
         return ()
@@ -2160,6 +2145,18 @@ def _indexed_occurrence_positions(
         end = start + len(needle)
         if start < 0 or end > len(haystack):
             continue
+        if (
+            start > 0
+            and _is_identity_word_scalar(haystack[start - 1])
+            and _is_identity_word_scalar(needle[0])
+        ):
+            continue
+        if (
+            end < len(haystack)
+            and _is_identity_word_scalar(needle[-1])
+            and _is_identity_word_scalar(haystack[end])
+        ):
+            continue
         if haystack[start:end] == needle:
             output.append(start)
             if len(output) == limit:
@@ -2167,33 +2164,19 @@ def _indexed_occurrence_positions(
     return tuple(output)
 
 
+def _is_identity_word_scalar(value: str) -> bool:
+    return (
+        len(value) == 1
+        and (
+            value == "_"
+            or value.isalnum()
+            or ("a" + value).isidentifier()
+        )
+    )
+
+
 def _within_growth_ratio(before: int, after: int, maximum_milli: int) -> bool:
     return after * 1_000 <= max(1, before) * maximum_milli
-
-
-def _timed[T](
-    hook: AtomicOverlayTimingHookV0 | None,
-    stage: str,
-    operation: Callable[[], T],
-) -> T:
-    started = time.perf_counter_ns()
-    try:
-        return operation()
-    finally:
-        if hook is not None:
-            with suppress(Exception):
-                hook(stage, max(0, time.perf_counter_ns() - started))
-
-
-def _publish_timings(
-    hook: AtomicOverlayTimingHookV0 | None,
-    timings: list[tuple[str, int]],
-) -> None:
-    if hook is None:
-        return
-    for stage, elapsed in timings:
-        with suppress(Exception):
-            hook(stage, elapsed)
 
 
 def _text_identity(value: str, materialize_limit: int) -> _TextIdentity:

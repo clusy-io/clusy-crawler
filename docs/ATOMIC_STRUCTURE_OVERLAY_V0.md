@@ -1,280 +1,271 @@
 # Exact Atomic Structure Overlay v0
 
-## Status
+> Research component · disabled by default · not wired to production
 
-The overlay is an additive research component. It is disabled by default,
-unwired from the production extraction cascade, and makes no network, model, or
-vendor calls.
+The overlay restores structure only when source, DOM graph, candidate text, and
+deterministic replay agree exactly. It supports two atomic shapes:
 
-When explicitly enabled, it can replace only a locally aligned plain-text code
-block or simple rectangular table. Rejection returns the candidate Markdown
-byte-for-byte.
+- one complete `<pre>` region, rendered with a collision-safe Markdown fence;
+- one simple rectangular data table, rendered as deterministic GFM.
 
-No score from an earlier source revision is evidence for the current tree. A
-fresh, clean, manifest-bound run is required before reporting current quality.
-This component does not by itself support a SOTA, Exa, or Firecrawl claim.
+Any failed gate returns the input Markdown byte-for-byte. The component makes
+no network, model, or vendor calls.
 
-## Safety contract
+## Current evidence
 
-An accepted patch requires:
+This tree has targeted adversarial, unit, static, and Rust verification. It
+does **not** yet have a fresh 545-page result. Earlier scores belong to earlier
+source trees and must not be presented as evidence for this revision.
 
-1. an untruncated ordered DOM IR v2;
-2. a complete and reliable source span for one selected `pre` or `table`;
-3. a native local selection certificate binding source, graph, selected
-   subtree, exact text provenance, output, deterministic replay, and an
-   explicit `local_atomic` wire scope;
-4. no repair, ambiguity, entity decoding, CR, NUL, or incomplete provenance
-   inside the selected scope;
-5. exactly one normalized visible-token match in both source and candidate;
-6. alignment against a precomputed positional visible-Markdown token index;
-7. protection for existing fences, GFM tables, headings, lists, blockquotes,
-   links, inline code, HTML, and entities;
-8. strict structural gain;
-9. byte-identical prefix and suffix;
-10. local and global resource and growth limits; and
-11. identical normalized visible tokens for the full input and output.
+No SOTA, Exa, Firecrawl, quality, or throughput claim is valid until the frozen
+cloud protocol below completes and its artifact gates pass.
 
-Code output is the native certificate replay with a collision-safe fence.
-Table output is deterministic GFM from an exact rectangular IR grid. Tables
-with spans, nesting, complex block descendants, missing grid cells, mixed
-header layout, or unsafe parser repair are rejected.
+## Acceptance contract
 
-The only parser-inserted table element eligible for local certification is a
-standards-mandated direct `tbody`. Its rows and cells must still be explicit,
-reliable, ordered, source-contained, and grid-complete.
+An accepted patch requires all of the following:
 
-Digests are deterministic identities. They are not signatures, authorization
-tokens, or proof that the input source is trustworthy.
+1. Complete UTF-8 input and an untruncated ordered DOM IR v2.
+2. Zero HTML parse errors anywhere in the document.
+3. One complete, reliable source span for a selected `pre` or `table`.
+4. A native `local_atomic` certificate binding exact source bytes, graph,
+   selection, output, and replay.
+5. Exact selected-scope token-event parity between lexical source and DOM.
+6. ASCII case-insensitive end-tag names followed only by SP, TAB, LF, or FF.
+   CR, NUL, attributes, `/`, declarations, comments, unmatched tags, and
+   parser repair are rejected.
+7. Exact atom identity after only two explicit normalizations:
+   whitespace runs and valid Markdown backslash escapes. Case, Unicode scalar
+   sequence, symbols, and punctuation are preserved.
+8. Exactly one source occurrence and one unprotected candidate occurrence.
+9. Strict structural gain, bounded replacement/growth, and byte-identical
+   prefix and suffix.
+10. Exact full-output visible identity under the same normalization.
+11. Deterministic recomputation through the public verifier.
 
-Full-document and local-atomic certificates carry distinct canonical scope
-flags and cannot be replayed through the other verifier. Local start tags are
-lexically validated against retained DOM attributes; duplicate attributes,
-ambiguous unquoted values, entity-decoded values, noncanonical controls, and
-unsupported self-closing repair are rejected.
+The only allowed implicit selected-scope element is the standard direct
+`tbody` inserted beneath a `table`. Its rows and cells must remain explicit,
+ordered, source-contained, and grid-complete.
 
-## Resource bounds
+Digests are deterministic identities, not signatures or authorization tokens.
 
-The default configuration limits source to 4 MiB, candidate and certificate
-totals to 2 MiB, output to 4 MiB, atoms to 256, page tokens to 200,000, atom
-tokens to 20,000, tables to 128 rows × 64 columns and 2,048 cells, and
-replacement and growth bytes to fixed caps.
+## API boundary
 
-The audit records the complete effective configuration. Timing observations are
-excluded from decision digests, buffered internally, and published to a caller
-hook only after the decision or replay receipt is immutable. Invalid Unicode
-and multibyte byte-budget overflow fail closed without an unbounded UTF-8
-materialization.
+`propose_atomic_structure_overlay_v0` and
+`verify_atomic_structure_overlay_v0` accept no timing callback. They invoke no
+caller-controlled observer while a decision or replay is live. Benchmark
+timing is measured separately around the public calls inside a fresh isolated
+worker.
 
-## Pinned 545-page audit
+Every primitive field of `AtomicStructureOverlayV0Config` is copied into a new
+instance and revalidated at each public boundary. Mutation of a frozen object
+through `object.__setattr__` therefore fails closed.
 
-The audit consists of two separate processes:
+Default limits include:
 
-1. `bench/export_webmainbench_decision_inputs.py` verifies the pinned dataset,
-   writes a closed-schema projection containing only index, track ID, and HTML,
-   and exits.
-2. `bench/atomic_structure_overlay_v0_shadow.py` loads only that projection and
-   the fixed baseline during decisions. It opens the label-bearing dataset only
-   after both source tracks, deterministic recomputations, integrity checks, and
-   exact patch parity are frozen.
+| Resource | Default |
+| --- | ---: |
+| Source | 4 MiB |
+| Candidate | 2 MiB |
+| Output | 4 MiB |
+| Atoms | 256 |
+| Page identity tokens | 200,000 |
+| Atom identity tokens | 20,000 |
+| Table shape | 128 × 64 |
+| Table cells | 2,048 |
 
-The source tracks are:
+## Claim architecture
 
-- `official`: the verified official cleaner; this track remains
-  annotation-bearing because `cc-select` may remain;
-- `scrubbed`: the official cleaner followed by the repository scrubber and its
-  postcondition.
+The claim path has four process boundaries:
 
-Cross-track parity binds the accepted flag, exact output bytes, candidate
-spans, atom kinds, replacement and patch digests, visible-token digest and
-count, and replacement byte topology.
+```text
+pinned dataset
+    │
+    ├─ projection exporter ── dataset index + raw HTML only
+    │
+    ├─ no-network baseline worker ── frozen baseline artifact
+    │
+    ├─ no-network decision worker ── frozen decisions + replay receipts
+    │
+    └─ later scorer process ── labels + official evaluator + frozen artifacts
+```
 
-Recomputation uses the same implementation. It is a determinism check, not an
-independent verifier.
+Baseline and decision workers:
 
-### Quality accounting
+- start as fresh `python -I -S -B` interpreters under `env -i`;
+- run inside bubblewrap with a distinct network namespace and no non-loopback
+  IPv4 or IPv6 route;
+- must fail observed IPv4 and IPv6 egress probes;
+- receive input through a pipe and source files through sealed memfds;
+- see a read-only minimal capsule, not the repository;
+- cannot mount or import the dataset, evaluator, benchmark scorer, or labels;
+- cannot see task/category IDs, URLs, references, metadata, or benchmark-only
+  HTML transforms;
+- record the actual environment, namespace, route, mount, interpreter, and
+  imported-module evidence;
+- bind exact executed Python files, the loaded native extension SHA-256, and
+  the extension’s packaged native-source digest.
 
-The official aggregate is retained as a diagnostic. Claim gates use a paired
-545-page conservative aggregate:
+If Linux user namespaces, bubblewrap, sealed memfds, read-only remounts, or the
+no-egress proof are unavailable, the launcher refuses claimability. macOS is
+therefore suitable for development but not for a claim run.
 
-- every failed metric result scores zero;
-- baseline and candidate success masks must match exactly for every core
-  metric;
-- all 545 pages remain in every metric denominator; and
+The production baseline worker has no callable/config/environment injection
+surface. It resolves exactly
+`app.services.extractor.extract_content`, pins its module and code bytes, uses
+the fixed `balanced` profile, and records every effective `Settings` field.
+
+The decision protocol fixes:
+
+| Setting | Claim value |
+| --- | ---: |
+| Concurrency | 4 |
+| Decision/replay wall budget | 180 s |
+| Input | unmodified raw HTML |
+| Pages | 545 |
+
+There are no claim-mode CLI overrides. Alternate concurrency or budgets belong
+to the permanently nonclaimable legacy diagnostic runner.
+
+## File integrity
+
+Claim inputs are opened by walking every directory component through
+`openat`-style, `O_DIRECTORY | O_NOFOLLOW` descriptors, then reading the final
+regular file from one `O_NOFOLLOW` descriptor. The protocol checks link count,
+device, inode, size, mtime, ctime, byte count, and SHA-256 before and after the
+read. Verified data bytes remain in memory and are sent once through worker
+stdin; code and module files are supplied through sealed memfds.
+
+Outputs are created with `O_EXCL`, fsynced, made read-only, and published with a
+no-replace hard link. Existing paths are never overwritten.
+
+## Quality accounting
+
+The later scorer retains the official aggregate as a diagnostic. Claim gates
+use paired conservative accounting:
+
+- all 545 pages remain in every denominator;
+- every metric failure scores zero;
+- baseline and candidate success masks must match for every core metric;
 - text and formula must not regress.
 
-The preregistered quality thresholds are:
+The scorer requires caller-supplied SHA-256 pins for both frozen artifacts. It
+reads and validates both through stable descriptors before importing the
+benchmark harness or touching labels. It then recomputes the raw-HTML
+projection hash from the pinned dataset, so a different 545-row projection
+cannot be substituted.
+
+Annotation-scrubbed input remains available only in the permanently
+nonclaimable legacy sensitivity runner. It never participates in claimable
+acceptance or raw-output selection.
+
+Preregistered continuation thresholds:
 
 | Metric | Minimum delta |
 | --- | ---: |
-| Overall mean of five core metrics | +0.010 |
+| Overall mean | +0.010 |
 | Code edit | +0.030 |
 | Table TEDS | +0.020 |
 | Text edit | 0.000 |
 | Formula edit | 0.000 |
 
-These are continuation gates for this shadow experiment. Passing them is not a
-vendor comparison or a SOTA result.
+Passing these thresholds authorizes further shadow evaluation only. It is not
+by itself a vendor comparison or universal SOTA result.
 
-### Claim modes
+## Fresh AWS or Azure run
 
-| Mode | Requirements | Permitted interpretation |
-| --- | --- | --- |
-| Exploratory | Opaque fixed baseline and/or dirty source allowed explicitly | Engineering diagnostic only |
-| Manifest-bound | Clean exact source, stable inputs, and valid baseline generator manifest | Current-tree shadow result under the stated protocol |
+Use a dedicated, non-burstable Ubuntu 24.04 x86_64 machine with at least four
+dedicated vCPUs and SSD storage. Record provider, region, instance type, image
+ID, CPU model, and storage class. Do not compare wall time across instance
+families.
 
-The historical fixed baseline file is opaque and remains exploratory. A
-claimable run must generate a new baseline from the same HTML-only projection
-with `bench/generate_atomic_structure_baseline.py`.
-
-A valid `clusy.fixed-baseline-provenance.2` manifest binds:
-
-- baseline bytes and SHA-256, the decision-projection SHA-256, and a canonical
-  digest over every `(index, track ID, HTML SHA-256)` tuple;
-- exactly 545 rows in canonical index order plus a separate page-ID/order
-  digest;
-- every row's prediction digest, strategy, and success or failure type;
-- generator entrypoint, prediction field, fixed single-thread configuration,
-  and environment;
-- explicit `false` values for reference-label, official-metric, and vendor
-  output use during generation; benchmark metadata use is also explicitly
-  false;
-- clean generator Git commit and tree, full source-file hashes, source digest,
-  `uv.lock`, `native/Cargo.lock`, loaded module origins and hashes, loaded native
-  binary hash, and the native source binding; and
-- the exact generator, projection exporter, manifest validator, native
-  certificate, CLI-argument, and schema source bytes;
-- a closed, whitelisted environment record with credential values redacted;
-- exact pre/post source, projection, configuration, and environment stability.
-
-The audit additionally requires the generator commit, tree, source digest,
-locks, native binding, and protocol files to match the candidate checkout.
-
-Missing or malformed provenance makes the run exploratory. It is never inferred
-from the baseline contents.
-
-### Pinned identities
-
-- WebMainBench 545 SHA-256:
-  `0efaa4b49a45e320a27fe6e5a0b6aad5b57259fc3321ac3448519cacc74c537e`
-- historical opaque baseline SHA-256, accepted only in exploratory mode:
-  `3d4fefffb7d809b703934ce212602d7f52e7c6d1986f884b5b638f36a9b312af`
-- official evaluator commit:
-  `9d991bdc00c57b57521499494d96be85c31317ba`
-
-The runner also binds the current Git commit and tree, every executed local
-source file, Python and Rust locks, loaded Python module origins, the loaded
-native extension binary, and the native extension's packaged source digest. It
-verifies source, dataset, evaluator, baseline, manifest, and decision-projection
-stability before and after the run.
-
-## Fresh cloud protocol
-
-Use a new dedicated Ubuntu 24.04 x86_64 VM with at least four physical or
-dedicated vCPUs. Disable autoscaling and concurrent workloads for a performance
-run. Record the cloud, region, instance type, CPU model, image ID, and attached
-storage class with the artifacts.
-
-AWS and Azure are both suitable. Prefer a compute-optimized, non-burstable
-instance with local or provisioned SSD storage. Do not compare wall time across
-different instance families.
-
-Install `build-essential`, `ca-certificates`, `curl`, `git`, and `pkg-config`.
-Pin uv `0.11.6`, CPython `3.13.5`, and Rust `1.85.0`, then validate the exact
-clean commit:
+Install the host prerequisites:
 
 ```bash
-uv python install 3.13.5
-uv sync --frozen --extra dev --python 3.13.5
+sudo apt-get update
+sudo apt-get install -y \
+  bubblewrap build-essential ca-certificates git pkg-config \
+  python3 python3-venv
+```
 
-rustfmt --edition 2021 --check \
-  native/src/document_ir_v2/selection_certificate_v0.rs
+Create a copied, production-only runtime outside the repository. It must not
+contain benchmark, evaluator, dataset, or scorer packages:
+
+```bash
+sudo /usr/bin/python3 -m venv --copies /opt/clusy-claim-runtime
+uv export --frozen --no-dev --no-emit-project --no-emit-local \
+  --output-file /tmp/clusy-claim-requirements.txt
+sudo /opt/clusy-claim-runtime/bin/pip install \
+  --require-hashes \
+  --requirement /tmp/clusy-claim-requirements.txt
+sudo install -d -m 0750 -o "$USER" /artifacts
+```
+
+Retain the exact `uv --version`, runtime package inventory, cloud image ID, and
+instance metadata with the artifacts.
+
+Validate the candidate:
+
+```bash
+uv sync --frozen --all-groups --all-extras
+uv run ruff check app bench native/python tests
+uv run mypy --explicit-package-bases app bench native/python/clusy_native
+cargo fmt --manifest-path native/Cargo.toml -- --check
 cargo test --locked --manifest-path native/Cargo.toml
-cargo clippy --locked --manifest-path native/Cargo.toml \
-  --all-targets -- -D warnings
-
-uv run --frozen ruff check app native/python tests
-uv run --frozen ruff check --no-force-exclude \
-  bench/atomic_structure_overlay_v0_shadow.py \
-  bench/export_webmainbench_decision_inputs.py \
-  bench/generate_atomic_structure_baseline.py
-uv run --frozen mypy --explicit-package-bases \
-  app native/python/clusy_native \
-  bench/atomic_structure_overlay_v0_shadow.py \
-  bench/export_webmainbench_decision_inputs.py \
-  bench/generate_atomic_structure_baseline.py
-uv run --frozen pytest -q
 git status --short
 ```
 
-The final command must print nothing for a manifest-bound run.
+The last command must print nothing.
 
-Place the pinned dataset and clean official evaluator checkout outside the
-source repository. Baseline and audit artifacts must also be outside the
-repository.
-
-Create the HTML-only projection and let that process terminate:
+Probe enforceable isolation:
 
 ```bash
-uv run --frozen --python 3.13.5 \
-  python bench/export_webmainbench_decision_inputs.py \
-  --dataset /data/WebMainBench_545.jsonl \
-  --output /data/WebMainBench_545.decision-inputs.jsonl
+uv run python bench/atomic_claim_protocol.py probe
 ```
 
-Generate the baseline from that projection. This generator has no dataset or
-evaluator argument, uses the production extractor with a fixed `balanced`
-configuration and empty URL, applies the repository annotation scrubber with
-its postcondition before extraction, records failures as empty predictions, and
-never opens reference or metadata fields. It fails before import when an OpenAI,
-Anthropic, Exa, Firecrawl, quality-backend, Elsevier, or IEEE credential path is
-active; run it in a credential-free benchmark process:
+Export the closed, label-free projection in a separate process:
 
 ```bash
-uv run --frozen --python 3.13.5 \
-  python bench/generate_atomic_structure_baseline.py \
-  --decision-inputs /data/WebMainBench_545.decision-inputs.jsonl \
-  --output /data/atomic-overlay-v0-baseline.jsonl \
-  --manifest /data/atomic-overlay-v0-baseline.manifest.json \
-  --expected-records 545
+uv run python bench/export_webmainbench_decision_inputs.py \
+  --dataset /data/WebMainBench_545.jsonl \
+  --output /artifacts/decision-inputs.v3.jsonl
 ```
 
-Then start the audit as a new process:
+Generate the production baseline in its own sandbox:
 
 ```bash
-uv run --frozen --python 3.13.5 \
-  --with apted==1.0.3 \
-  --with beautifulsoup4==4.14.3 \
-  --with jieba==0.42.1 \
-  --with openai==2.49.0 \
-  --with python-dotenv==1.2.2 \
-  --with rapidfuzz==3.14.3 \
-  python bench/atomic_structure_overlay_v0_shadow.py \
+uv run python bench/atomic_claim_protocol.py baseline \
+  --decision-inputs /artifacts/decision-inputs.v3.jsonl \
+  --output /artifacts/baseline.claim.json
+```
+
+Freeze decisions and replay receipts in a new sandbox:
+
+```bash
+uv run python bench/atomic_claim_protocol.py decisions \
+  --decision-inputs /artifacts/decision-inputs.v3.jsonl \
+  --baseline-artifact /artifacts/baseline.claim.json \
+  --output /artifacts/decisions.claim.json
+```
+
+Only after both workers exit, score in a separate process:
+
+Set `BASELINE_SHA256` and `DECISION_SHA256` to the exact artifact hashes printed
+by the two preceding commands; do not derive them by reopening the artifact
+paths inside the scorer.
+
+```bash
+uv run python bench/score_atomic_frozen_decisions.py \
+  --baseline-artifact /artifacts/baseline.claim.json \
+  --decision-artifact /artifacts/decisions.claim.json \
+  --expected-baseline-sha256 "$BASELINE_SHA256" \
+  --expected-decision-sha256 "$DECISION_SHA256" \
   --dataset /data/WebMainBench_545.jsonl \
-  --decision-inputs /data/WebMainBench_545.decision-inputs.jsonl \
-  --baseline /data/atomic-overlay-v0-baseline.jsonl \
-  --baseline-manifest /data/atomic-overlay-v0-baseline.manifest.json \
-  --require-claimable-baseline \
   --evaluator-root /opt/WebMainBench \
-  --output-dir /artifacts/atomic-overlay-v0-545-fresh \
-  --concurrency 4 \
-  --max-decision-wall-seconds 180
+  --output /artifacts/score.claim.json
 ```
-
-For an explicitly non-claimable diagnostic, omit the manifest and
-`--require-claimable-baseline`. Add `--allow-dirty-exploratory` only when a
-dirty-tree diagnostic is intentional.
-
-Exit status `0` means every gate passed. Status `1` means a complete NO-GO run
-with artifacts. Status `2` means an integrity or protocol failure and must not
-be reported as a completed quality result.
-
-Expected artifacts are `run_config.json`, `summary.json`, `manifest.json`, and
-an `official/` and `scrubbed/` directory containing `pages.jsonl` and
-`summary.json`.
 
 ## Promotion boundary
 
-The audit can authorize continued shadow evaluation only. Production wiring,
-API exposure, and default enablement require a separate review, broader
-adversarial and holdout evaluation, service-level latency and memory evidence,
-rollback controls, and an explicit production change.
+Production wiring, API exposure, or default enablement requires a separate
+review, broader adversarial and holdout evaluation, service-level latency and
+memory evidence, rollback controls, and an explicit production change.

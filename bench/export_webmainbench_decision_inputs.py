@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Export WebMainBench HTML-only decision inputs for a later audit process.
+"""Export WebMainBench raw-HTML-only decision inputs for a later audit process.
 
 This process verifies the pinned dataset, emits a closed-schema projection, and
 then exits. The audit runner must be invoked separately so label-bearing Python
-objects cannot survive into the decision phase.
+objects cannot survive into the decision phase. Benchmark task/category IDs,
+references, metadata, URLs, and benchmark-specific HTML transforms are omitted.
 """
 
 from __future__ import annotations
@@ -12,7 +13,6 @@ import argparse
 import datetime as dt
 import hashlib
 import json
-import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,17 +24,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from bench import webmainbench_finegrained_benchmark as fine  # noqa: E402
+from bench.claimable_io import (  # noqa: E402
+    ClaimableIOError,
+    read_verified_bytes,
+    write_new_file,
+)
 
-DECISION_INPUT_SCHEMA = "webmainbench.atomic-structure-overlay-v0-decision-inputs.1"
+DECISION_INPUT_SCHEMA = "webmainbench.atomic-structure-overlay-v0-decision-inputs.3"
 EXPECTED_PAGES = 545
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _json_bytes(value: object) -> bytes:
@@ -61,93 +58,109 @@ def _hash_json(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _atomic_write(path: Path, content: bytes) -> None:
-    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
-    with temporary.open("xb") as handle:
-        handle.write(content)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, path)
+def _atomic_write(path: Path, content: bytes) -> dict[str, Any]:
+    try:
+        metadata = write_new_file(path, content, mode=0o400)
+    except ClaimableIOError as error:
+        raise fine.BenchmarkError(f"could not publish projection artifact: {error}") from error
+    return {
+        "bytes": metadata.bytes,
+        "path": str(metadata.path),
+        "sha256": metadata.sha256,
+    }
 
 
 def export_projection(dataset: Path, output: Path) -> dict[str, Any]:
-    dataset = dataset.resolve()
-    output = output.resolve()
+    dataset = dataset if dataset.is_absolute() else Path.cwd() / dataset
+    output = output if output.is_absolute() else Path.cwd() / output
     manifest = output.with_suffix(f"{output.suffix}.manifest.json")
     if output.exists() or manifest.exists():
         raise fine.BenchmarkError(
             "projection output and adjacent manifest must not already exist"
         )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    dataset_metadata = fine.verify_dataset(dataset)
-    temporary = output.with_name(f".{output.name}.tmp-{os.getpid()}")
+    try:
+        dataset_bytes, dataset_file = read_verified_bytes(
+            dataset,
+            maximum_bytes=fine.DATASET_BYTES,
+            expected_sha256=fine.DATASET_SHA256,
+        )
+    except ClaimableIOError as error:
+        raise fine.BenchmarkError(f"dataset snapshot failed: {error}") from error
+    if dataset_file.bytes != fine.DATASET_BYTES:
+        raise fine.BenchmarkError("dataset byte count mismatch")
+    dataset_metadata = {
+        "bytes": dataset_file.bytes,
+        "filename": fine.DATASET_FILENAME,
+        "repository": fine.DATASET_REPOSITORY,
+        "revision": fine.DATASET_REVISION,
+        "sha256": dataset_file.sha256,
+    }
     records = 0
     corpus_identity: list[dict[str, Any]] = []
     page_identity: list[dict[str, Any]] = []
-    try:
-        with temporary.open("xb") as handle:
-            for record in fine._iter_records(  # noqa: SLF001
-                dataset,
-                offset=0,
-                limit=None,
-            ):
-                if record.dataset_index != records:
-                    raise fine.BenchmarkError("dataset order is not canonical")
-                handle.write(
-                    _json_bytes(
-                        {
-                            "schema_version": DECISION_INPUT_SCHEMA,
-                            "dataset_index": record.dataset_index,
-                            "track_id": record.track_id,
-                            "html": record.html,
-                        }
-                    )
-                )
-                corpus_identity.append(
-                    {
-                        "dataset_index": record.dataset_index,
-                        "track_id": record.track_id,
-                        "html_sha256": hashlib.sha256(
-                            record.html.encode("utf-8")
-                        ).hexdigest(),
-                    }
-                )
-                page_identity.append(
-                    {
-                        "dataset_index": record.dataset_index,
-                        "track_id": record.track_id,
-                    }
-                )
-                records += 1
-            handle.flush()
-            os.fsync(handle.fileno())
-        if records != EXPECTED_PAGES:
-            raise fine.BenchmarkError("projection requires exactly 545 records")
-        os.replace(temporary, output)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+    output_rows = bytearray()
+    for line_number, line in enumerate(dataset_bytes.splitlines(), start=1):
+        try:
+            record = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise fine.BenchmarkError(
+                f"dataset line {line_number} is invalid"
+            ) from error
+        if not isinstance(record, dict) or type(record.get("html")) is not str:
+            raise fine.BenchmarkError(
+                f"dataset line {line_number} has invalid HTML"
+            )
+        raw_html = record["html"]
+        output_rows.extend(
+            _json_bytes(
+                {
+                    "schema_version": DECISION_INPUT_SCHEMA,
+                    "dataset_index": records,
+                    "raw_html": raw_html,
+                }
+            )
+        )
+        corpus_identity.append(
+            {
+                "dataset_index": records,
+                "raw_html_sha256": hashlib.sha256(
+                    raw_html.encode("utf-8")
+                ).hexdigest(),
+            }
+        )
+        page_identity.append(
+            {
+                "dataset_index": records,
+            }
+        )
+        records += 1
+    if records != EXPECTED_PAGES:
+        raise fine.BenchmarkError("projection requires exactly 545 records")
+    output_identity = _atomic_write(output, bytes(output_rows))
 
     projection_metadata = {
         "schema_version": DECISION_INPUT_SCHEMA,
         "created_at_utc": dt.datetime.now(dt.UTC).isoformat(),
         "source_dataset": dataset_metadata,
         "output": {
-            "path": str(output),
-            "bytes": output.stat().st_size,
-            "sha256": _sha256(output),
+            "path": output_identity["path"],
+            "bytes": output_identity["bytes"],
+            "sha256": output_identity["sha256"],
             "records": records,
-            "html_corpus_sha256": _hash_json(corpus_identity),
+            "raw_html_corpus_sha256": _hash_json(corpus_identity),
             "page_id_sha256": _hash_json(page_identity),
             "canonical_order_verified": True,
         },
         "closed_fields": [
             "schema_version",
             "dataset_index",
-            "track_id",
-            "html",
+            "raw_html",
         ],
         "contains_reference_or_metadata": False,
+        "contains_track_or_category_id": False,
+        "evaluator_derived_cleaner_used": False,
+        "input_transform": "identity dataset HTML",
+        "benchmark_specific_transform_used": False,
         "process_boundary_required": True,
     }
     _atomic_write(manifest, _json_bytes(projection_metadata))

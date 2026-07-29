@@ -619,17 +619,17 @@ fn validate_document_scoped(
     if document.document_truncated {
         return Err(CertificateError::new("document graph is truncated"));
     }
+    if document.parse_error_count != 0 {
+        return Err(CertificateError::new(
+            "HTML parse errors prevent exact source provenance",
+        ));
+    }
     validate_graph_topology(document.graph)?;
     validate_structure_references(document.graph)?;
     if scope == ValidationScope::FullDocument {
         if !document.source_mapping_complete {
             return Err(CertificateError::new(
                 "explicit DOM/source mapping is incomplete",
-            ));
-        }
-        if document.parse_error_count != 0 {
-            return Err(CertificateError::new(
-                "HTML parse errors prevent exact source provenance",
             ));
         }
         if document
@@ -1103,10 +1103,35 @@ struct SourceTextToken {
 struct OpenSourceElement {
     tag: String,
     start: usize,
+    start_tag_end: usize,
+    parent_start: Option<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SourceElementToken {
+    tag: String,
+    start: usize,
+    start_tag_end: usize,
+    end: usize,
+    parent_start: Option<usize>,
+}
+
+#[derive(Debug, Default)]
+struct ExactSourceTokenization {
+    texts: Vec<SourceTextToken>,
+    elements: Vec<SourceElementToken>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExactTokenizationPolicy {
+    FullDocument,
+    LocalAtomic,
 }
 
 fn validate_exact_text_provenance(document: &CertificateDocument<'_>) -> CertificateResult<()> {
-    let tokens = tokenize_exact_source_text(document.source)?;
+    let tokenization =
+        tokenize_exact_source_text(document.source, ExactTokenizationPolicy::FullDocument)?;
+    let tokens = &tokenization.texts;
     let token_by_span = tokens
         .iter()
         .map(|token| ((token.start, token.end), token))
@@ -1192,15 +1217,18 @@ fn validate_exact_text_provenance(document: &CertificateDocument<'_>) -> Certifi
     Ok(())
 }
 
-fn tokenize_exact_source_text(source: &str) -> CertificateResult<Vec<SourceTextToken>> {
+fn tokenize_exact_source_text(
+    source: &str,
+    policy: ExactTokenizationPolicy,
+) -> CertificateResult<ExactSourceTokenization> {
     let bytes = source.as_bytes();
-    let mut tokens = Vec::new();
+    let mut tokenization = ExactSourceTokenization::default();
     let mut stack: Vec<OpenSourceElement> = Vec::new();
     let mut cursor = 0;
     while cursor < bytes.len() {
         let Some(relative) = bytes[cursor..].iter().position(|byte| *byte == b'<') else {
             push_source_text_token(
-                &mut tokens,
+                &mut tokenization.texts,
                 cursor,
                 bytes.len(),
                 stack.last().map(|element| element.start),
@@ -1210,7 +1238,7 @@ fn tokenize_exact_source_text(source: &str) -> CertificateResult<Vec<SourceTextT
         };
         let markup_start = cursor + relative;
         push_source_text_token(
-            &mut tokens,
+            &mut tokenization.texts,
             cursor,
             markup_start,
             stack.last().map(|element| element.start),
@@ -1218,6 +1246,11 @@ fn tokenize_exact_source_text(source: &str) -> CertificateResult<Vec<SourceTextT
         );
 
         if super::starts_ascii_case_insensitive(bytes, markup_start, b"<!--") {
+            if policy == ExactTokenizationPolicy::LocalAtomic {
+                return Err(CertificateError::new(
+                    "local atomic comments are not represented by the selected graph",
+                ));
+            }
             cursor = super::find_bytes(bytes, markup_start + 4, b"-->")
                 .map(|value| value + 3)
                 .ok_or_else(|| CertificateError::new("unterminated HTML comment"))?;
@@ -1227,6 +1260,11 @@ fn tokenize_exact_source_text(source: &str) -> CertificateResult<Vec<SourceTextT
             return Err(CertificateError::new("unterminated less-than transition"));
         }
         if matches!(bytes[markup_start + 1], b'!' | b'?') {
+            if policy == ExactTokenizationPolicy::LocalAtomic {
+                return Err(CertificateError::new(
+                    "local atomic markup declarations are not graph-backed",
+                ));
+            }
             cursor = super::find_tag_end(bytes, markup_start + 2)
                 .ok_or_else(|| CertificateError::new("unterminated markup declaration"))?;
             continue;
@@ -1239,6 +1277,11 @@ fn tokenize_exact_source_text(source: &str) -> CertificateResult<Vec<SourceTextT
             name_end += 1;
         }
         if name_end == name_start {
+            if policy == ExactTokenizationPolicy::LocalAtomic {
+                return Err(CertificateError::new(
+                    "local atomic source contains an ambiguous less-than transition",
+                ));
+            }
             // A literal '<' is deliberately not part of an eligible exact
             // token. Resume after it so unrelated later text can still be
             // certified without interpreting the ambiguous transition.
@@ -1246,10 +1289,9 @@ fn tokenize_exact_source_text(source: &str) -> CertificateResult<Vec<SourceTextT
             continue;
         }
         let tag = source[name_start..name_end].to_ascii_lowercase();
-        let tag_end = super::find_tag_end(bytes, name_end)
-            .ok_or_else(|| CertificateError::new("unterminated HTML tag"))?;
 
         if closing {
+            let tag_end = exact_end_tag_end(bytes, name_end)?;
             let position = stack
                 .iter()
                 .rposition(|element| element.tag == tag)
@@ -1259,35 +1301,79 @@ fn tokenize_exact_source_text(source: &str) -> CertificateResult<Vec<SourceTextT
                     "source element nesting requires parser repair",
                 ));
             }
-            stack.pop();
+            let opened = stack
+                .pop()
+                .ok_or_else(|| CertificateError::new("source element stack is empty"))?;
+            tokenization.elements.push(SourceElementToken {
+                tag,
+                start: opened.start,
+                start_tag_end: opened.start_tag_end,
+                end: tag_end,
+                parent_start: opened.parent_start,
+            });
             cursor = tag_end;
             continue;
         }
 
+        let tag_end = super::find_tag_end(bytes, name_end)
+            .ok_or_else(|| CertificateError::new("unterminated HTML tag"))?;
         let self_closing = source[markup_start..tag_end]
             .trim_end_matches('>')
             .trim_end()
             .ends_with('/');
         if self_closing || super::is_void_tag(&tag) {
+            tokenization.elements.push(SourceElementToken {
+                tag,
+                start: markup_start,
+                start_tag_end: tag_end,
+                end: tag_end,
+                parent_start: stack.last().map(|element| element.start),
+            });
             cursor = tag_end;
             continue;
         }
 
         let element_start = markup_start;
+        let parent_start = stack.last().map(|element| element.start);
         stack.push(OpenSourceElement {
             tag: tag.clone(),
             start: element_start,
+            start_tag_end: tag_end,
+            parent_start,
         });
         if super::is_raw_text_tag(&tag) {
             let (close_start, close_end) = super::find_raw_text_close(source, tag_end, &tag)
                 .ok_or_else(|| CertificateError::new("unterminated raw-text element"))?;
+            let close_name_end = close_start
+                .checked_add(2 + tag.len())
+                .ok_or_else(|| CertificateError::new("raw-text end-tag offset overflow"))?;
+            if exact_end_tag_end(bytes, close_name_end)? != close_end {
+                return Err(CertificateError::new(
+                    "raw-text end tag is not source-canonical",
+                ));
+            }
             let kind = if matches!(tag.as_str(), "title" | "textarea") {
                 SourceTextTokenKind::RcData
             } else {
                 SourceTextTokenKind::RawText
             };
-            push_source_text_token(&mut tokens, tag_end, close_start, Some(element_start), kind);
-            stack.pop();
+            push_source_text_token(
+                &mut tokenization.texts,
+                tag_end,
+                close_start,
+                Some(element_start),
+                kind,
+            );
+            let opened = stack
+                .pop()
+                .ok_or_else(|| CertificateError::new("raw-text element stack is empty"))?;
+            tokenization.elements.push(SourceElementToken {
+                tag,
+                start: opened.start,
+                start_tag_end: opened.start_tag_end,
+                end: close_end,
+                parent_start: opened.parent_start,
+            });
             cursor = close_end;
             continue;
         }
@@ -1298,7 +1384,25 @@ fn tokenize_exact_source_text(source: &str) -> CertificateResult<Vec<SourceTextT
             "unterminated source element prevents exact provenance",
         ));
     }
-    Ok(tokens)
+    tokenization
+        .elements
+        .sort_unstable_by_key(|element| element.start);
+    Ok(tokenization)
+}
+
+fn exact_end_tag_end(bytes: &[u8], mut cursor: usize) -> CertificateResult<usize> {
+    while cursor < bytes.len() {
+        match bytes[cursor] {
+            b'>' => return Ok(cursor + 1),
+            b' ' | b'\t' | b'\n' | 0x0c => cursor += 1,
+            _ => {
+                return Err(CertificateError::new(
+                    "HTML end tag contains attributes, controls, or noncanonical trivia",
+                ));
+            }
+        }
+    }
+    Err(CertificateError::new("unterminated HTML end tag"))
 }
 
 fn push_source_text_token(
@@ -1568,7 +1672,9 @@ fn validate_local_exact_text_provenance(
         .source
         .get(root_span.0..root_span.1)
         .ok_or_else(|| CertificateError::new("local atomic source span is not UTF-8 aligned"))?;
-    let tokens = tokenize_exact_source_text(fragment)?;
+    let tokenization = tokenize_exact_source_text(fragment, ExactTokenizationPolicy::LocalAtomic)?;
+    validate_local_element_token_parity(document, root_index, root_span, &tokenization.elements)?;
+    let tokens = &tokenization.texts;
     let token_by_span = tokens
         .iter()
         .map(|token| ((token.start, token.end), token))
@@ -1656,7 +1762,7 @@ fn validate_local_exact_text_provenance(
         }
         previous_end = Some(end);
     }
-    for token in &tokens {
+    for token in tokens {
         if consumed_source_spans.contains(&(token.start, token.end)) {
             continue;
         }
@@ -1671,6 +1777,105 @@ fn validate_local_exact_text_provenance(
         ));
     }
     Ok(())
+}
+
+fn validate_local_element_token_parity(
+    document: &CertificateDocument<'_>,
+    root_index: usize,
+    root_span: (usize, usize),
+    source_elements: &[SourceElementToken],
+) -> CertificateResult<()> {
+    let graph = document.graph;
+    let mut pending = vec![root_index];
+    let mut explicit_indexes = Vec::new();
+    while let Some(index) = pending.pop() {
+        let element = graph
+            .elements
+            .get(index)
+            .ok_or_else(|| CertificateError::new("local element index is out of bounds"))?;
+        if !element.exposed.implicit {
+            explicit_indexes.push(index);
+        }
+        for child in element.children.iter().rev() {
+            if let EventRef::Element(child_index) = *child {
+                pending.push(child_index);
+            }
+        }
+    }
+    explicit_indexes.sort_unstable_by_key(|index| graph.elements[*index].exposed.source_start);
+    if explicit_indexes.len() != source_elements.len() {
+        return Err(CertificateError::new(
+            "local tokenizer and DOM element event counts disagree",
+        ));
+    }
+
+    for (index, token) in explicit_indexes.into_iter().zip(source_elements) {
+        let element = &graph.elements[index];
+        let (Some(start), Some(start_tag_end), Some(end)) = (
+            element.exposed.source_start,
+            element.exposed.source_start_tag_end,
+            element.exposed.source_end,
+        ) else {
+            return Err(CertificateError::new(
+                "local explicit element lacks complete source coordinates",
+            ));
+        };
+        if start < root_span.0 || start_tag_end > root_span.1 || end > root_span.1 {
+            return Err(CertificateError::new(
+                "local explicit element escapes the selected source span",
+            ));
+        }
+        let expected_parent_start =
+            nearest_local_explicit_parent_start(graph, index, root_index, root_span)?;
+        if token.tag != element.exposed.tag
+            || token.start != start - root_span.0
+            || token.start_tag_end != start_tag_end - root_span.0
+            || token.end != end - root_span.0
+            || token.parent_start != expected_parent_start
+        {
+            return Err(CertificateError::new(
+                "local tokenizer element events disagree with the DOM graph",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn nearest_local_explicit_parent_start(
+    graph: &Graph,
+    index: usize,
+    root_index: usize,
+    root_span: (usize, usize),
+) -> CertificateResult<Option<usize>> {
+    if index == root_index {
+        return Ok(None);
+    }
+    let mut parent = graph.elements[index].parent_index;
+    let mut seen = HashSet::new();
+    while let Some(parent_index) = parent {
+        if !seen.insert(parent_index) {
+            return Err(CertificateError::new(
+                "local explicit parent chain contains a cycle",
+            ));
+        }
+        let parent_element = graph
+            .elements
+            .get(parent_index)
+            .ok_or_else(|| CertificateError::new("local explicit parent is out of bounds"))?;
+        if !parent_element.exposed.implicit {
+            let start = parent_element.exposed.source_start.ok_or_else(|| {
+                CertificateError::new("local explicit parent is not source-backed")
+            })?;
+            if start < root_span.0 {
+                return Ok(None);
+            }
+            return Ok(Some(start - root_span.0));
+        }
+        parent = parent_element.parent_index;
+    }
+    Err(CertificateError::new(
+        "local descendant has no explicit selected parent",
+    ))
 }
 
 fn validate_selected_event(
@@ -3445,6 +3650,66 @@ mod tests {
         )
         .unwrap();
         assert_eq!(replay.markdown, "safetail");
+    }
+
+    #[test]
+    fn local_atomic_rejects_every_global_parse_error() {
+        let result = build(
+            "<!doctype html><html><head><title>x</title></head><body>\
+             <div><span>broken</div><pre><code>safe</code></pre></body></html>",
+        );
+        assert!(result.parse_error_count > 0);
+        let error =
+            create_local_atomic_certificate(&view(&result), &[id_for_tag(&result, "pre")], 1_024)
+                .unwrap_err();
+        assert!(error.0.contains("HTML parse errors"));
+    }
+
+    #[test]
+    fn local_atomic_tokenizer_enforces_exact_end_tags_and_no_unpaired_markup() {
+        assert!(tokenize_exact_source_text(
+            "<pre><code>x</CoDe \t\n></PrE\u{c}>",
+            ExactTokenizationPolicy::LocalAtomic,
+        )
+        .is_ok());
+        for fragment in [
+            "<pre><code>x</code data-x></pre>",
+            "<pre><code>x</code\r></pre>",
+            "<pre><code>x</code\0></pre>",
+            "<pre><code>x</code/></pre>",
+            "<pre><code>x</code><!--hidden--></pre>",
+            "<pre><code>x</code><!bogus></pre>",
+            "<pre><code>x</code><?target?></pre>",
+        ] {
+            assert!(
+                tokenize_exact_source_text(fragment, ExactTokenizationPolicy::LocalAtomic).is_err(),
+                "unexpectedly accepted local fragment: {fragment:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn local_atomic_element_event_parity_rejects_graph_near_match() {
+        let mut result = build(
+            "<!doctype html><html><head><title>x</title></head><body>\
+             <pre><code>safe</code></pre></body></html>",
+        );
+        let code_index = result
+            .graph
+            .elements
+            .iter()
+            .position(|element| element.exposed.tag == "code")
+            .unwrap();
+        result.graph.elements[code_index].exposed.source_end = result.graph.elements[code_index]
+            .exposed
+            .source_end
+            .map(|value| value - 1);
+        assert!(create_local_atomic_certificate(
+            &view(&result),
+            &[id_for_tag(&result, "pre")],
+            1_024,
+        )
+        .is_err());
     }
 
     #[test]

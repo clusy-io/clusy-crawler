@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import inspect
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
+from dataclasses import fields, replace
 
 import pytest
 
@@ -46,13 +47,11 @@ def test_code_overlay_is_source_certified_local_and_replayable() -> None:
         '<pre><code class="language-python">def answer():\n    return 42</code></pre>'
     )
     candidate = "前缀 😀\n\ndef answer():\n    return 42\n\nsuffix café"
-    timings: list[tuple[str, int]] = []
 
     decision = propose_atomic_structure_overlay_v0(
         html,
         candidate,
         config=_enabled(),
-        timing_hook=lambda stage, elapsed: timings.append((stage, elapsed)),
     )
 
     assert decision.accepted
@@ -73,7 +72,6 @@ def test_code_overlay_is_source_certified_local_and_replayable() -> None:
     assert len(proposal.config_digest) == 64
     assert not proposal.digest_is_authentication
     assert "```python\ndef answer():\n    return 42\n```" in decision.output_markdown
-    assert timings and all(elapsed >= 0 for _, elapsed in timings)
 
     start = proposal.candidate_span_start
     end = proposal.candidate_span_end
@@ -256,7 +254,7 @@ def test_fence_collision_uses_a_longer_source_backed_fence() -> None:
     assert code in decision.output_markdown
 
 
-def test_unrelated_parse_error_does_not_block_well_formed_local_atom() -> None:
+def test_any_document_parse_error_blocks_a_well_formed_local_atom() -> None:
     html = _document(
         "<div><span>broken outside</div>"
         '<pre><code class="language-python">def locally_safe():\n  return 7</code></pre>'
@@ -265,8 +263,9 @@ def test_unrelated_parse_error_does_not_block_well_formed_local_atom() -> None:
 
     decision = propose_atomic_structure_overlay_v0(html, candidate, config=_enabled())
 
-    assert decision.accepted
-    assert "```python\ndef locally_safe():\n  return 7\n```" in decision.output_markdown
+    assert not decision.accepted
+    assert decision.output_markdown == candidate
+    assert decision.proposals[0].reason == "certificate_provenance_rejected"
     assert decision.visible_tokens_identical
 
 
@@ -365,7 +364,8 @@ def test_many_atoms_build_candidate_and_token_indexes_once(
     real_positions = overlay_module._token_position_index
 
     def counted_plan(value: str) -> object:
-        calls["plan"] += 1
+        if value == candidate:
+            calls["plan"] += 1
         return real_plan(value)
 
     def counted_spans(
@@ -373,9 +373,16 @@ def test_many_atoms_build_candidate_and_token_indexes_once(
         maximum: int,
         *,
         offset_source: str | None = None,
+        ignored_scalars: tuple[bool, ...] | None = None,
     ) -> object:
-        calls["spans"] += 1
-        return real_spans(value, maximum, offset_source=offset_source)
+        if offset_source == candidate:
+            calls["spans"] += 1
+        return real_spans(
+            value,
+            maximum,
+            offset_source=offset_source,
+            ignored_scalars=ignored_scalars,
+        )
 
     def counted_positions(tokens: tuple[str, ...]) -> object:
         calls["positions"] += 1
@@ -508,40 +515,36 @@ def test_multibyte_budgets_and_lone_surrogates_fail_closed_without_encoding_cras
     assert replay.output_markdown == invalid_candidate
 
 
-def test_hostile_hook_record_and_tamper_cannot_change_fallback() -> None:
+def test_timing_callback_is_not_a_safety_api_and_cannot_inspect_or_mutate_frames() -> None:
     html = _document("<pre><code>safe replay</code></pre>")
     candidate = "safe replay"
     config = _enabled()
+    mutated: list[str] = []
 
-    def hostile_hook(stage: str, elapsed: int) -> None:
-        del stage, elapsed
-        raise RuntimeError("timing must be observational")
+    def frame_mutator(*_args: object, **_kwargs: object) -> None:
+        frame = inspect.currentframe()
+        while frame is not None:
+            decision = frame.f_locals.get("decision")
+            if type(decision) is overlay_module.AtomicStructureOverlayDecisionV0:
+                object.__setattr__(decision, "output_markdown", "forged")
+                mutated.append("decision")
+            frame = frame.f_back
 
-    expected = propose_atomic_structure_overlay_v0(html, candidate, config=config)
-    observed = propose_atomic_structure_overlay_v0(
-        html,
-        candidate,
-        config=config,
-        timing_hook=hostile_hook,
-    )
-    assert observed == expected
-
-    original_visible_tokens = overlay_module._visible_tokens  # noqa: SLF001
-
-    def mutating_hook(stage: str, elapsed: int) -> None:
-        del stage, elapsed
-        overlay_module._visible_tokens = lambda *_args, **_kwargs: ()  # noqa: SLF001
-
-    try:
-        mutation_observed = propose_atomic_structure_overlay_v0(
+    with pytest.raises(TypeError, match="timing_hook"):
+        propose_atomic_structure_overlay_v0(
             html,
             candidate,
             config=config,
-            timing_hook=mutating_hook,
+            timing_hook=frame_mutator,  # type: ignore[call-arg]
         )
-    finally:
-        overlay_module._visible_tokens = original_visible_tokens  # noqa: SLF001
-    assert mutation_observed == expected
+    assert mutated == []
+
+
+def test_hostile_records_fail_closed_and_tampering_never_changes_fallback() -> None:
+    html = _document("<pre><code>safe replay</code></pre>")
+    candidate = "safe replay"
+    config = _enabled()
+    expected = propose_atomic_structure_overlay_v0(html, candidate, config=config)
 
     class Hostile:
         def __getattribute__(self, name: str) -> object:
@@ -605,6 +608,62 @@ def test_hostile_hook_record_and_tamper_cannot_change_fallback() -> None:
     assert not oversized_replay.verified
     assert oversized_replay.reason == "decision_record_budget"
     assert oversized_replay.output_markdown == candidate
+
+
+@pytest.mark.parametrize(
+    ("source_text", "near_match"),
+    [
+        ("CaseSensitive", "casesensitive"),
+        ("a+b", "a-b"),
+        ("punctuation!", "punctuation?"),
+        ("café", "cafe\u0301"),
+    ],
+)
+def test_atom_identity_rejects_case_scalar_and_punctuation_near_matches(
+    source_text: str,
+    near_match: str,
+) -> None:
+    decision = propose_atomic_structure_overlay_v0(
+        _document(f"<pre><code>{source_text}</code></pre>"),
+        near_match,
+        config=_enabled(),
+    )
+
+    assert not decision.accepted
+    assert decision.output_markdown == near_match
+    assert decision.proposals[0].reason == "ambiguous_or_missing_candidate_span"
+
+
+def test_atom_identity_allows_only_whitespace_and_markdown_escape_normalization() -> None:
+    decision = propose_atomic_structure_overlay_v0(
+        _document("<pre><code>a*b + c</code></pre>"),
+        "a\\*b\t+\n c",
+        config=_enabled(),
+    )
+
+    assert decision.accepted
+    assert decision.visible_tokens_identical
+    assert decision.output_markdown == "```\na*b + c\n```"
+
+
+def test_frozen_config_is_canonicalized_and_revalidated_at_every_public_boundary() -> None:
+    html = _document("<pre><code>config boundary</code></pre>")
+    candidate = "config boundary"
+    valid = _enabled()
+    decision = propose_atomic_structure_overlay_v0(html, candidate, config=valid)
+
+    for field in fields(AtomicStructureOverlayV0Config):
+        mutated = _enabled()
+        object.__setattr__(mutated, field.name, object())
+        with pytest.raises(ValueError, match=field.name):
+            propose_atomic_structure_overlay_v0(html, candidate, config=mutated)
+        with pytest.raises(ValueError, match=field.name):
+            verify_atomic_structure_overlay_v0(
+                html,
+                candidate,
+                decision,
+                config=mutated,
+            )
 
 
 def test_decisions_are_deterministic_in_parallel_and_config_bound() -> None:

@@ -903,9 +903,13 @@ def _load_baseline_provenance(
         )
     return {
         "schema_version": BASELINE_MANIFEST_SCHEMA,
-        "claimable": True,
-        "mode": "manifest_bound_label_free_generator",
-        "reason": None,
+        "claimable": False,
+        "mode": "legacy_in_process_exploratory",
+        "reason": (
+            "this combined runner imports decision code, evaluator, scorer, and "
+            "labels in one process; claimable execution moved to "
+            "bench.atomic_claim_protocol"
+        ),
         "baseline": dict(baseline_metadata),
         "manifest_path": str(path),
         "manifest_sha256": _sha256(path),
@@ -1579,6 +1583,12 @@ def _artifact_manifest(output: Path) -> dict[str, dict[str, Any]]:
 
 
 def run_audit(args: argparse.Namespace) -> dict[str, Any]:
+    if args.require_claimable_baseline:
+        raise fine.BenchmarkError(
+            "the combined shadow runner is permanently nonclaimable; use "
+            "bench.atomic_claim_protocol for isolated baseline and decisions, "
+            "then score the frozen artifact in a later process"
+        )
     if args.concurrency <= 0 or args.concurrency > 8:
         raise fine.BenchmarkError("concurrency must be in [1, 8]")
     if (
@@ -1924,7 +1934,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
         "completed_at_utc": dt.datetime.now(dt.UTC).isoformat(),
         "claimable_sota_or_vendor_evidence": False,
         "production_wiring_changed": False,
-        "go_for_545_shadow": gates["passed"],
+        "go_for_545_shadow": False,
         "exploratory_shadow_checks_passed": all(nonclaimable_checks.values()),
         "go_for_production": False,
         "decision_used_labels_or_metrics": False,
