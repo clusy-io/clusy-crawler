@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from app.config import settings
 from app.models.requests import CrawlRequest
 from app.models.responses import CrawlResult
 from app.services import crawler as crawler_module
@@ -650,6 +651,16 @@ def test_recursive_request_validates_shared_page_budget_only_when_enabled():
             max_depth=1,
             max_pages=1,
         )
+
+
+def test_recursive_request_default_uses_validated_service_setting() -> None:
+    request = CrawlRequest(urls=["https://example.com/"], max_depth=1)
+
+    assert request.max_pages == settings.default_max_pages
+    assert (
+        CrawlRequest.model_fields["max_pages"].default
+        == settings.default_max_pages
+    )
 
 
 def test_recursive_html_limit_uses_total_page_budget():

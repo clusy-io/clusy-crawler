@@ -54,3 +54,32 @@ class TestCrawlEndpoint:
         assert r["error"] is None
         assert "Hello world" in r["markdown"]
         assert r["metadata"] is not None
+        metadata = r["metadata"]
+        assert metadata["pipeline_revision"] == "clusy-extraction-v2"
+        assert metadata["extraction_route"]
+        assert isinstance(metadata["completeness_score"], (int, float))
+        assert 0 <= metadata["completeness_score"] <= 1
+        assert metadata["completeness_coverage"] in {
+            "unassessed",
+            "output_only",
+            "source_full",
+            "source_prefix",
+        }
+        if metadata["completeness_coverage"] in {"source_full", "source_prefix"}:
+            assert metadata["source_coverage_score"] is not None
+            assert metadata["output_grounding_score"] is not None
+        assert metadata["cache_status"] == "live"
+        assert set(metadata["stage_timings_ms"]) == {
+            "queue",
+            "fetch",
+            "render",
+            "extraction",
+            "total",
+        }
+        assert metadata["stage_timings_ms"]["total"] >= 0
+        assert metadata["stage_timings_ms"]["total"] >= (
+            metadata["stage_timings_ms"]["queue"]
+            + metadata["stage_timings_ms"]["fetch"]
+            + metadata["stage_timings_ms"]["render"]
+            + metadata["stage_timings_ms"]["extraction"]
+        ) - 0.01

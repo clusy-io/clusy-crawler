@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from bisect import bisect_right
 from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
@@ -24,7 +25,8 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 ExtractionProfile = Literal["balanced", "article_body", "adaptive", "quality"]
-ADAPTIVE_ROUTER_REVISION = "adaptive-v1"
+PIPELINE_REVISION = "clusy-extraction-v2"
+ADAPTIVE_ROUTER_REVISION = "adaptive-v2"
 
 
 def _html_to_markdown(html: str) -> str:
@@ -50,6 +52,24 @@ class ExtractionResult:
     page_type: str = ""
     truncated: bool = False
     truncation_reason: str = ""
+    pipeline_revision: str = PIPELINE_REVISION
+    route: str = ""
+    route_reasons: tuple[str, ...] = ()
+    model_assisted: bool = False
+    quality_attempted: bool = False
+    quality_succeeded: bool = False
+    candidate_count: int = 1
+    candidate_disagreement: float = 0.0
+    completeness_score: float = 0.0
+    completeness_coverage: Literal[
+        "unassessed",
+        "output_only",
+        "source_full",
+        "source_prefix",
+    ] = "unassessed"
+    source_coverage_score: float | None = None
+    output_grounding_score: float | None = None
+    completeness_reasons: tuple[str, ...] = ()
 
 
 def _count_words(text: str) -> int:
@@ -73,6 +93,14 @@ def _log_host(url: str) -> str:
 # of falling through to the CSS-leaking raw_lxml last resort. The escalate-to-JS
 # decision is made separately (crawler.SPARSE_WORD_FLOOR), not here.
 _MIN_ACCEPT_WORDS = 8
+
+# Experimental adaptive-only candidate expansion. This heuristic is excluded
+# from the balanced/default profile and from benchmark claims: its thresholds
+# are not independent evidence of general quality. Integer comparisons merely
+# keep the experimental routing behavior deterministic and boundary-exact.
+_ADAPTIVE_ARTICLE_RESCUE_MAX_BROAD_CHARACTERS = 3_000
+_ADAPTIVE_ARTICLE_RESCUE_LENGTH_NUMERATOR = 5
+_ADAPTIVE_ARTICLE_RESCUE_LENGTH_DENOMINATOR = 4
 
 # Strategy trust order for choosing the union base. Specialized + trafilatura
 # produce the cleanest markdown; markdownify captures the most text but also the
@@ -1005,10 +1033,36 @@ def _finalize_result(
     # Post-processing can add a title/tables/code or remove boilerplate. Report
     # the final output count rather than the pre-processing strategy count.
     result.word_count = _count_words(result.text)
+    if not result.route:
+        if result.strategy.startswith("github-"):
+            result.route = "github_source"
+            result.route_reasons = ("github_source_specialist",)
+        elif result.strategy == "rs-trafilatura":
+            result.route = "native_fast_path"
+        else:
+            result.route = "deterministic_fallback"
+    # Preserve the independently benchmarked native fast path: structural
+    # scanning belongs to adaptive/quality routing and must not tax every
+    # article-body request.
+    _annotate_completeness(
+        result,
+        html_content,
+        include_structure=result.strategy != "rs-trafilatura",
+    )
     return result
 
 
-def _native_is_confident(result: ExtractionResult | None) -> bool:
+def _native_is_confident(
+    result: ExtractionResult | None,
+    *,
+    allow_article_shortcut: bool = True,
+) -> bool:
+    confidence_threshold = settings.native_extraction_min_confidence
+    if not allow_article_shortcut:
+        confidence_threshold = max(
+            confidence_threshold,
+            settings.adaptive_extraction_min_confidence,
+        )
     return bool(
         result
         and result.word_count >= _MIN_ACCEPT_WORDS
@@ -1017,8 +1071,8 @@ def _native_is_confident(result: ExtractionResult | None) -> bool:
         # strongly on WCXB. Keep both article paths out of the generic
         # confidence fallback gate.
         and (
-            result.page_type == "article"
-            or result.confidence >= settings.native_extraction_min_confidence
+            (allow_article_shortcut and result.page_type == "article")
+            or result.confidence >= confidence_threshold
         )
     )
 
@@ -1027,6 +1081,8 @@ def _native_is_confident(result: ExtractionResult | None) -> bool:
 class AdaptiveRiskDecision:
     risky: bool
     structural_score: int
+    structural_loss_score: int
+    candidate_disagreement: float
     reasons: tuple[str, ...]
 
 
@@ -1041,6 +1097,18 @@ _MATH_MARKUP = re.compile(
 )
 _LIST_ITEM_TAG = re.compile(r"<li\b", re.IGNORECASE)
 _LINK_TAG = re.compile(r"<a\b", re.IGNORECASE)
+_HEADING_TAG = re.compile(r"<h[1-6]\b", re.IGNORECASE)
+_MARKDOWN_HEADING = re.compile(r"(?m)^\s{0,3}#{1,6}\s+\S")
+_MARKDOWN_LIST_ITEM = re.compile(r"(?m)^\s*(?:[-+*]|\d+[.)])\s+\S")
+_MARKDOWN_TABLE = re.compile(
+    r"(?m)^\s*\|?.+\|.+\n\s*\|?\s*:?-{3,}|<table\b",
+    re.IGNORECASE,
+)
+_MARKDOWN_CODE = re.compile(r"```|~~~|^(?: {4}|\t)\S", re.MULTILINE)
+_MARKDOWN_MATH = re.compile(
+    r"\$\$|\\\(|\\\[|<math\b|(?:^|[^\\])\$[^$\n]+\$",
+    re.IGNORECASE,
+)
 _QUALITY_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 _CJK_CHARACTER = re.compile(
     r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
@@ -1059,6 +1127,184 @@ def _bounded_match_count(pattern: re.Pattern[str], value: str, limit: int) -> in
         if count >= limit:
             break
     return count
+
+
+def _structural_loss_score(html_content: str, markdown: str) -> tuple[int, tuple[str, ...]]:
+    """Return bounded, label-free signals for source structures missing in output.
+
+    This is a routing/completeness signal, not a benchmark metric. It only asks
+    whether a source contains a structure category and the candidate contains
+    no representation of that category; it does not assume all page chrome is
+    main content.
+    """
+    scan = html_content[: settings.adaptive_extraction_max_scan_chars]
+    reasons: list[str] = []
+
+    if _HEADING_TAG.search(scan) and not _MARKDOWN_HEADING.search(markdown):
+        reasons.append("headings_missing")
+    if _LIST_ITEM_TAG.search(scan) and not _MARKDOWN_LIST_ITEM.search(markdown):
+        reasons.append("lists_missing")
+    if _TABLE_TAG.search(scan) and not _MARKDOWN_TABLE.search(markdown):
+        reasons.append("tables_missing")
+    if (_PRE_TAG.search(scan) or _CODE_TAG.search(scan)) and not _MARKDOWN_CODE.search(
+        markdown
+    ):
+        reasons.append("code_missing")
+    if _MATH_MARKUP.search(scan) and not _MARKDOWN_MATH.search(markdown):
+        reasons.append("math_missing")
+    return len(reasons), tuple(reasons)
+
+
+def _markdown_structure_categories(markdown: str) -> frozenset[str]:
+    categories: set[str] = set()
+    for name, pattern in (
+        ("heading", _MARKDOWN_HEADING),
+        ("list", _MARKDOWN_LIST_ITEM),
+        ("table", _MARKDOWN_TABLE),
+        ("code", _MARKDOWN_CODE),
+        ("math", _MARKDOWN_MATH),
+    ):
+        if pattern.search(markdown):
+            categories.add(name)
+    return frozenset(categories)
+
+
+_COMPLETENESS_MAX_SCAN_CHARS = 100_000
+_COMPLETENESS_MAX_TOKENS = 50_000
+
+
+@dataclass(frozen=True, slots=True)
+class GroundingCoverage:
+    source_coverage: float
+    output_grounding: float
+    source_tokens_assessed: int
+    output_tokens_assessed: int
+    fully_assessed: bool
+
+
+def _bounded_visible_source_text(html_content: str, scan_limit: int) -> str:
+    """Return visible source text from a hard-bounded HTML prefix."""
+    scan = html_content[:scan_limit]
+    try:
+        root = lxml_html.fromstring(scan)
+        for node in root.xpath("//script|//style|//noscript|//template"):
+            parent = node.getparent()
+            if parent is not None:
+                parent.remove(node)
+        return str(root.text_content())[:scan_limit]
+    except Exception:
+        return re.sub(r"<[^>]+>", " ", scan)[:scan_limit]
+
+
+def _bounded_grounding_coverage(
+    html_content: str,
+    markdown: str,
+) -> GroundingCoverage | None:
+    """Measure bounded multiset-token coverage in both directions."""
+    scan_limit = min(
+        settings.adaptive_extraction_max_scan_chars,
+        _COMPLETENESS_MAX_SCAN_CHARS,
+    )
+    source_text = _bounded_visible_source_text(html_content, scan_limit)
+    source_tokens_all = _quality_tokens(source_text)
+    output_tokens_all = _quality_tokens(markdown[:scan_limit])
+    if not source_tokens_all or not output_tokens_all:
+        return None
+
+    source_tokens = source_tokens_all[:_COMPLETENESS_MAX_TOKENS]
+    output_tokens = output_tokens_all[:_COMPLETENESS_MAX_TOKENS]
+    source_counts = Counter(source_tokens)
+    output_counts = Counter(output_tokens)
+    grounded = sum((source_counts & output_counts).values())
+    return GroundingCoverage(
+        source_coverage=grounded / len(source_tokens),
+        output_grounding=grounded / len(output_tokens),
+        source_tokens_assessed=len(source_tokens),
+        output_tokens_assessed=len(output_tokens),
+        fully_assessed=(
+            len(html_content) <= scan_limit
+            and len(markdown) <= scan_limit
+            and len(source_tokens_all) <= _COMPLETENESS_MAX_TOKENS
+            and len(output_tokens_all) <= _COMPLETENESS_MAX_TOKENS
+        ),
+    )
+
+
+def _annotate_completeness(
+    result: ExtractionResult,
+    html_content: str,
+    *,
+    include_structure: bool = True,
+) -> None:
+    """Attach a conservative, explainable completeness estimate.
+
+    The score is intentionally not presented as calibrated probability. It is
+    useful to platform callers as a fallback signal and every deduction is
+    exposed in ``completeness_reasons``.
+    """
+    reasons: list[str] = []
+    if result.word_count <= SPARSE_COMPLETENESS_WORDS:
+        reasons.append("sparse_output")
+    if result.truncated:
+        reasons.append("output_truncated")
+
+    if not include_structure:
+        # Output density/truncation describe the returned payload but cannot
+        # establish source coverage. Compatibility keeps this field numeric,
+        # so zero is safer than a misleading perfect score when source scanning
+        # was deliberately skipped.
+        result.completeness_score = 0.0
+        result.completeness_coverage = "output_only"
+        result.source_coverage_score = None
+        result.output_grounding_score = None
+        result.completeness_reasons = tuple(reasons)
+        return
+
+    structural_loss, structural_reasons = _structural_loss_score(
+        html_content,
+        result.text,
+    )
+    if structural_loss:
+        reasons.extend(structural_reasons)
+
+    grounding = _bounded_grounding_coverage(html_content, result.text)
+    if grounding is None:
+        result.completeness_score = 0.0
+        result.completeness_coverage = "unassessed"
+        result.source_coverage_score = None
+        result.output_grounding_score = None
+        reasons.append("grounding_unavailable")
+        result.completeness_reasons = tuple(reasons)
+        return
+
+    result.source_coverage_score = round(grounding.source_coverage, 4)
+    result.output_grounding_score = round(grounding.output_grounding, 4)
+    result.completeness_coverage = (
+        "source_full" if grounding.fully_assessed else "source_prefix"
+    )
+    if not grounding.fully_assessed:
+        reasons.append("grounding_budget_limited")
+    if grounding.source_coverage < 0.80:
+        reasons.append("low_source_coverage")
+    if grounding.output_grounding < 0.80:
+        reasons.append("low_output_grounding")
+
+    # A perfect score now requires both nearly all assessed source tokens to
+    # be represented and nearly all output tokens to be source-grounded.
+    score = min(grounding.source_coverage, grounding.output_grounding)
+    if "sparse_output" in reasons:
+        score = min(score, 0.50)
+    if "output_truncated" in reasons:
+        score = min(score, 0.65)
+    if not grounding.fully_assessed:
+        score = min(score, 0.99)
+    if structural_loss:
+        score -= min(0.35, structural_loss * 0.08)
+    result.completeness_score = round(max(0.0, score), 3)
+    result.completeness_reasons = tuple(reasons)
+
+
+SPARSE_COMPLETENESS_WORDS = 15
 
 
 def _adaptive_risk_decision(
@@ -1089,6 +1335,10 @@ def _adaptive_risk_decision(
         structural_score += 1
     if _bounded_match_count(_LINK_TAG, scan, 80) >= 80:
         structural_score += 1
+    structural_loss_score, structural_loss_reasons = _structural_loss_score(
+        scan,
+        candidate.text,
+    )
 
     reasons: list[str] = []
     if candidate.confidence < settings.adaptive_extraction_min_confidence:
@@ -1102,10 +1352,21 @@ def _adaptive_risk_decision(
         reasons.append("risky_page_type")
     if structural_score >= settings.adaptive_extraction_structural_score_threshold:
         reasons.append("structural_complexity")
+    if structural_loss_score >= settings.adaptive_extraction_structure_loss_threshold:
+        reasons.append("structure_loss")
+        reasons.extend(structural_loss_reasons)
+    if (
+        candidate.candidate_count >= 2
+        and candidate.candidate_disagreement
+        >= settings.adaptive_extraction_candidate_disagreement_threshold
+    ):
+        reasons.append("candidate_disagreement")
 
     return AdaptiveRiskDecision(
         risky=bool(reasons),
         structural_score=structural_score,
+        structural_loss_score=structural_loss_score,
+        candidate_disagreement=candidate.candidate_disagreement,
         reasons=tuple(reasons),
     )
 
@@ -1123,9 +1384,107 @@ def _quality_tokens(value: str) -> list[str]:
     return tokens
 
 
+def _candidate_disagreement(results: list[ExtractionResult]) -> tuple[int, float]:
+    """Measure bounded pairwise multiset-token disagreement among clean candidates."""
+    clean = [
+        result
+        for result in results
+        if result.word_count >= _MIN_ACCEPT_WORDS
+        and _STRATEGY_RANK.get(result.strategy, 0) >= 3
+    ]
+    if len(clean) < 2:
+        return len(clean), 0.0
+
+    counters = [
+        Counter(_quality_tokens(result.text[:100_000]))
+        for result in clean[:4]
+    ]
+    distances: list[float] = []
+    for left_index, left in enumerate(counters):
+        for right in counters[left_index + 1 :]:
+            left_size = sum(left.values())
+            right_size = sum(right.values())
+            if not left_size or not right_size:
+                continue
+            overlap = sum((left & right).values())
+            token_f1 = (2 * overlap) / (left_size + right_size)
+            distances.append(1.0 - token_f1)
+    if not distances:
+        return len(clean), 0.0
+    return len(clean), round(sum(distances) / len(distances), 4)
+
+
+def _should_try_native_article_rescue(
+    broad: ExtractionResult | None,
+) -> bool:
+    """Cheaply identify broad candidates eligible for a second native pass."""
+    return bool(
+        broad is not None
+        and broad.word_count >= _MIN_ACCEPT_WORDS
+        and len(broad.text) <= _ADAPTIVE_ARTICLE_RESCUE_MAX_BROAD_CHARACTERS
+    )
+
+
+def _select_native_article_rescue(
+    broad: ExtractionResult,
+    article: ExtractionResult | None,
+) -> ExtractionResult:
+    """Select a source-backed article rescue only at the fixed 1.25x boundary."""
+    if article is None or article.word_count < _MIN_ACCEPT_WORDS:
+        return broad
+
+    candidate_count, disagreement = _candidate_disagreement([broad, article])
+    broad.candidate_count = candidate_count
+    broad.candidate_disagreement = disagreement
+    article.candidate_count = candidate_count
+    article.candidate_disagreement = disagreement
+
+    if (
+        len(article.text) * _ADAPTIVE_ARTICLE_RESCUE_LENGTH_DENOMINATOR
+        < len(broad.text) * _ADAPTIVE_ARTICLE_RESCUE_LENGTH_NUMERATOR
+    ):
+        return broad
+
+    article.route = "native_article_rescue"
+    article.route_reasons = (
+        "experimental_adaptive_article_rescue",
+        "broad_output_at_most_3000_chars",
+        "article_candidate_at_least_1_25x",
+    )
+    return article
+
+
 def _quality_content_units(value: str) -> int:
     cjk_characters = len(_CJK_CHARACTER.findall(value))
     return max(_count_words(value), cjk_characters // 2)
+
+
+def _quality_backend_configured() -> bool:
+    """Return whether a quality request can leave the deterministic fast path."""
+    return settings.quality_backend_configured()
+
+
+def _ordered_grounding_ratio(
+    quality_tokens: list[str],
+    source_tokens: list[str],
+) -> float:
+    """Return the fraction of output tokens recoverable in source order."""
+    positions: dict[str, list[int]] = {}
+    for index, token in enumerate(source_tokens[:200_000]):
+        positions.setdefault(token, []).append(index)
+
+    cursor = -1
+    ordered = 0
+    for token in quality_tokens[:100_000]:
+        token_positions = positions.get(token)
+        if not token_positions:
+            continue
+        position_index = bisect_right(token_positions, cursor)
+        if position_index >= len(token_positions):
+            continue
+        cursor = token_positions[position_index]
+        ordered += 1
+    return ordered / len(quality_tokens) if quality_tokens else 0.0
 
 
 def _quality_source_text(html_content: str) -> str:
@@ -1221,6 +1580,18 @@ def _quality_rejection_reason(
     grounded = sum((quality_counts & source_counts).values())
     if grounded / len(quality_tokens) < 0.80:
         return "ungrounded_content"
+    if _ordered_grounding_ratio(quality_tokens, source_tokens) < 0.65:
+        return "source_order_violation"
+    if (
+        deterministic is not None
+        and deterministic.confidence >= 0.75
+        and deterministic.page_type in {"article", "documentation"}
+    ):
+        lost_categories = _markdown_structure_categories(
+            deterministic.text
+        ) - _markdown_structure_categories(quality_text)
+        if lost_categories:
+            return "structure_regression"
     return None
 
 
@@ -1265,6 +1636,12 @@ def extract_content(
             return _finalize_result(specialized, html_content, news)
 
     native = _extract_with_native(html_content, url, deterministic_profile)
+    if extraction_profile == "adaptive" and _should_try_native_article_rescue(native):
+        assert native is not None
+        native = _select_native_article_rescue(
+            native,
+            _extract_with_native(html_content, url, "article_body"),
+        )
     if _native_is_confident(native):
         assert native is not None
         return _finalize_result(native, html_content, news)
@@ -1321,7 +1698,7 @@ async def _try_quality_result(
         title = deterministic.title
         description = deterministic.description
         language = deterministic.language
-    return ExtractionResult(
+    result = ExtractionResult(
         text=quality.text,
         title=title,
         description=description,
@@ -1331,12 +1708,24 @@ async def _try_quality_result(
         # The deterministic confidence calibrates a different body and must not
         # be presented as a score for model-assisted output.
         confidence=0.0,
+        route="quality_model",
+        model_assisted=True,
+        quality_attempted=True,
+        quality_succeeded=True,
         page_type=(
             deterministic.page_type
             if deterministic is not None and deterministic.page_type
             else page_type
         ),
     )
+    before_truncation = result.text
+    result.text = _truncate_at_boundary(before_truncation)
+    if result.text != before_truncation:
+        result.truncated = True
+        result.truncation_reason = "configured text limit"
+    result.word_count = _count_words(result.text)
+    _annotate_completeness(result, html_content)
+    return result
 
 
 async def _extract_deterministic_after_specialized(
@@ -1347,6 +1736,8 @@ async def _extract_deterministic_after_specialized(
     page_type: str,
     news: bool,
     semaphore: asyncio.Semaphore,
+    allow_article_shortcut: bool = True,
+    enable_article_rescue: bool = False,
 ) -> ExtractionResult:
     native = await _to_thread_holding_cancellation(
         _extract_with_native,
@@ -1355,7 +1746,20 @@ async def _extract_deterministic_after_specialized(
         extraction_profile,
         semaphore=semaphore,
     )
-    if _native_is_confident(native):
+    if enable_article_rescue and _should_try_native_article_rescue(native):
+        assert native is not None
+        article = await _to_thread_holding_cancellation(
+            _extract_with_native,
+            html_content,
+            url,
+            "article_body",
+            semaphore=semaphore,
+        )
+        native = _select_native_article_rescue(native, article)
+    if _native_is_confident(
+        native,
+        allow_article_shortcut=allow_article_shortcut,
+    ):
         assert native is not None
         return _finalize_result(native, html_content, news)
 
@@ -1373,8 +1777,16 @@ async def _extract_deterministic_after_specialized(
             and native.confidence >= 0.35
             and fallback.word_count < native.word_count * 1.25
         ):
-            return _finalize_result(native, html_content, news)
-        return _finalize_result(fallback, html_content, news)
+            selected = native
+        else:
+            selected = fallback
+        finalized = _finalize_result(selected, html_content, news)
+        candidates = [candidate for candidate in (native, fallback) if candidate is not None]
+        (
+            finalized.candidate_count,
+            finalized.candidate_disagreement,
+        ) = _candidate_disagreement(candidates)
+        return finalized
 
     try:
         results = await _await_worker_holding_permit(
@@ -1408,8 +1820,15 @@ async def _extract_deterministic_after_specialized(
         and native.confidence >= 0.35
         and merged.word_count < native.word_count * 1.25
     ):
-        return _finalize_result(native, html_content, news)
-    return _finalize_result(merged, html_content, news)
+        selected = native
+    else:
+        selected = merged
+    finalized = _finalize_result(selected, html_content, news)
+    candidates = [candidate for candidate in (native, *results) if candidate is not None]
+    finalized.candidate_count, finalized.candidate_disagreement = _candidate_disagreement(
+        candidates
+    )
+    return finalized
 
 
 async def extract_content_async(
@@ -1447,14 +1866,29 @@ async def extract_content_async(
             page_type=page_type,
             news=news,
             semaphore=semaphore,
+            enable_article_rescue=False,
         )
-        quality_result = await _try_quality_result(
-            html_content,
-            url,
-            page_type,
-            deterministic,
+        backend_configured = _quality_backend_configured()
+        quality_result = (
+            await _try_quality_result(
+                html_content,
+                url,
+                page_type,
+                deterministic,
+            )
+            if backend_configured
+            else None
         )
-        return quality_result if quality_result is not None else deterministic
+        if quality_result is not None:
+            return quality_result
+        deterministic.quality_attempted = backend_configured
+        deterministic.quality_succeeded = False
+        deterministic.route_reasons = (
+            "quality_backend_fallback"
+            if deterministic.quality_attempted
+            else "quality_backend_disabled",
+        )
+        return deterministic
 
     if extraction_profile == "adaptive":
         deterministic = await _extract_deterministic_after_specialized(
@@ -1464,24 +1898,64 @@ async def extract_content_async(
             page_type=page_type,
             news=news,
             semaphore=semaphore,
+            # The broad native backend's article label is useful but is not a
+            # calibrated adaptive routing guarantee. Compare clean candidates
+            # on articles so disagreement can trigger the quality lane, while
+            # balanced/article_body keep their independently benchmarked path.
+            allow_article_shortcut=False,
+            enable_article_rescue=True,
         )
         decision = _adaptive_risk_decision(deterministic, html_content)
+        deterministic_route_reasons = deterministic.route_reasons
+        _annotate_completeness(
+            deterministic,
+            html_content,
+            include_structure=True,
+        )
         if not decision.risky:
+            deterministic.route_reasons = (
+                *deterministic_route_reasons,
+                "adaptive_fast_path",
+            )
             return deterministic
         logger.info(
             "adaptive_extraction_escalating",
             reasons="+".join(decision.reasons),
             structural_score=decision.structural_score,
+            structural_loss_score=decision.structural_loss_score,
+            candidate_disagreement=decision.candidate_disagreement,
             page_type=deterministic.page_type or page_type,
             confidence=round(deterministic.confidence, 3),
         )
-        quality_result = await _try_quality_result(
-            html_content,
-            url,
-            page_type,
-            deterministic,
+        backend_configured = _quality_backend_configured()
+        quality_result = (
+            await _try_quality_result(
+                html_content,
+                url,
+                page_type,
+                deterministic,
+            )
+            if backend_configured
+            else None
         )
-        return quality_result if quality_result is not None else deterministic
+        if quality_result is not None:
+            quality_result.route_reasons = (
+                *deterministic_route_reasons,
+                *decision.reasons,
+            )
+            return quality_result
+        deterministic.quality_attempted = backend_configured
+        deterministic.quality_succeeded = False
+        deterministic.route_reasons = (
+            *deterministic_route_reasons,
+            *decision.reasons,
+            (
+                "quality_backend_fallback"
+                if deterministic.quality_attempted
+                else "quality_backend_disabled"
+            ),
+        )
+        return deterministic
 
     return await _extract_deterministic_after_specialized(
         html_content,
@@ -1490,4 +1964,5 @@ async def extract_content_async(
         page_type=page_type,
         news=news,
         semaphore=semaphore,
+        enable_article_rescue=False,
     )

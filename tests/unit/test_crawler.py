@@ -249,12 +249,14 @@ class TestCrawler:
 
         async def fetch(url, js_render=False, wait_for_selector=None):
             calls.append(url)
+            await asyncio.sleep(0.002)
             if url == pdf_url:
                 return FetchResult(
                     raw_bytes=b"%PDF-test",
                     status_code=200,
                     content_type="application/pdf",
                     final_url=pdf_url,
+                    fetch_latency_ms=1.25,
                 )
             assert url == abs_url
             return FetchResult(
@@ -314,6 +316,22 @@ class TestCrawler:
         assert result.metadata.published_at == "2017-06-12"
         assert result.metadata.extraction_strategy == "pypdfium2+academic"
         assert result.metadata.origin_status_code == 200
+        assert result.metadata.pipeline_revision == "clusy-extraction-v2"
+        assert result.metadata.extraction_route == "academic_pdf"
+        assert result.metadata.route_reasons == ["direct_pdf"]
+        assert result.metadata.completeness_score == 0.0
+        assert result.metadata.completeness_coverage == "output_only"
+        assert result.metadata.source_coverage_score is None
+        assert result.metadata.output_grounding_score is None
+        assert result.metadata.cache_status == "live"
+        assert set(result.metadata.stage_timings_ms) == {
+            "queue",
+            "fetch",
+            "render",
+            "extraction",
+            "total",
+        }
+        assert result.metadata.stage_timings_ms["fetch"] == 1.25
         assert result.links == [abs_url]
         assert "decoded PDF body" in result.markdown
 
@@ -596,3 +614,414 @@ async def test_optional_academic_pdf_policy_denial_keeps_landing_fallback(
     )
 
     assert result is None
+
+
+# V2 withholds failed attempts and unversioned model output from Redis.
+def test_quality_cacheability_requires_success_and_backend_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import crawler as crawler_module
+
+    fallback = CrawlResult(
+        url="https://example.test",
+        markdown="deterministic fallback",
+        metadata=ExtractionMetadata(
+            model_assisted=True,
+            quality_attempted=True,
+            quality_succeeded=False,
+        ),
+    )
+    accepted = fallback.model_copy(deep=True)
+    assert accepted.metadata is not None
+    accepted.metadata.quality_succeeded = True
+
+    assert crawler_module._result_is_stable_for_cache(fallback) is False
+    monkeypatch.setattr(settings, "quality_extraction_backend_revision", "")
+    assert crawler_module._result_is_stable_for_cache(accepted) is False
+    monkeypatch.setattr(
+        settings,
+        "quality_extraction_backend_revision",
+        "model-build@sha256:abc123",
+    )
+    assert crawler_module._result_is_stable_for_cache(accepted) is True
+
+
+def test_completeness_score_preserves_numeric_response_schema() -> None:
+    metadata = ExtractionMetadata()
+    schema = ExtractionMetadata.model_json_schema()
+
+    assert metadata.completeness_score == 0.0
+    assert isinstance(metadata.completeness_score, float)
+    assert schema["properties"]["completeness_score"]["type"] == "number"
+
+
+@pytest.mark.anyio
+async def test_forced_playwright_wall_time_is_attributed_to_render(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import crawler as crawler_module
+    from app.services.fetcher import FetchResult
+
+    observed_js_render: list[bool] = []
+
+    async def rendered_fetch(
+        _url: str,
+        js_render: bool = False,
+        wait_for_selector: str | None = None,
+    ) -> FetchResult:
+        del wait_for_selector
+        observed_js_render.append(js_render)
+        await asyncio.sleep(0.002)
+        return FetchResult(
+            html="<html><body><main>Rendered source</main></body></html>",
+            status_code=200,
+            content_type="text/html",
+            rendered=True,
+            render_latency_ms=2.0,
+        )
+
+    async def extract(*_args: object, **_kwargs: object) -> ExtractionResult:
+        text = " ".join(["rendered"] * 30)
+        return ExtractionResult(
+            text=text,
+            word_count=30,
+            strategy="trafilatura",
+            completeness_score=1.0,
+            completeness_coverage="source_full",
+        )
+
+    monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", rendered_fetch)
+    monkeypatch.setattr(crawler_module, "extract_content_async", extract)
+    monkeypatch.setattr(crawler_module, "_crawl_semaphore", None)
+
+    result = await crawler_module._crawl_uncached(
+        url="https://example.test/rendered",
+        decide_js=True,
+        auto_render=False,
+        wait_for_selector=None,
+        word_count_threshold=10,
+        extraction_profile="balanced",
+    )
+
+    assert observed_js_render == [True]
+    assert result.metadata is not None
+    timings = result.metadata.stage_timings_ms
+    assert timings["fetch"] == 0
+    assert timings["render"] > 0
+    assert timings["total"] >= timings["render"]
+
+
+@pytest.mark.anyio
+async def test_forced_js_disabled_is_attributed_to_fetch_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import crawler as crawler_module
+    from app.services.fetcher import FetchResult
+
+    async def static_fetch(
+        _url: str,
+        js_render: bool = False,
+        wait_for_selector: str | None = None,
+    ) -> FetchResult:
+        del wait_for_selector
+        assert js_render is True
+        await asyncio.sleep(0.002)
+        return FetchResult(
+            html="<html><body><main>Static fallback source</main></body></html>",
+            status_code=200,
+            content_type="text/html",
+            rendered=False,
+            fetch_latency_ms=1.5,
+        )
+
+    async def extract(*_args: object, **_kwargs: object) -> ExtractionResult:
+        return ExtractionResult(
+            text=" ".join(["static"] * 30),
+            word_count=30,
+            strategy="trafilatura",
+        )
+
+    monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", static_fetch)
+    monkeypatch.setattr(crawler_module, "extract_content_async", extract)
+    monkeypatch.setattr(crawler_module, "_crawl_semaphore", None)
+
+    result = await crawler_module._crawl_uncached(
+        url="https://example.test/static-fallback",
+        decide_js=True,
+        auto_render=False,
+        wait_for_selector=None,
+        word_count_threshold=10,
+        extraction_profile="balanced",
+    )
+
+    assert result.metadata is not None
+    timings = result.metadata.stage_timings_ms
+    assert timings["fetch"] == 1.5
+    assert timings["render"] == 0
+    assert result.metadata.rendered is False
+
+
+@pytest.mark.anyio
+async def test_conditional_browser_static_fallback_accumulates_each_stage_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import crawler as crawler_module
+    from app.services.fetcher import FetchResult
+
+    calls: list[bool] = []
+
+    async def fetch(
+        _url: str,
+        js_render: bool = False,
+        wait_for_selector: str | None = None,
+    ) -> FetchResult:
+        del wait_for_selector
+        calls.append(js_render)
+        if not js_render:
+            await asyncio.sleep(0.002)
+            return FetchResult(
+                html="<html><body>shell</body></html>",
+                status_code=200,
+                content_type="text/html",
+                fetch_latency_ms=1.0,
+            )
+        # Browser navigation failed inside fetch_url, then its one static
+        # fallback returned richer HTML. Provenance must preserve both stages.
+        await asyncio.sleep(0.006)
+        return FetchResult(
+            html="<html><body>rich static fallback</body></html>",
+            status_code=200,
+            content_type="text/html",
+            rendered=False,
+            fetch_latency_ms=2.0,
+            render_latency_ms=3.0,
+        )
+
+    async def extract(
+        html: str,
+        *_args: object,
+        **_kwargs: object,
+    ) -> ExtractionResult:
+        if "shell" in html and "fallback" not in html:
+            return ExtractionResult(
+                text="shell",
+                word_count=1,
+                strategy="trafilatura",
+            )
+        return ExtractionResult(
+            text=" ".join(["fallback"] * 30),
+            word_count=30,
+            strategy="trafilatura",
+        )
+
+    monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", fetch)
+    monkeypatch.setattr(crawler_module, "extract_content_async", extract)
+    monkeypatch.setattr(crawler_module, "_crawl_semaphore", None)
+    monkeypatch.setattr(settings, "playwright_enabled", True)
+    monkeypatch.setattr(settings, "playwright_java_script_enabled", True)
+
+    result = await crawler_module._crawl_uncached(
+        url="https://example.test/conditional",
+        decide_js=False,
+        auto_render=True,
+        wait_for_selector=None,
+        word_count_threshold=10,
+        extraction_profile="balanced",
+    )
+
+    assert calls == [False, True]
+    assert result.metadata is not None
+    timings = result.metadata.stage_timings_ms
+    assert timings["fetch"] == 3.0
+    assert timings["render"] == 3.0
+    assert timings["total"] >= 6.0
+    assert (
+        timings["queue"]
+        + timings["fetch"]
+        + timings["render"]
+        + timings["extraction"]
+    ) == pytest.approx(timings["total"], abs=0.004)
+    assert result.metadata.rendered is False
+
+
+@pytest.mark.anyio
+async def test_raw_source_success_has_uniform_live_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import crawler as crawler_module
+    from app.services.fetcher import FetchResult
+
+    async def fetch(*_args: object, **_kwargs: object) -> FetchResult:
+        await asyncio.sleep(0.002)
+        return FetchResult(
+            html="plain source line\n" * 20,
+            status_code=200,
+            content_type="text/plain",
+            final_url="https://example.test/source.txt",
+            fetch_latency_ms=0.5,
+        )
+
+    monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", fetch)
+    monkeypatch.setattr(crawler_module, "_crawl_semaphore", None)
+
+    result = await crawler_module._crawl_uncached(
+        url="https://example.test/source.txt",
+        decide_js=False,
+        auto_render=False,
+        wait_for_selector=None,
+        word_count_threshold=10,
+        extraction_profile="balanced",
+    )
+
+    assert result.error is None
+    assert result.metadata is not None
+    assert result.metadata.pipeline_revision == "clusy-extraction-v2"
+    assert result.metadata.extraction_route == "raw_source"
+    assert result.metadata.route_reasons == ["non_html_source"]
+    assert result.metadata.completeness_coverage == "output_only"
+    assert result.metadata.source_coverage_score is None
+    assert result.metadata.output_grounding_score is None
+    assert result.metadata.cache_status == "live"
+    assert result.metadata.stage_timings_ms["fetch"] == 0.5
+
+
+@pytest.mark.anyio
+async def test_github_raw_success_has_specialist_route_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import crawler as crawler_module
+    from app.services.fetcher import FetchResult
+
+    raw_url = "https://raw.githubusercontent.com/acme/repo/main/example.py"
+
+    async def fetch(*_args: object, **_kwargs: object) -> FetchResult:
+        await asyncio.sleep(0.002)
+        return FetchResult(
+            html="def example():\n    return 'source'\n" * 10,
+            status_code=200,
+            content_type="text/plain",
+            final_url=raw_url,
+            fetch_latency_ms=0.75,
+        )
+
+    monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", fetch)
+    monkeypatch.setattr(crawler_module, "_crawl_semaphore", None)
+
+    result = await crawler_module._crawl_uncached(
+        url=raw_url,
+        decide_js=False,
+        auto_render=False,
+        wait_for_selector=None,
+        word_count_threshold=10,
+        extraction_profile="balanced",
+    )
+
+    assert result.error is None
+    assert result.metadata is not None
+    assert result.metadata.pipeline_revision == "clusy-extraction-v2"
+    assert result.metadata.extraction_route == "github_source"
+    assert result.metadata.route_reasons == ["github_source_specialist"]
+    assert result.metadata.completeness_coverage == "output_only"
+    assert result.metadata.stage_timings_ms["fetch"] == 0.75
+
+
+@pytest.mark.anyio
+async def test_academic_html_success_has_specialist_route_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import crawler as crawler_module
+    from app.services.academic import AcademicPaper
+    from app.services.fetcher import FetchResult
+
+    url = "https://papers.example.test/article/one"
+
+    async def fetch(*_args: object, **_kwargs: object) -> FetchResult:
+        await asyncio.sleep(0.002)
+        return FetchResult(
+            html="<html><body><article>paper body</article></body></html>",
+            status_code=200,
+            content_type="text/html",
+            final_url=url,
+            fetch_latency_ms=0.625,
+        )
+
+    async def academic_html(**_kwargs: object) -> CrawlResult:
+        return crawler_module._academic_result(
+            requested_url=url,
+            paper=AcademicPaper(
+                title="Structured Academic Page",
+                abstract="A structured abstract with authoritative metadata.",
+                full_text="Structured full text from the academic HTML source.",
+                word_count=8,
+            ),
+            source_url=url,
+            content_type="text/html",
+            status_code=200,
+            rendered=False,
+            strategy="academic-html",
+            html="<html><body><article>paper body</article></body></html>",
+            links=[],
+        )
+
+    monkeypatch.setattr(crawler_module.fetcher_module, "fetch_url", fetch)
+    monkeypatch.setattr(crawler_module, "_crawl_academic_html", academic_html)
+    monkeypatch.setattr(crawler_module, "_crawl_semaphore", None)
+
+    result = await crawler_module._crawl_uncached(
+        url=url,
+        decide_js=False,
+        auto_render=False,
+        wait_for_selector=None,
+        word_count_threshold=10,
+        extraction_profile="balanced",
+    )
+
+    assert result.error is None
+    assert result.metadata is not None
+    assert result.metadata.pipeline_revision == "clusy-extraction-v2"
+    assert result.metadata.extraction_route == "academic_html"
+    assert result.metadata.route_reasons == ["academic_full_text_detected"]
+    assert result.metadata.completeness_score == 0.0
+    assert result.metadata.completeness_coverage == "output_only"
+    assert result.metadata.stage_timings_ms["fetch"] == 0.625
+
+
+def test_parallel_specialist_latency_is_bounded_by_request_wall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import crawler as crawler_module
+
+    monkeypatch.setattr(
+        crawler_module.time_module,
+        "perf_counter",
+        lambda: 10.010,
+    )
+    result = CrawlResult(
+        url="https://example.test/parallel-specialist",
+        markdown="specialist output",
+        metadata=ExtractionMetadata(
+            extraction_strategy="source-text",
+            content_scope="source",
+        ),
+    )
+
+    finalized = crawler_module._finalize_live_success(
+        result,
+        pipeline_started=10.0,
+        queue_elapsed_ms=1.0,
+        # Simulate two overlapping specialist fetch observations plus a render.
+        fetch_elapsed_ms=20.0,
+        render_elapsed_ms=10.0,
+    )
+
+    assert finalized.metadata is not None
+    timings = finalized.metadata.stage_timings_ms
+    assert timings["total"] == pytest.approx(10.0, abs=0.001)
+    assert timings["queue"] == pytest.approx(1.0, abs=0.001)
+    assert timings["fetch"] == pytest.approx(6.0, abs=0.001)
+    assert timings["render"] == pytest.approx(3.0, abs=0.001)
+    assert timings["extraction"] == 0
+    assert sum(
+        timings[name]
+        for name in ("queue", "fetch", "render", "extraction")
+    ) == pytest.approx(timings["total"], abs=0.004)

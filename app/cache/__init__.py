@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import hmac
 import json
 import random
 import time
@@ -18,7 +19,69 @@ logger = structlog.get_logger()
 # semantics change. Keeping the version in both the readable prefix and the
 # hashed payload prevents a rolling deployment from serving results produced by
 # an incompatible crawler revision.
-CACHE_SCHEMA_VERSION = "v7"
+CACHE_SCHEMA_VERSION = "v10"
+
+# These are the runtime settings that can change the canonical crawl result
+# while the source revision (GIT_SHA) remains constant. Keep the declaration
+# centralized: the key builder and parameterized regression tests consume the
+# same groups, so adding a serving knob requires an explicit cache decision.
+CORE_OUTPUT_SETTING_NAMES = (
+    "image_digest",
+    "parallel_extraction_enabled",
+    "extraction_merge_mode",
+    "native_extraction_enabled",
+    "native_extraction_min_confidence",
+    "max_concurrent_extractions",
+    "extract_max_text_length",
+)
+FETCH_OUTPUT_SETTING_NAMES = (
+    "http_timeout_s",
+    "http_connect_timeout_s",
+    "http_total_timeout_s",
+    "http_max_keepalive_connections",
+    "http_max_connections",
+    "http_user_agent",
+    "http_max_attempts",
+    "http_retry_max_delay_s",
+    "rate_limit_requests_per_second",
+    "rate_limit_burst",
+)
+RENDER_OUTPUT_SETTING_NAMES = (
+    "playwright_enabled",
+    "playwright_timeout_s",
+    "playwright_java_script_enabled",
+    "js_render_mode",
+    "playwright_disable_sandbox",
+    "playwright_max_html_bytes",
+    "max_concurrent_pages",
+)
+SCHOLARLY_OUTPUT_SETTING_NAMES = (
+    "scholarly_metadata_enabled",
+    "scholarly_metadata_timeout_s",
+    "scholarly_metadata_max_concurrency",
+    "scholarly_metadata_max_response_bytes",
+    "academic_pdf_fallback_timeout_s",
+)
+QUALITY_OUTPUT_SETTING_NAMES = (
+    "quality_extraction_model",
+    "quality_extraction_backend_revision",
+    "quality_extraction_prompt_profile",
+    "quality_extraction_timeout_s",
+    "quality_extraction_capacity_timeout_s",
+    "quality_extraction_shutdown_timeout_s",
+    "quality_extraction_max_input_chars",
+    "quality_extraction_max_concurrency",
+    "quality_extraction_failure_threshold",
+    "quality_extraction_cooldown_s",
+)
+ADAPTIVE_OUTPUT_SETTING_NAMES = (
+    "adaptive_extraction_min_confidence",
+    "adaptive_extraction_structural_score_threshold",
+    "adaptive_extraction_structure_loss_threshold",
+    "adaptive_extraction_candidate_disagreement_threshold",
+    "adaptive_extraction_max_scan_chars",
+    "adaptive_extraction_risky_page_types",
+)
 
 
 @dataclass
@@ -151,6 +214,108 @@ def get_cache() -> RedisCache:
     return _cache
 
 
+def _settings_snapshot(names: tuple[str, ...]) -> dict[str, object]:
+    return {name: getattr(settings, name) for name in names}
+
+
+def _private_cache_identity(value: str, *, purpose: str) -> str:
+    """Digest sensitive config used only inside the final private cache key.
+
+    The raw value and this intermediate identity are never exposed through an
+    API, log, or standalone cache record. Production uses the independent
+    serving-fingerprint secret as an HMAC key; local instances without it fall
+    back to a domain-separated digest that remains nested inside the final
+    cache hash.
+    """
+    if value == "":
+        return ""
+    message = f"{purpose}\0{value}".encode()
+    if settings.serving_fingerprint_key:
+        key = hashlib.sha256(
+            b"clusy-private-cache-identity-v1\0"
+            + settings.serving_fingerprint_key.encode()
+        ).digest()
+        return hmac.new(key, message, hashlib.sha256).hexdigest()
+    return hashlib.sha256(message).hexdigest()
+
+
+def _cache_semantics_payload(
+    *,
+    extraction_profile: str,
+    native_backend: str,
+    pipeline_revision: str,
+    quality_revision: str,
+    adaptive_revision: str,
+) -> dict[str, object]:
+    """Build the secret-free runtime semantics bound by a crawl cache key."""
+    assisted_profile = extraction_profile in {"adaptive", "quality"}
+    quality_dependency_ready = False
+    if assisted_profile:
+        from app.services.quality_extractor import quality_dependency_available
+
+        quality_dependency_ready = quality_dependency_available()
+    return {
+        "pipeline_revision": pipeline_revision,
+        "native_backend": native_backend,
+        "core": _settings_snapshot(CORE_OUTPUT_SETTING_NAMES),
+        "fetch": {
+            **_settings_snapshot(FETCH_OUTPUT_SETTING_NAMES),
+            # Full proxy identity is private-key material: credentials and
+            # query routing can select egress geography and origin content.
+            "http_proxy_sha256": _private_cache_identity(
+                settings.http_proxy,
+                purpose="http-proxy",
+            ),
+        },
+        "render": {
+            **_settings_snapshot(RENDER_OUTPUT_SETTING_NAMES),
+            "playwright_proxy_sha256": _private_cache_identity(
+                settings.playwright_proxy,
+                purpose="playwright-proxy",
+            ),
+        },
+        "scholarly": {
+            **_settings_snapshot(SCHOLARLY_OUTPUT_SETTING_NAMES),
+            # Provider credentials can change entitlement, provider response,
+            # and fallback selection even at the same source revision.
+            "elsevier_api_key_sha256": _private_cache_identity(
+                settings.elsevier_api_key,
+                purpose="elsevier-api-key",
+            ),
+            "ieee_api_key_sha256": _private_cache_identity(
+                settings.ieee_api_key,
+                purpose="ieee-api-key",
+            ),
+        },
+        "quality": (
+            {
+                **_settings_snapshot(QUALITY_OUTPUT_SETTING_NAMES),
+                "backend_configured": settings.quality_backend_configured(),
+                "dependency_available": quality_dependency_ready,
+                "base_url_sha256": _private_cache_identity(
+                    settings.quality_extraction_base_url,
+                    purpose="quality-base-url",
+                ),
+                "api_key_sha256": _private_cache_identity(
+                    settings.quality_extraction_api_key,
+                    purpose="quality-api-key",
+                ),
+                "revision": quality_revision,
+            }
+            if assisted_profile
+            else None
+        ),
+        "adaptive": (
+            {
+                **_settings_snapshot(ADAPTIVE_OUTPUT_SETTING_NAMES),
+                "revision": adaptive_revision,
+            }
+            if extraction_profile == "adaptive"
+            else None
+        ),
+    }
+
+
 def make_cache_key(
     url: str,
     js_render: bool,
@@ -174,13 +339,14 @@ def make_cache_key(
     except (ImportError, RuntimeError):
         native_backend = "unavailable"
 
-    assisted_profile = extraction_profile in {"adaptive", "quality"}
     quality_revision = ""
     adaptive_revision = ""
-    if assisted_profile:
+    if extraction_profile in {"adaptive", "quality"}:
         from app.services.quality_extractor import MINERU_HTML_REVISION
 
         quality_revision = MINERU_HTML_REVISION
+    from app.services.extractor import PIPELINE_REVISION
+
     if extraction_profile == "adaptive":
         from app.services.extractor import ADAPTIVE_ROUTER_REVISION
 
@@ -196,62 +362,15 @@ def make_cache_key(
             "sel": wait_for_selector or "",
             "words": word_count_threshold,
             "profile": extraction_profile,
-            "quality_base_url": (
-                settings.quality_extraction_base_url
-                if assisted_profile
-                else ""
+            "semantics": _cache_semantics_payload(
+                extraction_profile=extraction_profile,
+                native_backend=native_backend,
+                pipeline_revision=PIPELINE_REVISION,
+                quality_revision=quality_revision,
+                adaptive_revision=adaptive_revision,
             ),
-            "quality_model": (
-                settings.quality_extraction_model
-                if assisted_profile
-                else ""
-            ),
-            "quality_prompt_profile": (
-                settings.quality_extraction_prompt_profile
-                if assisted_profile
-                else ""
-            ),
-            "quality_max_input": (
-                settings.quality_extraction_max_input_chars
-                if assisted_profile
-                else None
-            ),
-            "quality_revision": quality_revision,
-            "adaptive_revision": adaptive_revision,
-            "adaptive_min_confidence": (
-                settings.adaptive_extraction_min_confidence
-                if extraction_profile == "adaptive"
-                else None
-            ),
-            "adaptive_structural_score": (
-                settings.adaptive_extraction_structural_score_threshold
-                if extraction_profile == "adaptive"
-                else None
-            ),
-            "adaptive_max_scan_chars": (
-                settings.adaptive_extraction_max_scan_chars
-                if extraction_profile == "adaptive"
-                else None
-            ),
-            "adaptive_risky_page_types": (
-                settings.adaptive_extraction_risky_page_types
-                if extraction_profile == "adaptive"
-                else ""
-            ),
-            "render_mode": settings.js_render_mode,
-            "playwright": settings.playwright_enabled,
-            "javascript": settings.playwright_java_script_enabled,
-            "parallel": settings.parallel_extraction_enabled,
-            "merge": settings.extraction_merge_mode,
-            "native": getattr(settings, "native_extraction_enabled", False),
-            "native_backend": native_backend,
-            "native_confidence": getattr(
-                settings,
-                "native_extraction_min_confidence",
-                None,
-            ),
-            "max_text": settings.extract_max_text_length,
         },
+        separators=(",", ":"),
         sort_keys=True,
     )
     digest = hashlib.sha256(payload.encode()).hexdigest()

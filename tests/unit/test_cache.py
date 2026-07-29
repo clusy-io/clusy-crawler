@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 from pydantic import ValidationError
 
-from app.cache import CACHE_SCHEMA_VERSION, RedisCache, make_cache_key
+from app.cache import (
+    ADAPTIVE_OUTPUT_SETTING_NAMES,
+    CACHE_SCHEMA_VERSION,
+    CORE_OUTPUT_SETTING_NAMES,
+    FETCH_OUTPUT_SETTING_NAMES,
+    QUALITY_OUTPUT_SETTING_NAMES,
+    RENDER_OUTPUT_SETTING_NAMES,
+    SCHOLARLY_OUTPUT_SETTING_NAMES,
+    RedisCache,
+    _cache_semantics_payload,
+    make_cache_key,
+)
 from app.config import Settings, settings
 from app.models.requests import CrawlRequest
 
@@ -92,6 +104,94 @@ class TestCacheKey:
         key2 = make_cache_key("https://example.com", False, None)
         assert key1 != key2
 
+    @pytest.mark.parametrize(
+        "field_name",
+        (
+            CORE_OUTPUT_SETTING_NAMES
+            + FETCH_OUTPUT_SETTING_NAMES
+            + RENDER_OUTPUT_SETTING_NAMES
+            + SCHOLARLY_OUTPUT_SETTING_NAMES
+        ),
+    )
+    def test_every_declared_balanced_runtime_setting_partitions_cache(
+        self,
+        monkeypatch,
+        field_name,
+    ):
+        first = make_cache_key("https://example.com", False, None)
+        current = getattr(settings, field_name)
+        if isinstance(current, bool):
+            replacement = not current
+        elif isinstance(current, str):
+            replacement = current + "-changed"
+        else:
+            replacement = current + 1
+        monkeypatch.setattr(settings, field_name, replacement)
+
+        assert make_cache_key("https://example.com", False, None) != first
+
+    @pytest.mark.parametrize("field_name", QUALITY_OUTPUT_SETTING_NAMES)
+    def test_every_declared_quality_setting_partitions_assisted_cache(
+        self,
+        monkeypatch,
+        field_name,
+    ):
+        first = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile="quality",
+        )
+        current = getattr(settings, field_name)
+        if isinstance(current, bool):
+            replacement = not current
+        elif isinstance(current, str):
+            replacement = current + "-changed"
+        else:
+            replacement = current + 1
+        monkeypatch.setattr(settings, field_name, replacement)
+
+        assert (
+            make_cache_key(
+                "https://example.com",
+                False,
+                None,
+                extraction_profile="quality",
+            )
+            != first
+        )
+
+    @pytest.mark.parametrize("field_name", ADAPTIVE_OUTPUT_SETTING_NAMES)
+    def test_every_declared_adaptive_setting_partitions_adaptive_cache(
+        self,
+        monkeypatch,
+        field_name,
+    ):
+        first = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile="adaptive",
+        )
+        current = getattr(settings, field_name)
+        if isinstance(current, bool):
+            replacement = not current
+        elif isinstance(current, str):
+            replacement = current + "-changed"
+        else:
+            replacement = current + 1
+        monkeypatch.setattr(settings, field_name, replacement)
+
+        assert (
+            make_cache_key(
+                "https://example.com",
+                False,
+                None,
+                extraction_profile="adaptive",
+            )
+            != first
+        )
+
     def test_quality_model_and_endpoint_change_key(self, monkeypatch):
         monkeypatch.setattr(settings, "quality_extraction_base_url", "https://one.invalid/v1")
         monkeypatch.setattr(settings, "quality_extraction_model", "model-a")
@@ -124,6 +224,202 @@ class TestCacheKey:
         assert first != second
         assert second != compact
 
+    @pytest.mark.parametrize("profile", ["quality", "adaptive"])
+    def test_enabling_quality_credentials_partitions_disabled_cache(
+        self,
+        monkeypatch,
+        profile,
+    ):
+        monkeypatch.setattr(
+            settings,
+            "quality_extraction_base_url",
+            "https://quality.invalid/v1",
+        )
+        monkeypatch.setattr(settings, "quality_extraction_model", "model-a")
+        monkeypatch.setattr(settings, "quality_extraction_api_key", "")
+        disabled = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile=profile,
+        )
+
+        monkeypatch.setattr(
+            settings,
+            "quality_extraction_api_key",
+            "configured-but-never-hashed",
+        )
+        enabled = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile=profile,
+        )
+
+        assert disabled != enabled
+
+    @pytest.mark.parametrize("profile", ["quality", "adaptive"])
+    def test_quality_dependency_availability_partitions_assisted_cache(
+        self,
+        monkeypatch,
+        profile,
+    ):
+        monkeypatch.setattr(
+            "app.services.quality_extractor.quality_dependency_available",
+            lambda: False,
+        )
+        unavailable = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile=profile,
+        )
+        monkeypatch.setattr(
+            "app.services.quality_extractor.quality_dependency_available",
+            lambda: True,
+        )
+        available = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile=profile,
+        )
+
+        assert unavailable != available
+
+    @pytest.mark.parametrize(
+        ("field_name", "profile", "first_value", "second_value"),
+        [
+            (
+                "http_proxy",
+                "balanced",
+                "https://tenant-a:secret-a@proxy.invalid:8443?pool=one",
+                "https://tenant-b:secret-b@proxy.invalid:8443?pool=two",
+            ),
+            (
+                "playwright_proxy",
+                "balanced",
+                "https://tenant-a:secret-a@browser.invalid:8443?pool=one",
+                "https://tenant-b:secret-b@browser.invalid:8443?pool=two",
+            ),
+            (
+                "elsevier_api_key",
+                "balanced",
+                "elsevier-key-one",
+                "elsevier-key-two",
+            ),
+            (
+                "ieee_api_key",
+                "balanced",
+                "ieee-key-one",
+                "ieee-key-two",
+            ),
+            (
+                "quality_extraction_api_key",
+                "quality",
+                "quality-key-one",
+                "quality-key-two",
+            ),
+            (
+                "quality_extraction_base_url",
+                "quality",
+                "https://quality.invalid/v1?deployment=one",
+                "https://quality.invalid/v1?deployment=two",
+            ),
+        ],
+    )
+    def test_sensitive_serving_identity_rotation_partitions_cache(
+        self,
+        monkeypatch,
+        field_name,
+        profile,
+        first_value,
+        second_value,
+    ):
+        monkeypatch.setattr(settings, field_name, first_value)
+        first = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile=profile,
+        )
+        monkeypatch.setattr(settings, field_name, second_value)
+        second = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile=profile,
+        )
+
+        assert first != second
+
+    def test_sensitive_identity_binds_exact_raw_whitespace(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            settings,
+            "serving_fingerprint_key",
+            "independent-fingerprint-secret-" + ("f" * 32),
+        )
+        monkeypatch.setattr(
+            settings,
+            "http_proxy",
+            "https://proxy.invalid:8443",
+        )
+        exact = make_cache_key("https://example.com", False, None)
+        monkeypatch.setattr(
+            settings,
+            "http_proxy",
+            " https://proxy.invalid:8443 ",
+        )
+        padded = make_cache_key("https://example.com", False, None)
+
+        assert exact != padded
+
+    def test_cache_semantics_snapshot_contains_no_plaintext_secrets(
+        self,
+        monkeypatch,
+    ):
+        secrets = {
+            "serving_fingerprint_key": (
+                "independent-fingerprint-secret-" + ("f" * 32)
+            ),
+            "http_proxy": "https://proxy-user:proxy-secret@proxy.invalid:8443",
+            "playwright_proxy": (
+                "https://browser-user:browser-secret@browser.invalid:8443"
+            ),
+            "elsevier_api_key": "elsevier-secret",
+            "ieee_api_key": "ieee-secret",
+            "quality_extraction_base_url": (
+                "https://quality.invalid/v1?token=endpoint-secret"
+            ),
+            "quality_extraction_api_key": "quality-secret",
+            "quality_extraction_model": "model-a",
+        }
+        for field_name, value in secrets.items():
+            monkeypatch.setattr(settings, field_name, value)
+
+        snapshot = _cache_semantics_payload(
+            extraction_profile="quality",
+            native_backend="native-test",
+            pipeline_revision="pipeline-test",
+            quality_revision="quality-test",
+            adaptive_revision="",
+        )
+        serialized = json.dumps(snapshot, sort_keys=True)
+
+        for secret in (
+            "proxy-secret",
+            "browser-secret",
+            "elsevier-secret",
+            "ieee-secret",
+            "endpoint-secret",
+            "quality-secret",
+            "independent-fingerprint-secret",
+        ):
+            assert secret not in serialized
+
     def test_adaptive_model_router_revision_and_thresholds_change_key(
         self,
         monkeypatch,
@@ -146,6 +442,30 @@ class TestCacheKey:
 
         monkeypatch.setattr(settings, "adaptive_extraction_min_confidence", 0.9)
         threshold_changed = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile="adaptive",
+        )
+
+        monkeypatch.setattr(
+            settings,
+            "adaptive_extraction_structure_loss_threshold",
+            2,
+        )
+        structure_loss_changed = make_cache_key(
+            "https://example.com",
+            False,
+            None,
+            extraction_profile="adaptive",
+        )
+
+        monkeypatch.setattr(
+            settings,
+            "adaptive_extraction_candidate_disagreement_threshold",
+            0.8,
+        )
+        disagreement_changed = make_cache_key(
             "https://example.com",
             False,
             None,
@@ -179,10 +499,12 @@ class TestCacheKey:
                 first,
                 model_changed,
                 threshold_changed,
+                structure_loss_changed,
+                disagreement_changed,
                 revision_changed,
                 quality_revision_changed,
             }
-        ) == 5
+        ) == 7
 
 
 def test_adaptive_profile_and_settings_validation() -> None:
@@ -200,6 +522,16 @@ def test_adaptive_profile_and_settings_validation() -> None:
         Settings(
             _env_file=None,
             adaptive_extraction_structural_score_threshold=0,
+        )
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            adaptive_extraction_structure_loss_threshold=0,
+        )
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            adaptive_extraction_candidate_disagreement_threshold=1.1,
         )
     with pytest.raises(ValidationError):
         Settings(

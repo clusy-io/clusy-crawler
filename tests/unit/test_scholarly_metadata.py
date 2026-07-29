@@ -18,6 +18,9 @@ from app.services.scholarly_metadata import (
     lookup_publisher_metadata,
 )
 
+_TEST_IMAGE_DIGEST = "sha256:" + ("a" * 64)
+_TEST_FINGERPRINT_KEY = "fingerprint-test-key-" + ("f" * 32)
+
 
 @pytest.fixture
 def allow_fixed_api_dns(monkeypatch):
@@ -838,6 +841,24 @@ async def test_crawler_labels_metadata_only_fallback_and_omits_blocked_html(
     assert result.metadata.origin_status_code == 403
     assert result.metadata.origin_error == "HTTP 403"
     assert result.metadata.doi == "10.1145/123.456"
+    assert result.metadata.pipeline_revision == "clusy-extraction-v2"
+    assert result.metadata.extraction_route == "scholarly_metadata_fallback"
+    assert result.metadata.route_reasons == [
+        "publisher_full_text_unavailable",
+        "metadata_only",
+    ]
+    assert result.metadata.completeness_score == 0.0
+    assert result.metadata.completeness_coverage == "output_only"
+    assert result.metadata.source_coverage_score is None
+    assert result.metadata.output_grounding_score is None
+    assert result.metadata.cache_status == "live"
+    assert set(result.metadata.stage_timings_ms) == {
+        "queue",
+        "fetch",
+        "render",
+        "extraction",
+        "total",
+    }
     assert result.markdown.startswith("> **Metadata-only record:**")
     assert "article full text were not retrieved" in result.markdown
     assert "secret bot-wall body" not in result.markdown
@@ -848,6 +869,8 @@ def test_prod_rejects_disabled_chromium_sandbox() -> None:
         Settings(
             environment="prod",
             crawler_api_token="configured",
+            serving_fingerprint_key=_TEST_FINGERPRINT_KEY,
+            image_digest=_TEST_IMAGE_DIGEST,
             playwright_enabled=True,
             playwright_disable_sandbox=True,
             _env_file=None,
@@ -858,6 +881,8 @@ def test_prod_allows_static_only_mode_without_chromium_sandbox() -> None:
     configured = Settings(
         environment="prod",
         crawler_api_token="configured",
+        serving_fingerprint_key=_TEST_FINGERPRINT_KEY,
+        image_digest=_TEST_IMAGE_DIGEST,
         playwright_enabled=False,
         playwright_disable_sandbox=True,
         _env_file=None,
@@ -871,6 +896,8 @@ def test_prod_redis_requires_immutable_build_revision() -> None:
         Settings(
             environment="prod",
             crawler_api_token="configured",
+            serving_fingerprint_key=_TEST_FINGERPRINT_KEY,
+            image_digest=_TEST_IMAGE_DIGEST,
             redis_url="redis://cache.internal/0",
             git_sha="unknown",
             _env_file=None,
@@ -879,8 +906,123 @@ def test_prod_redis_requires_immutable_build_revision() -> None:
     configured = Settings(
         environment="prod",
         crawler_api_token="configured",
+        serving_fingerprint_key=_TEST_FINGERPRINT_KEY,
+        image_digest=_TEST_IMAGE_DIGEST,
         redis_url="redis://cache.internal/0",
         git_sha="0123456789abcdef",
         _env_file=None,
     )
     assert configured.git_sha == "0123456789abcdef"
+
+
+def test_image_digest_allows_unknown_but_rejects_malformed_identity() -> None:
+    configured = Settings(
+        environment="prod",
+        crawler_api_token="configured",
+        serving_fingerprint_key=_TEST_FINGERPRINT_KEY,
+        image_digest="unknown",
+        _env_file=None,
+    )
+    assert configured.image_digest == "unknown"
+
+    with pytest.raises(ValidationError):
+        Settings(
+            image_digest="sha256:not-a-digest",
+            _env_file=None,
+        )
+
+
+def test_prod_requires_independent_strong_fingerprint_key() -> None:
+    with pytest.raises(ValidationError, match="SERVING_FINGERPRINT_KEY"):
+        Settings(
+            environment="prod",
+            crawler_api_token="configured",
+            serving_fingerprint_key="",
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError, match="at least 32"):
+        Settings(
+            serving_fingerprint_key="weak",
+            _env_file=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (" " * 32, "must not contain whitespace"),
+        ("ab" * 32, "insufficient character diversity"),
+    ],
+)
+def test_supplied_fingerprint_key_rejects_obvious_weak_values(
+    value: str,
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        Settings(
+            serving_fingerprint_key=value,
+            _env_file=None,
+        )
+
+
+def test_invalid_fingerprint_key_is_hidden_in_validation_errors() -> None:
+    malformed_secret = "leak-me-" + ("x" * 40) + " "
+
+    with pytest.raises(ValidationError) as captured:
+        Settings(
+            serving_fingerprint_key=malformed_secret,
+            _env_file=None,
+        )
+
+    assert malformed_secret not in str(captured.value)
+    assert "input_value" not in str(captured.value)
+
+
+def test_local_empty_fingerprint_key_uses_development_fallback() -> None:
+    configured = Settings(
+        serving_fingerprint_key="",
+        _env_file=None,
+    )
+
+    assert configured.serving_fingerprint_key == ""
+
+
+def test_prod_fingerprint_key_must_not_reuse_bearer_token() -> None:
+    reused = "0123456789abcdef" * 4
+
+    with pytest.raises(ValidationError, match="must differ"):
+        Settings(
+            environment="prod",
+            crawler_api_token=reused,
+            serving_fingerprint_key=reused,
+            _env_file=None,
+        )
+
+
+def test_prod_unicode_fingerprint_reuse_is_rejected_without_type_error() -> None:
+    reused = "高熵密钥甲乙丙丁" * 4
+
+    with pytest.raises(ValidationError, match="must differ"):
+        Settings(
+            environment="prod",
+            crawler_api_token=reused,
+            serving_fingerprint_key=reused,
+            _env_file=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "0123456789abcdef" * 4,
+        "V4u7Rq2mC9xL5pT8nH3sK6wD1zF0jBge",
+    ],
+)
+def test_valid_diverse_fingerprint_keys_are_accepted(value: str) -> None:
+    configured = Settings(
+        serving_fingerprint_key=value,
+        _env_file=None,
+    )
+
+    assert configured.serving_fingerprint_key == value

@@ -5,6 +5,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
+from app.config import settings
+
 BoundedUrl = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=4096),
@@ -26,7 +28,7 @@ def _json_depth(value: Any, depth: int = 0) -> int:
 
 class CrawlRequest(BaseModel):
     urls: list[BoundedUrl] = Field(..., min_length=1, max_length=50)
-    max_pages: int = Field(default=1, ge=1, le=100)
+    max_pages: int = Field(default=settings.default_max_pages, ge=1, le=100)
     # Recursive discovery is opt-in. Depth zero preserves the historical
     # contract: crawl only the explicit input URLs and ignore max_pages.
     max_depth: int = Field(default=0, ge=0, le=10)

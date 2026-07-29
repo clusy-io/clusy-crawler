@@ -5,7 +5,10 @@ import threading
 
 import pytest
 
+from app.services import extractor as extractor_module
+from app.services import quality_extractor as quality_module
 from app.services.extractor import (
+    ExtractionResult,
     _count_words,
     _extract_raw_text,
     _extract_with_markdownify,
@@ -13,6 +16,7 @@ from app.services.extractor import (
     _extract_with_trafilatura,
     _log_host,
     extract_content,
+    extract_content_async,
 )
 
 
@@ -86,6 +90,22 @@ extraction.</p>
 </html>"""
 
 EMPTY_HTML = "<html><body><div></div></body></html>"
+
+
+def _native_candidate(
+    prefix: str,
+    words: int,
+    *,
+    confidence: float = 0.99,
+) -> ExtractionResult:
+    text = " ".join(f"{prefix}{index}" for index in range(words))
+    return ExtractionResult(
+        text=text,
+        word_count=words,
+        strategy="rs-trafilatura",
+        confidence=confidence,
+        page_type="article",
+    )
 
 
 class TestWordCount:
@@ -187,3 +207,291 @@ class TestExtractContent:
     def test_handles_garbage(self):
         result = extract_content("   ", "")
         assert result.strategy == "raw_lxml"
+
+    def test_sparse_balanced_candidate_skips_experimental_article_rescue(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        broad = _native_candidate("broad", 20)
+        article = _native_candidate("article", 40)
+        calls: list[str] = []
+
+        def native(
+            _html: str,
+            _url: str,
+            profile: str,
+        ) -> ExtractionResult:
+            calls.append(profile)
+            return article if profile == "article_body" else broad
+
+        monkeypatch.setattr(extractor_module, "_extract_with_native", native)
+        html = f"<html><body><!--{'x' * 5000}--><article>source</article></body></html>"
+
+        result = extract_content(
+            html,
+            "https://example.test/rescue",
+            extraction_profile="balanced",
+        )
+
+        assert calls == ["balanced"]
+        assert result.text == broad.text
+        assert result.route == "native_fast_path"
+        assert result.route_reasons == ()
+        assert result.candidate_count == 1
+
+    def test_dense_balanced_candidate_skips_article_second_pass(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        broad = _native_candidate("broad", 500)
+        calls: list[str] = []
+
+        def native(
+            _html: str,
+            _url: str,
+            profile: str,
+        ) -> ExtractionResult:
+            calls.append(profile)
+            return broad
+
+        monkeypatch.setattr(extractor_module, "_extract_with_native", native)
+
+        result = extract_content(
+            f"<article>{'source ' * 20}</article>",
+            "https://example.test/dense",
+            extraction_profile="balanced",
+        )
+
+        assert calls == ["balanced"]
+        assert result.text == broad.text
+        assert result.route == "native_fast_path"
+
+    def test_article_body_profile_never_enters_balanced_rescue(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        article = _native_candidate("scored", 30)
+        calls: list[str] = []
+
+        def native(
+            _html: str,
+            _url: str,
+            profile: str,
+        ) -> ExtractionResult:
+            calls.append(profile)
+            return article
+
+        monkeypatch.setattr(extractor_module, "_extract_with_native", native)
+        html = f"<html><body><!--{'x' * 5000}--><article>source</article></body></html>"
+
+        result = extract_content(
+            html,
+            "https://example.test/article-body",
+            extraction_profile="article_body",
+        )
+
+        assert calls == ["article_body"]
+        assert result.text == article.text
+        assert result.route == "native_fast_path"
+
+
+@pytest.mark.anyio
+async def test_async_balanced_profile_skips_experimental_article_rescue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broad = _native_candidate("broad", 20)
+    article = _native_candidate("article", 40)
+    calls: list[str] = []
+
+    def native(
+        _html: str,
+        _url: str,
+        profile: str,
+    ) -> ExtractionResult:
+        calls.append(profile)
+        return article if profile == "article_body" else broad
+
+    monkeypatch.setattr(extractor_module, "_extract_with_native", native)
+
+    result = await extract_content_async(
+        "<html><body><article>source</article></body></html>",
+        "https://example.test/balanced",
+        extraction_profile="balanced",
+    )
+
+    assert calls == ["balanced"]
+    assert result.text == broad.text
+    assert result.route == "native_fast_path"
+
+
+@pytest.mark.anyio
+async def test_adaptive_profile_preserves_selected_native_article_rescue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broad = _native_candidate("broad", 20)
+    article = _native_candidate("article", 40)
+    calls: list[str] = []
+
+    def native(
+        _html: str,
+        _url: str,
+        profile: str,
+    ) -> ExtractionResult:
+        calls.append(profile)
+        return article if profile == "article_body" else broad
+
+    async def unavailable_quality(*_args: object) -> None:
+        return None
+
+    monkeypatch.setattr(extractor_module, "_extract_with_native", native)
+    monkeypatch.setattr(
+        quality_module,
+        "extract_quality_content",
+        unavailable_quality,
+    )
+    html = f"<html><body><!--{'x' * 5000}--><article>source</article></body></html>"
+
+    result = await extract_content_async(
+        html,
+        "https://example.test/adaptive-rescue",
+        extraction_profile="adaptive",
+    )
+
+    assert calls == ["balanced", "article_body"]
+    assert result.text == article.text
+    assert result.route == "native_article_rescue"
+    assert "experimental_adaptive_article_rescue" in result.route_reasons
+    assert result.quality_attempted is False
+    assert result.route_reasons[-1] == "quality_backend_disabled"
+
+
+def test_native_fast_path_reports_unassessed_source_completeness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _native_candidate("native", 30)
+    monkeypatch.setattr(
+        extractor_module,
+        "_extract_with_native",
+        lambda *_args: candidate,
+    )
+
+    result = extract_content(
+        "<html><body><h1>Source heading</h1><p>Source prose.</p></body></html>",
+        "https://example.test/native",
+        extraction_profile="balanced",
+    )
+
+    assert result.completeness_score == 0.0
+    assert isinstance(result.completeness_score, float)
+    assert result.completeness_coverage == "output_only"
+
+
+def test_github_specialist_reports_explicit_source_route() -> None:
+    text = "Repository README content with enough words for a stable result."
+    result = extractor_module._finalize_result(
+        ExtractionResult(
+            text=text,
+            word_count=10,
+            strategy="github-repository",
+        ),
+        f"<html><body><main><p>{text}</p></main></body></html>",
+        False,
+    )
+
+    assert result.route == "github_source"
+    assert result.route_reasons == ("github_source_specialist",)
+
+
+def test_structure_assessment_reports_bounded_source_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = ExtractionResult(
+        text="Plain output with enough words to avoid the sparse output deduction.",
+        word_count=11,
+        strategy="trafilatura",
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "adaptive_extraction_max_scan_chars",
+        4096,
+    )
+
+    extractor_module._annotate_completeness(
+        candidate,
+        "<html><body><h1>Missing heading</h1></body></html>" + (" " * 5000),
+    )
+
+    assert candidate.completeness_score is not None
+    assert candidate.completeness_score < 1
+    assert candidate.completeness_coverage == "source_prefix"
+    assert "headings_missing" in candidate.completeness_reasons
+
+
+def test_unrelated_plain_output_cannot_report_perfect_completeness() -> None:
+    source = " ".join(f"source{index}" for index in range(80))
+    unrelated = " ".join(f"unrelated{index}" for index in range(40))
+    candidate = ExtractionResult(
+        text=unrelated,
+        word_count=40,
+        strategy="trafilatura",
+    )
+
+    extractor_module._annotate_completeness(
+        candidate,
+        f"<html><body><p>{source}</p></body></html>",
+    )
+
+    assert candidate.completeness_coverage == "source_full"
+    assert candidate.completeness_score == 0
+    assert candidate.source_coverage_score == 0
+    assert candidate.output_grounding_score == 0
+    assert "low_source_coverage" in candidate.completeness_reasons
+    assert "low_output_grounding" in candidate.completeness_reasons
+
+
+def test_exact_plain_source_output_can_report_full_grounded_coverage() -> None:
+    source = " ".join(f"grounded{index}" for index in range(40))
+    candidate = ExtractionResult(
+        text=source,
+        word_count=40,
+        strategy="trafilatura",
+    )
+
+    extractor_module._annotate_completeness(
+        candidate,
+        f"<html><body><p>{source}</p></body></html>",
+    )
+
+    assert candidate.completeness_coverage == "source_full"
+    assert candidate.completeness_score == 1
+    assert candidate.source_coverage_score == 1
+    assert candidate.output_grounding_score == 1
+
+
+def test_grounding_assessment_enforces_character_and_token_budgets() -> None:
+    source = "文" * 90_000
+    html = f"<html><body>{source}</body></html>"
+
+    coverage = extractor_module._bounded_grounding_coverage(
+        html,
+        source,
+    )
+
+    assert coverage is not None
+    assert coverage.source_tokens_assessed <= (
+        extractor_module._COMPLETENESS_MAX_TOKENS
+    )
+    assert coverage.output_tokens_assessed <= (
+        extractor_module._COMPLETENESS_MAX_TOKENS
+    )
+    assert coverage.fully_assessed is False
+
+    candidate = ExtractionResult(
+        text=source,
+        word_count=45_000,
+        strategy="trafilatura",
+    )
+    extractor_module._annotate_completeness(candidate, html)
+    assert candidate.completeness_coverage == "source_prefix"
+    assert candidate.completeness_score == 0.99
+    assert "grounding_budget_limited" in candidate.completeness_reasons

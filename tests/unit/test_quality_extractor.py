@@ -20,6 +20,25 @@ from app.services.quality_extractor import (
 )
 
 
+def _configure_quality_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enable the integration lane without exposing or contacting a real backend."""
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_base_url",
+        "https://quality.example.test/v1",
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_api_key",
+        "configured-test-key",
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_model",
+        "test-model",
+    )
+
+
 class _FakeConfig:
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
@@ -649,6 +668,8 @@ async def test_shutdown_cancels_wedged_model_task_on_owning_io_loop() -> None:
 async def test_async_integration_returns_quality_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _configure_quality_backend(monkeypatch)
+
     async def quality_result(_: str, __: str) -> QualityExtraction:
         return QualityExtraction(
             text=(
@@ -677,9 +698,43 @@ async def test_async_integration_returns_quality_result(
 
 
 @pytest.mark.asyncio
+async def test_quality_output_is_capped_before_completeness_annotation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_quality_backend(monkeypatch)
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "extract_max_text_length",
+        160,
+    )
+    body = " ".join(f"groundedword{index}" for index in range(80))
+
+    async def quality_result(_: str, __: str) -> QualityExtraction:
+        return QualityExtraction(text=body)
+
+    monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
+    result = await extract_content_async(
+        f"<html><body><main><p>{body}</p></main></body></html>",
+        "https://example.test/quality-truncation",
+        extraction_profile="quality",
+    )
+
+    assert result.strategy == QUALITY_STRATEGY
+    assert result.truncated is True
+    assert result.truncation_reason == "configured text limit"
+    assert len(result.text) <= 160
+    assert "content truncated at configured limit" in result.text
+    assert "output_truncated" in result.completeness_reasons
+    assert result.completeness_score <= 0.65
+    assert result.word_count == extractor_module._count_words(result.text)
+
+
+@pytest.mark.asyncio
 async def test_quality_verifier_accepts_grounded_cjk_without_space_boundaries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _configure_quality_backend(monkeypatch)
+
     text = "# 架构\n\n复用连接能够降低重复抓取请求的延迟并保持正文结构完整。"
 
     async def quality_result(_: str, __: str) -> QualityExtraction:
@@ -702,13 +757,20 @@ async def test_quality_verifier_accepts_grounded_cjk_without_space_boundaries(
 
 
 @pytest.mark.asyncio
-async def test_async_quality_failure_and_sync_quality_use_balanced_fallback(
+async def test_disabled_quality_profile_is_balanced_semantics_without_backend_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def unavailable(_: str, __: str) -> None:
-        return None
+    async def unexpected_backend_call(_: str, __: str) -> None:
+        raise AssertionError("an unconfigured quality backend must not be called")
 
-    monkeypatch.setattr(quality_module, "extract_quality_content", unavailable)
+    monkeypatch.setattr(
+        quality_module,
+        "extract_quality_content",
+        unexpected_backend_call,
+    )
+    monkeypatch.setattr(extractor_module.settings, "quality_extraction_base_url", "")
+    monkeypatch.setattr(extractor_module.settings, "quality_extraction_api_key", "")
+    monkeypatch.setattr(extractor_module.settings, "quality_extraction_model", "")
     html = (
         "<html><head><title>Fallback</title></head><body><main><p>"
         "This deterministic paragraph contains enough words for safe fallback output."
@@ -725,11 +787,99 @@ async def test_async_quality_failure_and_sync_quality_use_balanced_fallback(
         "https://example.test",
         extraction_profile="quality",
     )
+    balanced_result = await extract_content_async(
+        html,
+        "https://example.test",
+        extraction_profile="balanced",
+    )
 
+    semantic_fields = (
+        "text",
+        "title",
+        "description",
+        "language",
+        "word_count",
+        "strategy",
+        "confidence",
+        "page_type",
+        "truncated",
+        "truncation_reason",
+        "route",
+        "candidate_count",
+        "candidate_disagreement",
+        "completeness_score",
+        "completeness_coverage",
+        "completeness_reasons",
+    )
     assert async_result.text
-    assert sync_result.text
     assert async_result.strategy != QUALITY_STRATEGY
-    assert sync_result.strategy != QUALITY_STRATEGY
+    assert tuple(getattr(async_result, field) for field in semantic_fields) == tuple(
+        getattr(balanced_result, field) for field in semantic_fields
+    )
+    assert sync_result.text == balanced_result.text
+    assert sync_result.strategy == balanced_result.strategy
+    assert async_result.quality_attempted is False
+    assert async_result.route_reasons == ("quality_backend_disabled",)
+
+
+@pytest.mark.asyncio
+async def test_failed_quality_profile_preserves_balanced_extraction_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_base_url",
+        "https://quality.example.test/v1",
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_api_key",
+        "configured-test-key",
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_model",
+        "test-model",
+    )
+
+    async def failed_quality_call(*_args: object) -> None:
+        raise TimeoutError
+
+    monkeypatch.setattr(
+        quality_module,
+        "extract_quality_content",
+        failed_quality_call,
+    )
+    html = (
+        "<html><head><title>Fallback</title></head><body><main><p>"
+        "This deterministic paragraph contains enough words for safe fallback "
+        "output and a stable comparison against the balanced runtime profile."
+        "</p></main></body></html>"
+    )
+
+    quality_result = await extract_content_async(
+        html,
+        "https://example.test/failure",
+        extraction_profile="quality",
+    )
+    balanced_result = await extract_content_async(
+        html,
+        "https://example.test/failure",
+        extraction_profile="balanced",
+    )
+
+    assert quality_result.text == balanced_result.text
+    assert quality_result.strategy == balanced_result.strategy
+    assert quality_result.word_count == balanced_result.word_count
+    assert quality_result.route == balanced_result.route
+    assert quality_result.completeness_score == balanced_result.completeness_score
+    assert (
+        quality_result.completeness_coverage
+        == balanced_result.completeness_coverage
+    )
+    assert quality_result.quality_attempted is True
+    assert quality_result.quality_succeeded is False
+    assert quality_result.route_reasons == ("quality_backend_fallback",)
 
 
 def _adaptive_candidate(
@@ -773,12 +923,17 @@ async def test_adaptive_high_confidence_page_stays_on_fast_path(
 
     assert result.strategy == "rs-trafilatura"
     assert result.text.startswith("Deterministic content")
+    assert result.route_reasons == ("adaptive_fast_path",)
+    assert result.quality_attempted is False
+    assert result.model_assisted is False
 
 
 @pytest.mark.asyncio
 async def test_adaptive_structural_risk_escalates_after_deterministic_candidate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _configure_quality_backend(monkeypatch)
+
     events: list[str] = []
 
     def deterministic_candidate(*_args: object) -> ExtractionResult:
@@ -794,7 +949,7 @@ async def test_adaptive_structural_risk_escalates_after_deterministic_candidate(
 
     async def quality_result(_: str, __: str) -> QualityExtraction:
         nonlocal calls
-        assert events == ["deterministic"]
+        assert events == ["deterministic", "deterministic"]
         events.append("quality")
         calls += 1
         return QualityExtraction(
@@ -823,9 +978,13 @@ async def test_adaptive_structural_risk_escalates_after_deterministic_candidate(
     )
 
     assert calls == 1
-    assert events == ["deterministic", "quality"]
+    assert events == ["deterministic", "deterministic", "quality"]
     assert result.strategy == QUALITY_STRATEGY
     assert result.text.startswith("# Architecture")
+    assert result.model_assisted is True
+    assert result.quality_attempted is True
+    assert result.quality_succeeded is True
+    assert "structure_loss" in result.route_reasons
 
 
 @pytest.mark.asyncio
@@ -833,6 +992,21 @@ async def test_adaptive_quality_failure_preserves_exact_deterministic_candidate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     candidate = _adaptive_candidate(page_type="product")
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_base_url",
+        "https://quality.example.test/v1",
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_api_key",
+        "configured-test-key",
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_model",
+        "test-model",
+    )
     monkeypatch.setattr(
         extractor_module,
         "_extract_with_native",
@@ -858,6 +1032,57 @@ async def test_adaptive_quality_failure_preserves_exact_deterministic_candidate(
     assert result.text == candidate.text
     assert result.strategy == candidate.strategy
     assert sync_adaptive.text == candidate.text
+    assert result.quality_attempted is True
+    assert result.quality_succeeded is False
+    assert result.model_assisted is False
+    assert result.route_reasons[-1] == "quality_backend_fallback"
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_adaptive_fallback_is_stable_and_not_marked_attempted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _adaptive_candidate(page_type="product")
+    monkeypatch.setattr(
+        extractor_module,
+        "_extract_with_native",
+        lambda *_args: candidate,
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_base_url",
+        "",
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_api_key",
+        "",
+    )
+    monkeypatch.setattr(
+        extractor_module.settings,
+        "quality_extraction_model",
+        "",
+    )
+
+    async def disabled_quality_call(*_args: object) -> None:
+        return None
+
+    monkeypatch.setattr(
+        quality_module,
+        "extract_quality_content",
+        disabled_quality_call,
+    )
+
+    result = await extract_content_async(
+        "<html><body><main><p>Product information.</p></main></body></html>",
+        "https://example.test/product",
+        extraction_profile="adaptive",
+    )
+
+    assert result.text == candidate.text
+    assert result.quality_attempted is False
+    assert result.quality_succeeded is False
+    assert result.route_reasons[-1] == "quality_backend_disabled"
 
 
 @pytest.mark.asyncio
@@ -884,6 +1109,8 @@ async def test_adaptive_verifier_rejects_unsafe_assisted_output_without_metadata
     monkeypatch: pytest.MonkeyPatch,
     assisted_text: str,
 ) -> None:
+    _configure_quality_backend(monkeypatch)
+
     candidate = _adaptive_candidate(page_type="product", confidence=0.95)
     candidate.title = "Stable title"
     candidate.description = "Stable description"
@@ -926,6 +1153,8 @@ async def test_adaptive_verifier_rejects_unsafe_assisted_output_without_metadata
 async def test_adaptive_verifier_rejects_grounded_fragment_of_trusted_article(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _configure_quality_backend(monkeypatch)
+
     article_words = [f"articleword{index}" for index in range(1000)]
     candidate = ExtractionResult(
         text=" ".join(article_words),
@@ -971,6 +1200,8 @@ async def test_adaptive_verifier_rejects_grounded_fragment_of_trusted_article(
 async def test_quality_profile_requires_complete_deterministic_comparator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _configure_quality_backend(monkeypatch)
+
     article_words = [f"qualityword{index}" for index in range(600)]
     candidate = ExtractionResult(
         text=" ".join(article_words),
@@ -1006,6 +1237,8 @@ async def test_quality_profile_requires_complete_deterministic_comparator(
 async def test_adaptive_verifier_allows_short_grounded_cleanup_for_noisy_product(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _configure_quality_backend(monkeypatch)
+
     candidate = ExtractionResult(
         text=" ".join(["catalog"] * 500),
         title="Product",
@@ -1042,3 +1275,37 @@ async def test_adaptive_verifier_allows_short_grounded_cleanup_for_noisy_product
     assert result.text == assisted
     assert result.strategy == QUALITY_STRATEGY
     assert result.title == "Product"
+
+
+def test_quality_verifier_rejects_grounded_paragraph_reordering() -> None:
+    first = " ".join(f"firstword{index}" for index in range(24))
+    second = " ".join(f"secondword{index}" for index in range(24))
+    html = f"<html><body><main><p>{first}</p><p>{second}</p></main></body></html>"
+
+    rejection = extractor_module._quality_rejection_reason(
+        f"{second}\n\n{first}",
+        html,
+        None,
+    )
+
+    assert rejection == "source_order_violation"
+
+
+def test_adaptive_router_escalates_a_single_lost_table_category() -> None:
+    candidate = _adaptive_candidate(page_type="webpage", confidence=0.99)
+    html = """
+    <html><body><main>
+      <h1>Product details</h1>
+      <table><tr><th>Name</th><th>Value</th></tr>
+      <tr><td>Latency</td><td>Low</td></tr></table>
+      <p>Deterministic content remains the stable fallback for every adaptive
+      extraction request.</p>
+    </main></body></html>
+    """
+
+    decision = extractor_module._adaptive_risk_decision(candidate, html)
+
+    assert decision.risky is True
+    assert decision.structural_loss_score >= 1
+    assert "structure_loss" in decision.reasons
+    assert "tables_missing" in decision.reasons

@@ -120,7 +120,12 @@ class FetchResult:
     content_type: str = ""
     title: str = ""
     metadata: ExtractionMetadata | None = None
+    # End-to-end fetch_url wall time retained for compatibility. The explicit
+    # provenance fields below partition actual static-fetch and browser-render
+    # work so callers never infer execution from requested js_render intent.
     latency_ms: float = 0.0
+    fetch_latency_ms: float = 0.0
+    render_latency_ms: float = 0.0
     bytes_downloaded: int = 0  # Content-decoded response-body bytes.
     raw_bytes: bytes | None = None  # For PDF/binary content
     final_url: str = ""
@@ -506,6 +511,7 @@ async def _try_direct_render(
             status_code=rendered.status_code,
             content_type=content_type or "text/html",
             latency_ms=rendered.latency_ms,
+            render_latency_ms=rendered.latency_ms,
             bytes_downloaded=downloaded_bytes,
             final_url=rendered.final_url or url,
             rendered=True,
@@ -517,6 +523,7 @@ async def _try_direct_render(
         content_type=content_type or "text/html",
         title=rendered.title,
         latency_ms=rendered.latency_ms,
+        render_latency_ms=rendered.latency_ms,
         bytes_downloaded=downloaded_bytes,
         final_url=rendered.final_url or url,
         rendered=True,
@@ -671,6 +678,20 @@ async def fetch_url(
 ) -> FetchResult:
     t_start = time.monotonic()
     deadline = t_start + settings.http_total_timeout_s
+    render_elapsed_ms = 0.0
+    static_started: float | None = None
+
+    def finish(result: FetchResult) -> FetchResult:
+        """Attach mutually exclusive actual fetch/render wall-time provenance."""
+        fetch_elapsed_ms = (
+            0.0
+            if static_started is None
+            else max(0.0, (time.monotonic() - static_started) * 1000)
+        )
+        result.fetch_latency_ms = round(fetch_elapsed_ms, 3)
+        result.render_latency_ms = round(render_elapsed_ms, 3)
+        result.latency_ms = round(fetch_elapsed_ms + render_elapsed_ms, 1)
+        return result
 
     # Forced/explicit JS requests go straight to Chromium. Previously they
     # downloaded every page once with httpx and then fetched it again in the
@@ -682,14 +703,21 @@ async def fetch_url(
         and settings.playwright_java_script_enabled
         and not _url_looks_like_pdf(url)
     ):
-        direct_result = await _try_direct_render(
-            url,
-            wait_for_selector,
-            document_policy,
-        )
+        render_started = time.monotonic()
+        try:
+            direct_result = await _try_direct_render(
+                url,
+                wait_for_selector,
+                document_policy,
+            )
+        finally:
+            render_elapsed_ms += (
+                time.monotonic() - render_started
+            ) * 1000
         if direct_result is not None:
-            return direct_result
+            return finish(direct_result)
 
+    static_started = time.monotonic()
     client = get_http_client()
     current = url
     status_code = 0
@@ -699,7 +727,9 @@ async def fetch_url(
     for _hop in range(_MAX_REDIRECTS + 1):
         err = await validate_public_url(current)
         if err:
-            return FetchResult(error=f"SSRF blocked: {err}", final_url=current)
+            return finish(
+                FetchResult(error=f"SSRF blocked: {err}", final_url=current)
+            )
         if document_policy is not None:
             await enforce_document_policy(document_policy, current)
         try:
@@ -709,35 +739,45 @@ async def fetch_url(
                 deadline,
             )
         except _UnsafePeerAddressError as e:
-            return FetchResult(
-                error=f"SSRF blocked: {e}",
-                final_url=current,
+            return finish(
+                FetchResult(
+                    error=f"SSRF blocked: {e}",
+                    final_url=current,
+                )
             )
         except _ResponseTooLargeError as e:
-            return FetchResult(
-                error=str(e),
-                status_code=e.status_code,
-                bytes_downloaded=e.bytes_read,
-                final_url=current,
+            return finish(
+                FetchResult(
+                    error=str(e),
+                    status_code=e.status_code,
+                    bytes_downloaded=e.bytes_read,
+                    final_url=current,
+                )
             )
         except httpx.TimeoutException:
-            return FetchResult(error="Request timed out", final_url=current)
+            return finish(
+                FetchResult(error="Request timed out", final_url=current)
+            )
         except httpx.ConnectError:
-            return FetchResult(error="Connection failed", final_url=current)
+            return finish(
+                FetchResult(error="Connection failed", final_url=current)
+            )
         except httpx.TransportError as e:
             logger.warning(
                 "http_transport_failed",
                 url=_safe_log_url(current),
                 error_type=type(e).__name__,
             )
-            return FetchResult(error="Network request failed", final_url=current)
+            return finish(
+                FetchResult(error="Network request failed", final_url=current)
+            )
         except Exception as e:
             logger.warning(
                 "http_fetch_failed",
                 url=_safe_log_url(current),
                 error_type=type(e).__name__,
             )
-            return FetchResult(error="Fetch failed", final_url=current)
+            return finish(FetchResult(error="Fetch failed", final_url=current))
 
         location = _header_value(headers, "location")
         if 300 <= status_code < 400 and location:
@@ -745,59 +785,68 @@ async def fetch_url(
             continue
         break
     else:
-        return FetchResult(
-            error=f"Too many redirects (>{_MAX_REDIRECTS})",
-            status_code=status_code,
-            final_url=current,
+        return finish(
+            FetchResult(
+                error=f"Too many redirects (>{_MAX_REDIRECTS})",
+                status_code=status_code,
+                final_url=current,
+            )
         )
 
     if not 200 <= status_code < 300:
-        return FetchResult(
-            error=f"HTTP {status_code}",
-            status_code=status_code,
-            content_type=_header_value(headers, "content-type").strip().lower(),
-            latency_ms=round((time.monotonic() - t_start) * 1000, 1),
-            bytes_downloaded=len(body),
-            final_url=current,
+        return finish(
+            FetchResult(
+                error=f"HTTP {status_code}",
+                status_code=status_code,
+                content_type=_header_value(
+                    headers,
+                    "content-type",
+                ).strip().lower(),
+                bytes_downloaded=len(body),
+                final_url=current,
+            )
         )
 
-    fetch_ms = (time.monotonic() - t_start) * 1000
     declared_content_type = _header_value(headers, "content-type")
     content_type = _effective_content_type(declared_content_type, body)
     downloaded_bytes = len(body)
 
     if content_type is None:
         shown_type = declared_content_type.strip().lower() or "(missing)"
-        return FetchResult(
-            error=f"Not a supported HTML, text, or PDF page (content-type: {shown_type})",
-            status_code=status_code,
-            content_type=declared_content_type.strip().lower(),
-            latency_ms=round(fetch_ms, 1),
-            bytes_downloaded=downloaded_bytes,
-            final_url=current,
+        return finish(
+            FetchResult(
+                error=(
+                    "Not a supported HTML, text, or PDF page "
+                    f"(content-type: {shown_type})"
+                ),
+                status_code=status_code,
+                content_type=declared_content_type.strip().lower(),
+                bytes_downloaded=downloaded_bytes,
+                final_url=current,
+            )
         )
 
     # PDF handling — return raw bytes (already size-capped) for academic extraction.
     if content_type.partition(";")[0] == "application/pdf":
-        return FetchResult(
-            html="",
-            status_code=status_code,
-            content_type=content_type,
-            raw_bytes=body,
-            bytes_downloaded=downloaded_bytes,
-            latency_ms=round(fetch_ms, 1),
-            final_url=current,
+        return finish(
+            FetchResult(
+                html="",
+                status_code=status_code,
+                content_type=content_type,
+                raw_bytes=body,
+                bytes_downloaded=downloaded_bytes,
+                final_url=current,
+            )
         )
 
     html = _decode_html(body, declared_content_type)
 
-    result = FetchResult(
-        html=html,
-        status_code=status_code,
-        content_type=content_type,
-        bytes_downloaded=downloaded_bytes,
-        latency_ms=round(fetch_ms, 1),
-        final_url=current,
+    return finish(
+        FetchResult(
+            html=html,
+            status_code=status_code,
+            content_type=content_type,
+            bytes_downloaded=downloaded_bytes,
+            final_url=current,
+        )
     )
-
-    return result

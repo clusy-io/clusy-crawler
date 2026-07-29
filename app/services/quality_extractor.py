@@ -7,6 +7,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import structlog
@@ -223,6 +224,22 @@ def _load_official_bindings() -> _OfficialBindings:
         config_type=mineru_html.MinerUHTMLConfig,
         input_type=mineru_base.MinerUHTMLInput,
     )
+
+
+@lru_cache(maxsize=1)
+def quality_dependency_available() -> bool:
+    """Return whether the pinned quality adapter can actually be imported.
+
+    The lightweight runtime image intentionally omits MinerU-HTML. A configured
+    remote endpoint is therefore not sufficient to call the assisted lane: the
+    local pinned adapter performs its preprocessing and response validation.
+    Cache the import probe because readiness endpoints may be polled often.
+    """
+    try:
+        _load_official_bindings()
+    except Exception:
+        return False
+    return True
 
 
 class QualityExtractor:

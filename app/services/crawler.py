@@ -22,7 +22,12 @@ from app.services.document_policy import (
     DocumentPolicyDeniedError,
     enforce_document_policy,
 )
-from app.services.extractor import ExtractionProfile, extract_content_async
+from app.services.extractor import (
+    PIPELINE_REVISION,
+    ExtractionProfile,
+    ExtractionResult,
+    extract_content_async,
+)
 from app.services.frontier import (
     CrawlFrontier,
     FrontierConfig,
@@ -38,6 +43,8 @@ from app.services.github import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from app.services.academic import AcademicPaper
     from app.services.document_policy import DocumentPolicyCallback
     from app.services.frontier import FrontierLease
@@ -112,6 +119,7 @@ async def _read_cached_result(
     """Read and validate one cache envelope, treating corruption as a miss."""
     import orjson
 
+    lookup_started = time_module.perf_counter()
     try:
         cached = await cache.get(cache_key)
     except Exception as e:
@@ -136,6 +144,24 @@ async def _read_cached_result(
         return None
 
     result.cached = True
+    if result.metadata is not None:
+        lookup_ms = round(
+            (time_module.perf_counter() - lookup_started) * 1000,
+            3,
+        )
+        result.metadata.cache_status = "hit"
+        result.metadata.cache_age_ms = round(max(0.0, age * 1000), 3)
+        result.metadata.cache_lookup_ms = lookup_ms
+        # Timings persisted with the source crawl describe a different
+        # request. A cache hit reports only its own lookup wall time and never
+        # presents the original fetch/render/extraction as current work.
+        result.metadata.stage_timings_ms = {
+            "queue": 0.0,
+            "fetch": 0.0,
+            "render": 0.0,
+            "extraction": 0.0,
+            "total": lookup_ms,
+        }
     return result
 
 
@@ -151,6 +177,12 @@ async def _store_cached_result(cache: Any, cache_key: str, result: CrawlResult) 
     # singleflight waiters but is intentionally excluded from Redis.
     cached_result.html = None
     cached_result.cached = False
+    if cached_result.metadata is not None:
+        # Request-local telemetry is reconstructed on every cache hit.
+        cached_result.metadata.stage_timings_ms = {}
+        cached_result.metadata.cache_status = "live"
+        cached_result.metadata.cache_age_ms = None
+        cached_result.metadata.cache_lookup_ms = None
     try:
         await cache.set(
             cache_key,
@@ -159,6 +191,121 @@ async def _store_cached_result(cache: Any, cache_key: str, result: CrawlResult) 
     except Exception as e:
         # Cache availability must never determine crawl success.
         logger.warning("cache_write_failed", error_type=type(e).__name__)
+
+
+def _result_is_stable_for_cache(result: CrawlResult) -> bool:
+    """Reject temporary quality fallbacks while caching stable V2 outputs."""
+    metadata = result.metadata
+    if metadata is None:
+        return True
+    assisted = (
+        metadata.model_assisted
+        or metadata.extraction_route == "quality_model"
+        or metadata.extraction_strategy.startswith("mineru-")
+    )
+    if assisted:
+        if not metadata.quality_succeeded:
+            # Fail closed if an adapter returns a model strategy but forgets
+            # the explicit V2 success provenance.
+            return False
+        # Temperature-zero is insufficient identity by itself. Persist model
+        # output only when the operator binds the exact immutable backend build;
+        # the revision is also part of the cache key and health fingerprint.
+        return bool(settings.quality_extraction_backend_revision.strip())
+    return not (metadata.quality_attempted and not metadata.quality_succeeded)
+
+
+def _specialist_route(metadata: ExtractionMetadata) -> tuple[str, list[str]]:
+    """Return explicit provenance for non-general extraction paths."""
+    strategy = metadata.extraction_strategy
+    if strategy.startswith("academic-metadata-"):
+        return (
+            "scholarly_metadata_fallback",
+            ["publisher_full_text_unavailable", "metadata_only"],
+        )
+    if strategy == "pypdfium2+academic":
+        return ("academic_pdf", ["direct_pdf"])
+    if strategy == "academic-html+pdf":
+        return (
+            "academic_pdf_fallback",
+            ["academic_landing_detected", "pdf_full_text_selected"],
+        )
+    if strategy == "academic-html":
+        return ("academic_html", ["academic_full_text_detected"])
+    if strategy == "academic-landing":
+        return ("academic_landing", ["full_text_unavailable"])
+    if strategy.startswith("github-"):
+        return ("github_source", ["github_source_specialist"])
+    if metadata.content_scope == "source":
+        return ("raw_source", ["non_html_source"])
+    return ("specialist", [strategy or "specialist_output"])
+
+
+def _finalize_live_success(
+    result: CrawlResult,
+    *,
+    pipeline_started: float,
+    queue_elapsed_ms: float,
+    fetch_elapsed_ms: float,
+    render_elapsed_ms: float,
+) -> CrawlResult:
+    """Attach uniform request-local provenance to every successful result."""
+    metadata = result.metadata
+    if result.error or metadata is None:
+        return result
+
+    metadata.pipeline_revision = metadata.pipeline_revision or PIPELINE_REVISION
+    if not metadata.extraction_route:
+        route, reasons = _specialist_route(metadata)
+        metadata.extraction_route = route
+        metadata.route_reasons = reasons
+    if metadata.completeness_coverage == "unassessed":
+        # Specialist extractors do not compare their output against an
+        # independently assessed source corpus. Keep the numeric compatibility
+        # score conservative and state that only output was observed.
+        metadata.completeness_score = 0.0
+        metadata.completeness_coverage = "output_only"
+        metadata.source_coverage_score = None
+        metadata.output_grounding_score = None
+        if "source_completeness_unassessed" not in metadata.completeness_reasons:
+            metadata.completeness_reasons.append(
+                "source_completeness_unassessed"
+            )
+
+    total_elapsed_ms = max(
+        0.0,
+        (time_module.perf_counter() - pipeline_started) * 1000,
+    )
+    # The fetcher reports actual static/browser provenance. Clamp aggregate
+    # durations to the enclosing request wall: a specialist may overlap
+    # independent fetches, and summing their individual latency observations
+    # must never claim more wall time than the request consumed. Proportional
+    # scaling preserves the fetch/render split without preferring either lane.
+    bounded_queue_ms = min(max(0.0, queue_elapsed_ms), total_elapsed_ms)
+    available_work_ms = max(0.0, total_elapsed_ms - bounded_queue_ms)
+    observed_fetch_ms = max(0.0, fetch_elapsed_ms)
+    observed_render_ms = max(0.0, render_elapsed_ms)
+    observed_io_ms = observed_fetch_ms + observed_render_ms
+    if observed_io_ms > available_work_ms and observed_io_ms > 0:
+        scale = available_work_ms / observed_io_ms
+        bounded_fetch_ms = observed_fetch_ms * scale
+        bounded_render_ms = observed_render_ms * scale
+        extraction_elapsed_ms = 0.0
+    else:
+        bounded_fetch_ms = observed_fetch_ms
+        bounded_render_ms = observed_render_ms
+        extraction_elapsed_ms = available_work_ms - observed_io_ms
+    metadata.stage_timings_ms = {
+        "queue": round(bounded_queue_ms, 3),
+        "fetch": round(bounded_fetch_ms, 3),
+        "render": round(bounded_render_ms, 3),
+        "extraction": round(extraction_elapsed_ms, 3),
+        "total": round(total_elapsed_ms, 3),
+    }
+    metadata.cache_status = "live"
+    metadata.cache_age_ms = None
+    metadata.cache_lookup_ms = None
+    return result
 
 
 async def _crawl_single_url(
@@ -186,11 +333,10 @@ async def _crawl_single_url(
         auto_render=auto_render,
         extraction_profile=extraction_profile,
     )
-    # Model-assisted outputs can vary with endpoint availability and circuit
-    # state. Do not persist either a model result or a temporary deterministic
-    # fallback for quality/adaptive requests. The fully versioned cache key still
-    # isolates their in-process singleflight work.
-    cache_allowed = extraction_profile not in {"adaptive", "quality"}
+    # V2 caches deterministic adaptive fast paths and accepted temperature-zero
+    # quality outputs under a fully versioned key. A fallback caused by a
+    # temporary quality failure is filtered before storage below.
+    cache_allowed = True
     # max_age == 0 bypasses the cache entirely (always re-crawl). "html" output
     # is never cached (too large), so those requests always take the live path.
     if cache_allowed and max_age != 0 and "html" not in formats:
@@ -296,7 +442,7 @@ async def _crawl_uncached_and_cache(
             extraction_profile=extraction_profile,
             document_policy=document_policy,
         )
-        if cache_result:
+        if cache_result and _result_is_stable_for_cache(result):
             await _store_cached_result(cache, cache_key, result)
         return result
     finally:
@@ -319,8 +465,37 @@ async def _crawl_uncached(
 ) -> CrawlResult:
     """Run the live crawl and return a canonical, format-complete result."""
 
+    pipeline_started = time_module.perf_counter()
+    fetch_elapsed_ms = 0.0
+    render_elapsed_ms = 0.0
+
+    async def run_extraction(
+        html_content: str,
+        target_url: str,
+    ) -> ExtractionResult:
+        return await extract_content_async(
+            html_content,
+            target_url,
+            extraction_profile,
+        )
+
+    def record_fetch(result: fetcher_module.FetchResult) -> None:
+        nonlocal fetch_elapsed_ms, render_elapsed_ms
+        fetch_elapsed_ms += max(0.0, result.fetch_latency_ms)
+        render_elapsed_ms += max(0.0, result.render_latency_ms)
+
+    def finalize(result: CrawlResult) -> CrawlResult:
+        return _finalize_live_success(
+            result,
+            pipeline_started=pipeline_started,
+            queue_elapsed_ms=queue_elapsed_ms,
+            fetch_elapsed_ms=fetch_elapsed_ms,
+            render_elapsed_ms=render_elapsed_ms,
+        )
+
     sem = _get_semaphore()
     async with sem:
+        queue_elapsed_ms = (time_module.perf_counter() - pipeline_started) * 1000
         loop = asyncio.get_running_loop()
 
         if document_policy is None:
@@ -336,6 +511,7 @@ async def _crawl_uncached(
                 wait_for_selector=wait_for_selector,
                 document_policy=document_policy,
             )
+        record_fetch(fetch_result)
 
         if fetch_result.error:
             metadata_fallback = await _try_scholarly_metadata_fallback(
@@ -347,7 +523,7 @@ async def _crawl_uncached(
                 origin_error=fetch_result.error,
             )
             if metadata_fallback is not None:
-                return metadata_fallback
+                return finalize(metadata_fallback)
             return CrawlResult(url=url, error=fetch_result.error)
 
         effective_url = fetch_result.final_url or url
@@ -380,18 +556,25 @@ async def _crawl_uncached(
                 effective_url,
                 loop,
                 document_policy=document_policy,
+                record_fetch=record_fetch,
             )
             landing_url = getattr(paper, "canonical_url", "")
-            return _academic_result(
-                requested_url=url,
-                paper=paper,
-                source_url=effective_url,
-                content_type=fetch_result.content_type,
-                status_code=fetch_result.status_code,
-                rendered=fetch_result.rendered,
-                strategy="pypdfium2+academic",
-                html=None,
-                links=[landing_url] if landing_url and landing_url != effective_url else [],
+            return finalize(
+                _academic_result(
+                    requested_url=url,
+                    paper=paper,
+                    source_url=effective_url,
+                    content_type=fetch_result.content_type,
+                    status_code=fetch_result.status_code,
+                    rendered=fetch_result.rendered,
+                    strategy="pypdfium2+academic",
+                    html=None,
+                    links=(
+                        [landing_url]
+                        if landing_url and landing_url != effective_url
+                        else []
+                    ),
+                )
             )
 
         # Direct raw files and GitHub blob pages bypass article extraction.
@@ -402,20 +585,23 @@ async def _crawl_uncached(
             fetch_result=fetch_result,
             effective_url=effective_url,
             document_policy=document_policy,
+            record_fetch=record_fetch,
         )
         if github_source is not None:
-            return github_source
+            return finalize(github_source)
 
         if not _is_html_content_type(fetch_result.content_type):
-            return _source_result(
-                requested_url=url,
-                content=fetch_result.html,
-                source_url=effective_url,
-                content_type=fetch_result.content_type,
-                status_code=fetch_result.status_code,
-                rendered=fetch_result.rendered,
-                html=fetch_result.html,
-                strategy="source-text",
+            return finalize(
+                _source_result(
+                    requested_url=url,
+                    content=fetch_result.html,
+                    source_url=effective_url,
+                    content_type=fetch_result.content_type,
+                    status_code=fetch_result.status_code,
+                    rendered=fetch_result.rendered,
+                    html=fetch_result.html,
+                    strategy="source-text",
+                )
             )
 
         # Parse trustworthy public landing-page metadata first.  PMC/JATS and
@@ -428,9 +614,10 @@ async def _crawl_uncached(
             effective_url=effective_url,
             loop=loop,
             document_policy=document_policy,
+            record_fetch=record_fetch,
         )
         if academic_result is not None:
-            return academic_result
+            return finalize(academic_result)
 
         # Conditional JS rendering — extract ONCE, escalate only when needed.
         #
@@ -451,10 +638,9 @@ async def _crawl_uncached(
             elif needs_js_rendering(fetch_result.html, effective_url):
                 escalate, trigger = True, "js_detected"
             else:
-                extraction = await extract_content_async(
+                extraction = await run_extraction(
                     fetch_result.html,
                     effective_url,
-                    extraction_profile,
                 )
                 if extraction.word_count < max(word_count_threshold, SPARSE_WORD_FLOOR):
                     escalate, trigger = True, "sparse"
@@ -478,12 +664,12 @@ async def _crawl_uncached(
                         wait_for_selector=wait_for_selector,
                         document_policy=document_policy,
                     )
+                record_fetch(pw_result)
                 if not pw_result.error and pw_result.html:
                     pw_effective_url = pw_result.final_url or url
-                    pw_extraction = await extract_content_async(
+                    pw_extraction = await run_extraction(
                         pw_result.html,
                         pw_effective_url,
-                        extraction_profile,
                     )
                     # Rendering can regress (interstitials, lazy content) — keep
                     # whichever extraction actually captured more content.
@@ -500,9 +686,10 @@ async def _crawl_uncached(
                 effective_url=effective_url,
                 loop=loop,
                 document_policy=document_policy,
+                record_fetch=record_fetch,
             )
             if rendered_academic_result is not None:
-                return rendered_academic_result
+                return finalize(rendered_academic_result)
 
         if BOT_BLOCK_SIGNATURES.search(fetch_result.html[:3000]):
             metadata_fallback = await _try_scholarly_metadata_fallback(
@@ -515,7 +702,7 @@ async def _crawl_uncached(
                 origin_error=("bot or client challenge blocked the publisher page"),
             )
             if metadata_fallback is not None:
-                return metadata_fallback
+                return finalize(metadata_fallback)
             return CrawlResult(
                 url=url,
                 error=f"bot or client challenge blocked content (HTTP "
@@ -523,10 +710,9 @@ async def _crawl_uncached(
             )
 
         if extraction is None:
-            extraction = await extract_content_async(
+            extraction = await run_extraction(
                 fetch_result.html,
                 effective_url,
-                extraction_profile,
             )
 
         # An empty extraction is a failed crawl, not a silent empty success —
@@ -543,7 +729,7 @@ async def _crawl_uncached(
                 origin_error="publisher page returned only sparse content",
             )
             if metadata_fallback is not None:
-                return metadata_fallback
+                return finalize(metadata_fallback)
 
         if extraction.word_count == 0:
             return CrawlResult(
@@ -565,14 +751,29 @@ async def _crawl_uncached(
             truncated=extraction.truncated,
             truncation_reason=extraction.truncation_reason,
             origin_status_code=fetch_result.status_code,
+            pipeline_revision=extraction.pipeline_revision,
+            extraction_route=extraction.route,
+            route_reasons=list(extraction.route_reasons),
+            model_assisted=extraction.model_assisted,
+            quality_attempted=extraction.quality_attempted,
+            quality_succeeded=extraction.quality_succeeded,
+            candidate_count=extraction.candidate_count,
+            candidate_disagreement=extraction.candidate_disagreement,
+            completeness_score=extraction.completeness_score,
+            completeness_coverage=extraction.completeness_coverage,
+            source_coverage_score=extraction.source_coverage_score,
+            output_grounding_score=extraction.output_grounding_score,
+            completeness_reasons=list(extraction.completeness_reasons),
         )
 
-        return CrawlResult(
-            url=url,
-            markdown=extraction.text,
-            html=fetch_result.html,
-            links=_extract_links(fetch_result.html, effective_url),
-            metadata=metadata,
+        return finalize(
+            CrawlResult(
+                url=url,
+                markdown=extraction.text,
+                html=fetch_result.html,
+                links=_extract_links(fetch_result.html, effective_url),
+                metadata=metadata,
+            )
         )
 
 
@@ -583,6 +784,7 @@ async def _crawl_academic_html(
     effective_url: str,
     loop: asyncio.AbstractEventLoop,
     document_policy: DocumentPolicyCallback | None = None,
+    record_fetch: Callable[[fetcher_module.FetchResult], None] | None = None,
 ) -> CrawlResult | None:
     if not _is_academic_content(fetch_result.html, effective_url) or _detect_bot_block(
         fetch_result.html
@@ -617,6 +819,7 @@ async def _crawl_academic_html(
         landing_paper=landing_paper,
         loop=loop,
         document_policy=document_policy,
+        record_fetch=record_fetch,
     )
     if pdf_match is not None:
         pdf_paper, pdf_url, pdf_status = pdf_match
@@ -753,6 +956,7 @@ async def _enrich_direct_pdf_metadata(
     loop: asyncio.AbstractEventLoop,
     *,
     document_policy: DocumentPolicyCallback | None = None,
+    record_fetch: Callable[[fetcher_module.FetchResult], None] | None = None,
 ) -> AcademicPaper:
     """Merge authoritative arXiv landing metadata into a direct PDF result.
 
@@ -790,6 +994,8 @@ async def _enrich_direct_pdf_metadata(
             ),
         )
         return pdf_paper
+    if record_fetch is not None:
+        record_fetch(landing_result)
     if (
         landing_result.error
         or not landing_result.html
@@ -824,6 +1030,7 @@ async def _try_academic_pdf_candidates(
     landing_paper: AcademicPaper,
     loop: asyncio.AbstractEventLoop,
     document_policy: DocumentPolicyCallback | None = None,
+    record_fetch: Callable[[fetcher_module.FetchResult], None] | None = None,
 ) -> tuple[AcademicPaper, str, int] | None:
     # Cap fallback fan-out: publisher pages sometimes advertise supplementary
     # PDFs alongside the article.  Candidate ordering puts citation_pdf_url and
@@ -854,6 +1061,8 @@ async def _try_academic_pdf_candidates(
                         reason="document_policy_denied",
                     )
                     continue
+                if record_fetch is not None:
+                    record_fetch(pdf_result)
                 if (
                     pdf_result.error
                     or not pdf_result.raw_bytes
@@ -899,6 +1108,7 @@ async def _try_github_source(
     fetch_result: fetcher_module.FetchResult,
     effective_url: str,
     document_policy: DocumentPolicyCallback | None = None,
+    record_fetch: Callable[[fetcher_module.FetchResult], None] | None = None,
 ) -> CrawlResult | None:
     github_url = classify_github_url(effective_url)
     if github_url is None:
@@ -930,6 +1140,8 @@ async def _try_github_source(
                 reason="document_policy_denied",
             )
             return None
+        if record_fetch is not None:
+            record_fetch(candidate)
         if (
             candidate.error
             or not candidate.html
@@ -1721,7 +1933,7 @@ async def crawl_urls(
     extraction_prompt: str | None = None,
     max_depth: int = 0,
     allow_subdomains: bool = False,
-    max_pages: int = 1,
+    max_pages: int = settings.default_max_pages,
     priority: int = 10,
 ) -> list[CrawlResult]:
     formats = formats or ["markdown"]

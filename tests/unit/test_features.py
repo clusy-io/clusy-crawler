@@ -7,6 +7,7 @@ import orjson
 import pytest
 
 from app.cache import make_cache_key
+from app.config import settings
 from app.models.responses import CrawlResult
 from app.services import crawler as crawler_mod
 from app.services import fetcher as fetcher_mod
@@ -102,9 +103,45 @@ def stub_fetch(monkeypatch):
 async def test_second_call_is_cached(mem_cache, stub_fetch):
     r1 = (await crawler_mod.crawl_urls(["https://ex.com/a"]))[0]
     assert r1.cached is False
+    assert r1.metadata is not None
+    assert r1.metadata.cache_status == "live"
     r2 = (await crawler_mod.crawl_urls(["https://ex.com/a"]))[0]
     assert r2.cached is True
+    assert r2.metadata is not None
+    assert r2.metadata.cache_status == "hit"
+    assert r2.metadata.cache_age_ms is not None
+    assert r2.metadata.cache_lookup_ms is not None
     assert stub_fetch["n"] == 1  # second served from cache, no re-fetch
+
+
+async def test_cache_hit_replaces_persisted_live_stage_timings(mem_cache, stub_fetch):
+    await crawler_mod.crawl_urls(["https://ex.com/cache-timing"])
+    key = next(iter(mem_cache.store))
+    envelope = orjson.loads(mem_cache.store[key])
+    assert envelope["r"]["metadata"]["stage_timings_ms"] == {}
+    envelope["r"]["metadata"]["stage_timings_ms"] = {
+        "queue": 101.0,
+        "fetch": 102.0,
+        "render": 103.0,
+        "extraction": 104.0,
+        "total": 999.0,
+    }
+    mem_cache.store[key] = orjson.dumps(envelope)
+
+    result = (
+        await crawler_mod.crawl_urls(["https://ex.com/cache-timing"])
+    )[0]
+
+    assert result.cached is True
+    assert result.metadata is not None
+    assert result.metadata.cache_status == "hit"
+    assert result.metadata.stage_timings_ms["queue"] == 0
+    assert result.metadata.stage_timings_ms["fetch"] == 0
+    assert result.metadata.stage_timings_ms["render"] == 0
+    assert result.metadata.stage_timings_ms["extraction"] == 0
+    assert result.metadata.stage_timings_ms["total"] == (
+        result.metadata.cache_lookup_ms
+    )
 
 
 async def test_max_age_zero_bypasses_cache(mem_cache, stub_fetch):
@@ -127,7 +164,7 @@ async def test_stale_entry_triggers_recrawl(mem_cache, stub_fetch):
 
 
 @pytest.mark.parametrize("profile", ["adaptive", "quality"])
-async def test_model_assisted_profiles_never_read_or_write_redis_cache(
+async def test_verified_model_assisted_outputs_use_versioned_cache(
     profile,
     mem_cache,
     stub_fetch,
@@ -140,9 +177,18 @@ async def test_model_assisted_profiles_never_read_or_write_redis_cache(
             text="# Model output\n\nFresh content",
             word_count=5,
             strategy="mineru-html-v1.1-openai",
+            route="quality_model",
+            model_assisted=True,
+            quality_attempted=True,
+            quality_succeeded=True,
         )
 
     monkeypatch.setattr(crawler_mod, "extract_content_async", quality_extract)
+    monkeypatch.setattr(
+        settings,
+        "quality_extraction_backend_revision",
+        "model-build@sha256:abc123",
+    )
 
     first = (
         await crawler_mod.crawl_urls(
@@ -154,6 +200,46 @@ async def test_model_assisted_profiles_never_read_or_write_redis_cache(
         await crawler_mod.crawl_urls(
             [f"https://ex.com/{profile}"],
             extraction_profile=profile,
+        )
+    )[0]
+
+    assert first.cached is False
+    assert second.cached is True
+    assert stub_fetch["n"] == 1
+    assert len(mem_cache.store) == 1
+
+
+async def test_unversioned_model_assisted_output_is_not_persisted(
+    mem_cache,
+    stub_fetch,
+    monkeypatch,
+):
+    from app.services.extractor import ExtractionResult
+
+    async def quality_extract(*_args, **_kwargs):
+        return ExtractionResult(
+            text="# Unversioned model output",
+            word_count=4,
+            strategy="mineru-html-v1.1-openai",
+            route="quality_model",
+            model_assisted=True,
+            quality_attempted=True,
+            quality_succeeded=True,
+        )
+
+    monkeypatch.setattr(crawler_mod, "extract_content_async", quality_extract)
+    monkeypatch.setattr(settings, "quality_extraction_backend_revision", "")
+
+    first = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/unversioned-quality"],
+            extraction_profile="quality",
+        )
+    )[0]
+    second = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/unversioned-quality"],
+            extraction_profile="quality",
         )
     )[0]
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from typing import Literal
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
@@ -12,6 +13,11 @@ class Settings(BaseSettings):
         default="unknown",
         validation_alias="GIT_SHA",
         pattern=r"^(?:unknown|[0-9a-fA-F]{7,64})$",
+    )
+    image_digest: str = Field(
+        default="unknown",
+        validation_alias="IMAGE_DIGEST",
+        pattern=r"^(?:unknown|sha256:[0-9a-f]{64})$",
     )
 
     # Service
@@ -29,6 +35,17 @@ class Settings(BaseSettings):
     crawler_api_token: str = Field(
         default="",
         validation_alias=AliasChoices("CRAWL4AI_API_TOKEN", "CRAWLER_API_TOKEN"),
+    )
+    # Independent key for public serving-config HMACs and private credential
+    # identities. Never reuse the externally presented bearer token as a
+    # verifier. Operators remain responsible for generating and storing a
+    # high-entropy secret; validation only rejects obvious weak/malformed
+    # values. An empty value selects the process-local development key outside
+    # production.
+    serving_fingerprint_key: str = Field(
+        default="",
+        validation_alias="SERVING_FINGERPRINT_KEY",
+        max_length=4096,
     )
 
     # HTTP fetcher
@@ -87,7 +104,7 @@ class Settings(BaseSettings):
     max_concurrent_tasks: int = Field(default=5, ge=1)
     max_concurrent_pages: int = Field(default=2, ge=1)
     max_domains_per_request: int = Field(default=50, ge=1)
-    default_max_pages: int = Field(default=1, ge=1)
+    default_max_pages: int = Field(default=1, ge=1, le=100)
     # Admission and request-shape limits bound memory even when many clients
     # arrive before the crawl semaphore. Values include in-flight requests.
     max_pending_requests: int = Field(default=100, ge=1)
@@ -107,7 +124,6 @@ class Settings(BaseSettings):
 
     # Content extraction
     extract_max_text_length: int = Field(default=500_000, ge=1)
-    extract_min_text_length: int = Field(default=50, ge=0)
 
     # Playwright / JS rendering
     playwright_enabled: bool = True
@@ -126,6 +142,12 @@ class Settings(BaseSettings):
     quality_extraction_base_url: str = ""
     quality_extraction_api_key: str = ""
     quality_extraction_model: str = ""
+    # Immutable operator-supplied identity for the exact model/backend build.
+    # Model outputs remain usable without it but are not persisted in Redis.
+    quality_extraction_backend_revision: str = Field(
+        default="",
+        pattern=r"^(?:|[A-Za-z0-9][A-Za-z0-9._:@/+\-]{0,127})$",
+    )
     # Prompt contract depends on the served model, not the HTTP protocol.
     # Generic instruction-following models use v2/JSON; the official MinerU
     # v1.1 0.5B compact checkpoint requires short_compact/compact.
@@ -157,6 +179,21 @@ class Settings(BaseSettings):
         ge=1,
         le=7,
     )
+    # Escalate when the deterministic candidate entirely loses one or more
+    # source structure categories (heading/list/table/code/math). This is a
+    # label-free routing signal, not a calibrated benchmark score.
+    adaptive_extraction_structure_loss_threshold: int = Field(
+        default=1,
+        ge=1,
+        le=5,
+    )
+    # Mean pairwise multiset-token distance among bounded clean candidates.
+    # High disagreement is evidence that deterministic selection is uncertain.
+    adaptive_extraction_candidate_disagreement_threshold: float = Field(
+        default=0.45,
+        ge=0,
+        le=1,
+    )
     adaptive_extraction_max_scan_chars: int = Field(
         default=200_000,
         ge=4096,
@@ -186,7 +223,6 @@ class Settings(BaseSettings):
     # Cache (Redis)
     redis_url: str = ""
     cache_ttl_s: int = Field(default=3600, ge=1)
-    cache_max_size_mb: int = Field(default=500, ge=1)
     cache_connect_timeout_s: float = Field(default=0.75, gt=0, le=10)
     cache_operation_timeout_s: float = Field(default=0.5, gt=0, le=10)
     cache_failure_cooldown_s: float = Field(default=5.0, gt=0, le=300)
@@ -210,6 +246,10 @@ class Settings(BaseSettings):
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "populate_by_name": True,
+        # Startup validation can fail on secret-bearing settings. Pydantic's
+        # default error rendering includes the rejected input value, which
+        # could copy malformed secrets into container or deployment logs.
+        "hide_input_in_errors": True,
     }
 
     @field_validator("adaptive_extraction_risky_page_types")
@@ -237,10 +277,52 @@ class Settings(BaseSettings):
             )
         return ",".join(dict.fromkeys(page_types))
 
+    @field_validator("serving_fingerprint_key")
+    @classmethod
+    def validate_serving_fingerprint_key(cls, value: str) -> str:
+        if not value:
+            return value
+        if any(character.isspace() for character in value):
+            raise ValueError("SERVING_FINGERPRINT_KEY must not contain whitespace")
+        if len(value) < 32:
+            raise ValueError("SERVING_FINGERPRINT_KEY must be at least 32 characters")
+        if len(set(value)) < 4:
+            raise ValueError(
+                "SERVING_FINGERPRINT_KEY has insufficient character diversity"
+            )
+        return value
+
+    def quality_backend_configured(self) -> bool:
+        """Return whether the optional quality lane has all required settings.
+
+        Keep this predicate on the settings object so extraction, cache
+        partitioning, and serving diagnostics cannot drift on what "enabled"
+        means. The API key is never returned; private HMACs bind its exact value
+        so a credential rotation cannot reuse stale serving/cache identities.
+        """
+        return bool(
+            self.quality_extraction_base_url.strip()
+            and self.quality_extraction_api_key
+            and self.quality_extraction_model.strip()
+        )
+
     @model_validator(mode="after")
     def require_production_auth(self) -> Settings:
         if self.environment == "prod" and not self.crawler_api_token:
             raise ValueError("CRAWL4AI_API_TOKEN (or CRAWLER_API_TOKEN) is required in prod")
+        if self.environment == "prod" and not self.serving_fingerprint_key:
+            raise ValueError("SERVING_FINGERPRINT_KEY is required in prod")
+        if (
+            self.environment == "prod"
+            and self.serving_fingerprint_key
+            and hmac.compare_digest(
+                self.serving_fingerprint_key.encode("utf-8"),
+                self.crawler_api_token.encode("utf-8"),
+            )
+        ):
+            raise ValueError(
+                "SERVING_FINGERPRINT_KEY must differ from the crawler bearer token"
+            )
         if (
             self.environment == "prod"
             and self.playwright_enabled

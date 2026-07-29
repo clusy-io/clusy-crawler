@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import codecs
 
 import httpx
@@ -561,6 +562,7 @@ class TestFetchUrl:
             async def render(self, url, wait_for_selector=None):
                 calls["render"] += 1
                 assert wait_for_selector == "#ready"
+                await asyncio.sleep(0.002)
                 return RenderResult(
                     html="<html><body>" + ("rendered content " * 20) + "</body></html>",
                     title="Rendered",
@@ -591,6 +593,12 @@ class TestFetchUrl:
         assert result.final_url == "https://example.com/final/"
         assert result.status_code == 200
         assert result.title == "Rendered"
+        assert result.fetch_latency_ms == 0
+        assert result.render_latency_ms > 0
+        assert result.latency_ms == pytest.approx(
+            result.render_latency_ms,
+            abs=0.11,
+        )
         assert calls == {"render": 1, "static": 0}
 
     @pytest.mark.anyio
@@ -602,6 +610,7 @@ class TestFetchUrl:
         class FakeRenderer:
             async def render(self, url, wait_for_selector=None):
                 calls["render"] += 1
+                await asyncio.sleep(0.002)
                 return RenderResult(rendered=False)
 
         async def fake_validate(url):
@@ -609,6 +618,7 @@ class TestFetchUrl:
 
         async def fake_stream(url, client):
             calls["static"] += 1
+            await asyncio.sleep(0.002)
             return (
                 200,
                 {"content-type": "text/html"},
@@ -626,7 +636,43 @@ class TestFetchUrl:
         assert result.error is None
         assert result.rendered is False
         assert "static fallback" in result.html
+        assert result.fetch_latency_ms > 0
+        assert result.render_latency_ms > 0
+        assert result.latency_ms == pytest.approx(
+            result.fetch_latency_ms + result.render_latency_ms,
+            abs=0.11,
+        )
         assert calls == {"render": 1, "static": 1}
+
+    @pytest.mark.anyio
+    async def test_forced_js_with_browser_disabled_is_static_fetch_time(
+        self,
+        monkeypatch,
+    ):
+        async def fake_validate(url):
+            return None
+
+        async def fake_stream(url, client):
+            await asyncio.sleep(0.002)
+            return (
+                200,
+                {"content-type": "text/html"},
+                b"<html><body>static because browser is disabled</body></html>",
+            )
+
+        monkeypatch.setattr(settings, "playwright_enabled", False)
+        monkeypatch.setattr(
+            "app.services.fetcher.validate_public_url",
+            fake_validate,
+        )
+        monkeypatch.setattr("app.services.fetcher._stream_one", fake_stream)
+
+        result = await fetch_url("https://example.com/", js_render=True)
+
+        assert result.error is None
+        assert result.rendered is False
+        assert result.fetch_latency_ms > 0
+        assert result.render_latency_ms == 0
 
 
 class TestStreamingLimits:
