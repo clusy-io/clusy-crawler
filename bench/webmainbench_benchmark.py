@@ -994,31 +994,31 @@ def scrub_annotation_artifacts(html: str) -> tuple[str, dict[str, int]]:
             output.append(html[start : end + 3])
             position = end + 3
             continue
-        end = _find_tag_end(html, start)
-        if end is None:
+        tag_end = _find_tag_end(html, start)
+        if tag_end is None:
             output.append(html[start:])
             break
-        tag = html[start : end + 1]
+        tag = html[start : tag_end + 1]
         match = _TAG_NAME_RE.match(tag)
         if match is None:
             output.append(tag)
-            position = end + 1
+            position = tag_end + 1
             continue
         name = match.group("name").lower()
         closing = match.group("closing") is not None
         if name in _WRAPPER_TAGS:
             counters["wrapper_tags"] += 1
-            position = end + 1
+            position = tag_end + 1
             continue
         if name == "style" and not closing and _tag_has_annotation_style_id(tag, match.end("name")):
             closing_match = re.search(
                 r"</\s*style\b",
-                html[end + 1 :],
+                html[tag_end + 1 :],
                 flags=re.IGNORECASE,
             )
             if closing_match is None:
                 raise BenchmarkError("annotation style block has no closing tag")
-            closing_start = end + 1 + closing_match.start()
+            closing_start = tag_end + 1 + closing_match.start()
             closing_end = _find_tag_end(html, closing_start)
             if closing_end is None:
                 raise BenchmarkError("annotation style closing tag is malformed")
@@ -1031,7 +1031,7 @@ def scrub_annotation_artifacts(html: str) -> tuple[str, dict[str, int]]:
         )
         counters.update(tag_counters)
         output.append(scrubbed_tag)
-        position = end + 1
+        position = tag_end + 1
 
         # Script and non-annotation style content is raw text.  Copy it without
         # interpreting JavaScript/CSS strings as markup.

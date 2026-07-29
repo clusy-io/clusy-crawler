@@ -4,3 +4,10 @@ artifacts/
 
 # Interrupted atomic artifact writes.
 *.tmp
+
+# Live benchmark manifests embed reference text and may contain private corpus
+# material. Keep manifests and separately captured raw references local; code
+# and Markdown documentation elsewhere in bench/ remain trackable.
+manifests/
+reference-corpora/
+raw-references/

@@ -33,10 +33,10 @@ import sys
 import tarfile
 import time
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -165,7 +165,7 @@ BASELINE_CANARIES = {
     },
 }
 
-EXTRACTION_PROFILE = "balanced"
+EXTRACTION_PROFILE: Literal["balanced"] = "balanced"
 MODEL_NAME = "clusy"
 
 SCORER_HELPER = r"""
@@ -627,7 +627,7 @@ def _read_metric_csv_from_tar(
         raise BenchmarkError(f"cannot read official metrics member: {member_name}")
     with extracted:
         reader = csv.DictReader(io.TextIOWrapper(extracted, encoding="utf-8"))
-        values = {column: [] for column in score_columns}
+        values: dict[str, list[float]] = {column: [] for column in score_columns}
         for row in reader:
             for column in score_columns:
                 value = float(row[column])
@@ -656,10 +656,10 @@ def verify_and_load_official_baselines(metrics_archive: Path) -> dict[str, Any]:
                 levenshtein_values = _read_metric_csv_from_tar(
                     archive, levenshtein_member, ("dist",)
                 )["dist"]
-                expected = DATASET_PAGE_COUNTS[dataset]
+                expected_pages = DATASET_PAGE_COUNTS[dataset]
                 if (
-                    any(len(values) != expected for values in rouge_values.values())
-                    or len(levenshtein_values) != expected
+                    any(len(values) != expected_pages for values in rouge_values.values())
+                    or len(levenshtein_values) != expected_pages
                 ):
                     raise BenchmarkError(
                         f"official per-page baseline count drift for {model}/{dataset}"
@@ -888,7 +888,7 @@ class OfficialScorerPool:
         finally:
             self._available.put(scorer)
 
-    def score_many(self, payloads: list[Mapping[str, str]]) -> list[dict[str, Any]]:
+    def score_many(self, payloads: Sequence[Mapping[str, str]]) -> list[dict[str, Any]]:
         return list(self._executor.map(self.score, payloads))
 
     def self_test(self) -> dict[str, Any]:
