@@ -982,10 +982,11 @@ Use `".[dev,llm]"` in the pip command if structured extraction is required.
 
 ### Docker Compose
 
-The checked-in Compose stack is self-contained: it builds the deterministic
-browser runtime, starts a bounded Redis cache, and publishes the crawler on
-`localhost:11235`. Compose selects `browser-runtime` explicitly; `runtime`
-remains the browser-capable compatibility alias for existing Docker users.
+The checked-in Compose stack is self-contained: it builds the browser runtime
+from the locked application graph, starts a bounded Redis cache, and publishes
+the crawler on `localhost:11235`. Compose selects `browser-runtime` explicitly;
+`runtime` remains the browser-capable compatibility alias for existing Docker
+users.
 
 ```bash
 cp .env.example .env
@@ -1026,7 +1027,10 @@ builder stages compile the `clusy-native` wheel using `native/Cargo.lock` and
 export hash-locked Python requirements from `uv.lock`. `runtime-core` installs
 the native wheel, application, Apache-2.0 notices under `/licenses`, OCI
 source/revision/license labels, non-root user, health check, and shared command.
-The Rust compiler and Cargo caches never enter a service image.
+The Rust compiler and Cargo caches never enter a service image. The application
+dependency graph and base-image references are locked or digest-pinned; this is
+not a byte-for-byte reproducibility promise because Debian package repositories
+and Playwright browser archives are not snapshot-pinned in this Dockerfile.
 
 Four service targets are available:
 
@@ -1038,16 +1042,17 @@ Four service targets are available:
 - `browser-runtime` adds the complete locked Playwright graph, its matching
   Chromium build, and the version-matched SUID sandbox helper. This is the
   explicit Compose and documented Docker default.
-- `quality-runtime` extends `browser-runtime` with the separately verified,
-  revision-pinned MinerU-HTML wheel.
+- `quality-runtime` extends `browser-runtime` with the revision-pinned,
+  wheel-hash-verified MinerU-HTML package. CI builds the target and import-smokes
+  both MinerU-HTML and the application; it does not call an external model.
 - `runtime` is a compatibility alias for `browser-runtime`, preserving
   historical unqualified `docker build .` behavior.
 
-Build the smaller deterministic static image when JavaScript rendering is not
-needed. Its baked Playwright flags must not be overridden to `true`, because
-the corresponding dependency and browser are intentionally absent. The
-checked-in `.env.example` deliberately leaves both profile-selecting flags
-unset so it is safe to reuse with either image target:
+Build the smaller static image when JavaScript rendering is not needed. Its
+baked Playwright flags must not be overridden to `true`, because the
+corresponding dependency and browser are intentionally absent. The checked-in
+`.env.example` deliberately leaves both profile-selecting flags unset so it is
+safe to reuse with either image target:
 
 ```bash
 docker build --target static-runtime \

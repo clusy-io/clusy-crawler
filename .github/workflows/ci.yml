@@ -72,6 +72,7 @@ jobs:
 
       - name: Verify static boundary, image identity, and licenses
         run: |
+          set -euo pipefail
           test "$(docker image inspect clusy-crawler:static-ci --format '{{.Config.User}}')" = "crawler"
           docker image inspect clusy-crawler:static-ci --format '{{range .Config.Env}}{{println .}}{{end}}' \
             | grep -Fx "GIT_SHA=${GITHUB_SHA}"
@@ -111,6 +112,7 @@ jobs:
 
       - name: Smoke static auth, SSRF, and crawl paths
         run: |
+          set -euo pipefail
           docker run --detach --name clusy-crawler-static-ci \
             --publish 127.0.0.1:11235:11235 \
             --user 10001:10001 --init --read-only \
@@ -172,6 +174,7 @@ jobs:
 
       - name: Verify sandboxed browser runtime and JavaScript rendering
         run: |
+          set -euo pipefail
           test "$(docker image inspect clusy-crawler:browser-ci --format '{{.Config.User}}')" = "crawler"
           docker run --rm --entrypoint python clusy-crawler:browser-ci -c \
             "import importlib.util as i; assert i.find_spec('playwright') is not None"
@@ -214,8 +217,29 @@ jobs:
             | jq -e \
               '.status == "ok" and .results[0].error == null and .results[0].metadata.rendered == true'
 
+      - name: Build quality runtime image
+        run: >-
+          docker build
+          --build-arg GIT_SHA="${GITHUB_SHA}"
+          --target quality-runtime
+          --tag clusy-crawler:quality-ci
+          .
+
+      - name: Verify quality runtime boundary and pinned package
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect clusy-crawler:quality-ci --format '{{.Config.User}}')" = "crawler"
+          docker image inspect clusy-crawler:quality-ci --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep -Fx \
+              "MINERU_HTML_SOURCE_REVISION=73cf266690befd209cae7e6fdff9716d5b31a976"
+          docker run --rm --entrypoint python clusy-crawler:quality-ci -c \
+            "import importlib.metadata as m, mineru_html; assert m.version('mineru-html') == '1.1.2'; import app.main"
+          docker run --rm --entrypoint python clusy-crawler:quality-ci -c \
+            "import importlib.util as i; assert i.find_spec('playwright') is not None"
+
       - name: Stop smoke containers
         if: always()
         run: |
+          set -euo pipefail
           docker rm --force clusy-crawler-static-ci 2>/dev/null || true
           docker rm --force clusy-crawler-browser-ci 2>/dev/null || true
