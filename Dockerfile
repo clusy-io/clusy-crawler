@@ -108,8 +108,27 @@ RUN python -m playwright install --with-deps chromium \
     && install -o root -g root -m 4755 \
         "${browser_sandbox}" /usr/local/sbin/chrome-devel-sandbox
 
+COPY --chown=crawler:crawler \
+    LICENSE \
+    NOTICE \
+    THIRD_PARTY_LICENSES.md \
+    /licenses/
+COPY --chown=crawler:crawler \
+    native/vendor/NOTICE.md \
+    /licenses/native-vendor/NOTICE.md
+COPY --chown=crawler:crawler \
+    native/vendor/rs-trafilatura/LICENSE-APACHE \
+    native/vendor/rs-trafilatura/LICENSE-MIT \
+    /licenses/native-vendor/rs-trafilatura/
+COPY --chown=crawler:crawler \
+    native/vendor/html-cleaning/LICENSE-APACHE \
+    native/vendor/html-cleaning/LICENSE-MIT \
+    /licenses/native-vendor/html-cleaning/
+COPY --chown=crawler:crawler \
+    native/vendor/quick_html2md/LICENSE-APACHE \
+    native/vendor/quick_html2md/LICENSE-MIT \
+    /licenses/native-vendor/quick_html2md/
 COPY --chown=crawler:crawler app/ app/
-COPY --chown=crawler:crawler LICENSE NOTICE THIRD_PARTY_LICENSES.md /licenses/
 
 USER crawler
 

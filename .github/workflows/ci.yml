@@ -79,6 +79,16 @@ jobs:
           for notice in LICENSE NOTICE THIRD_PARTY_LICENSES.md; do
             docker run --rm --entrypoint test clusy-crawler:ci -r "/licenses/${notice}"
           done
+          for notice in \
+            /licenses/native-vendor/NOTICE.md \
+            /licenses/native-vendor/rs-trafilatura/LICENSE-APACHE \
+            /licenses/native-vendor/rs-trafilatura/LICENSE-MIT \
+            /licenses/native-vendor/html-cleaning/LICENSE-APACHE \
+            /licenses/native-vendor/html-cleaning/LICENSE-MIT \
+            /licenses/native-vendor/quick_html2md/LICENSE-APACHE \
+            /licenses/native-vendor/quick_html2md/LICENSE-MIT; do
+            docker run --rm --entrypoint test clusy-crawler:ci -r "${notice}"
+          done
 
       - name: Runtime, auth, SSRF, static, and sandboxed JS smoke
         run: |
@@ -92,6 +102,7 @@ jobs:
             --env ENVIRONMENT=prod \
             --env GIT_SHA="${GITHUB_SHA}" \
             --env CRAWL4AI_API_TOKEN=ci-smoke-token \
+            --env SERVING_FINGERPRINT_KEY=ci-fingerprint-key-0123456789abcdef \
             clusy-crawler:ci
 
           for attempt in $(seq 1 60); do

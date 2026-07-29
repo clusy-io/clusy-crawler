@@ -3,7 +3,6 @@
 !.env.example
 .git
 .gitignore
-.dockerignore
 .DS_Store
 *.log
 .idea/
@@ -30,4 +29,5 @@ tests/
 docs/
 *.md
 !THIRD_PARTY_LICENSES.md
+!native/vendor/NOTICE.md
 docker-compose.yml

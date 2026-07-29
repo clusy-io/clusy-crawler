@@ -70,8 +70,10 @@ Rust dependencies are:
 | clusy-native | 0.1.0 (workspace) | Apache-2.0 |
 | dom_query | =0.24.0 | MIT |
 | pyo3 | =0.27.2 | MIT OR Apache-2.0 |
-| rs-trafilatura | =0.2.2 (crates.io) | MIT OR Apache-2.0 |
-| rs-trafilatura | git revision `9261e087deca9c7a38ddc284a60dd62a47de7b33` | MIT OR Apache-2.0 |
+| rs-trafilatura (broad backend) | =0.2.2 (crates.io) | MIT OR Apache-2.0 |
+| rs-trafilatura (article backend) | vendored from exact revision `9261e087deca9c7a38ddc284a60dd62a47de7b33` | MIT OR Apache-2.0 |
+| html-cleaning (article backend) | vendored from exact revision `ba5f8e95e4dc8a6af1f6742c8f31957a47b2327e` | MIT OR Apache-2.0 |
+| quick_html2md (article backend) | vendored from exact revision `6260677b3aed7bfc83bc7fae90599120467c4c55` | MIT OR Apache-2.0 |
 
 [`native/Cargo.lock`](native/Cargo.lock) also pins the complete transitive
 graph. License expressions reported by Cargo metadata include MIT, Apache-2.0,
