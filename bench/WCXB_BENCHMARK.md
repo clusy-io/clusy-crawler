@@ -32,13 +32,26 @@ git -C /tmp/clusy-wcxb checkout --detach \
 uv sync --frozen
 uv run python bench/wcxb_benchmark.py \
   --corpus /tmp/clusy-wcxb \
-  --splits dev test
+  --splits dev test \
+  --extraction-profile balanced
 ```
 
-The production call is explicit:
+`balanced` is the default for backward compatibility. Other production
+profiles must be requested explicitly, for example:
+
+```bash
+uv run python bench/wcxb_benchmark.py \
+  --corpus /tmp/clusy-wcxb \
+  --splits dev test \
+  --extraction-profile adaptive
+```
+
+The selected profile is passed unchanged and recorded in both the environment
+and run configuration. Results from different profiles are separate system
+configurations and must not be silently pooled. The production call is:
 
 ```python
-await extract_content_async(html, url, extraction_profile="balanced")
+await extract_content_async(html, url, extraction_profile=recorded_profile)
 ```
 
 No reference text, page type, or snippets are passed to the extractor. Its
@@ -72,10 +85,11 @@ Timestamped output defaults under ignored `bench/results/wcxb/` and contains:
   dependency/native binary hashes, corpus state, and source state;
 - `manifest.json` with artifact sizes and SHA-256 hashes.
 
-A run is publishable within the WCXB extraction scope only when both complete
-splits run, the corpus is verified and stable, and the Clusy source is committed,
-clean, and stable throughout the run. Extraction failures remain empty
-predictions and are scored rather than silently dropped.
+A run is artifact-valid within the WCXB extraction scope only when both
+complete splits run, the corpus is verified and stable, and the Clusy source is
+committed, clean, and stable throughout the run. Extraction failures remain
+empty predictions and are scored rather than silently dropped. Artifact
+validity alone does not open the unseen-performance or SOTA claim gate.
 
 ## Interpretation limits
 
@@ -85,6 +99,16 @@ predictions and are scored rather than silently dropped.
 - WCXB and the leading rs-trafilatura baseline share an author, and difficult
   pages received extractor-informed adversarial review. Use an independently
   maintained suite such as WebMainBench or Webis alongside WCXB.
+- The broad native extractor embeds [`web-page-classifier`][classifier]
+  `0.1.0` (Cargo checksum
+  `557ae9fe8bf3f86d972a8604cc5fe8c897359de9657fe7a3eda4fddfac7f3856`).
+  Its publisher reports training on 1,497 pages across the same seven page
+  types, while WCXB development contains exactly 1,497 pages across those
+  seven types. No item-level or split-level training manifest is published.
+  This is strong overlap risk, not proof of exact overlap: development and
+  combined rows are training-provenance diagnostics, and even the
+  upstream-held-out test row is not independently auditable as unseen until a
+  manifest or a transparent-model replay is available.
 - `metadata.json` omits 139 development files; the pinned evaluator and actual
   ground-truth directories contain and score all 2,008 pages.
 - The repository does not contain complete predictions/configuration for its
@@ -120,13 +144,14 @@ The retained private artifact identifier is
 `bench/results/wcxb/20260729T000227Z`; its `manifest.json` SHA-256 is
 `a051965f480fd3a1cae780d7ccdd289b237163f7e644ba2dde9a9acc53e4b8d0`.
 The source was clean before and after the run and stable throughout at
-`10ff0c1`; the harness marked the complete result claimable within the WCXB
-extraction scope.
+`10ff0c1`. The historical harness marked the complete result claimable within
+the WCXB extraction scope, but that flag predated the embedded-classifier
+provenance audit and is superseded by the limitation above.
 
-The published comparison table recorded by this evidence reports
-`rs-trafilatura` at 0.859 on development and 0.903 on public test. Clusy is
-below both. The combined 0.859450 row above must not be compared with the
-development-only 0.859 headline.
+The pinned WCXB commit reports `rs-trafilatura` at 0.859 on development and
+0.893 on public test. Clusy is below both in this `balanced` run. The combined
+0.859450 row above must not be compared with the development-only 0.859
+headline.
 
 A post-run SHA-256 audit compared the artifact's 49 recorded source files with
 public `837ddda`: 44 matched and none was missing. The WCXB runner, core
@@ -142,9 +167,10 @@ byte-identical, and the recorded native binary was not reproduced from
 Describe this as clean, source-audited WCXB extraction evidence from the
 private revision, not as a run of the OSS commit, a blind result, or universal
 SOTA. The labels are public, annotation drafting was LLM-assisted and
-human-reviewed, and the benchmark shares author overlap with the leading
-baseline.
+human-reviewed, the benchmark shares author overlap with the leading baseline,
+and the embedded classifier's training items are unresolved.
 
 [wcxb]: https://github.com/Murrough-Foley/web-content-extraction-benchmark
+[classifier]: https://github.com/Murrough-Foley/web-page-classifier
 [webmainbench]: https://huggingface.co/datasets/opendatalab/WebMainBench
 [webis]: https://github.com/chatnoir-eu/web-content-extraction-benchmark

@@ -3,8 +3,8 @@
 
 The runner fails closed unless the corpus is the exact clean commit pinned
 below. Predictions are the unchanged output of ``extract_content_async`` with
-the explicit ``balanced`` profile. Scoring is delegated to WCXB's own
-``evaluate_results`` implementation, including its snippet metrics.
+an explicitly recorded production extraction profile. Scoring is delegated to
+WCXB's own ``evaluate_results`` implementation, including its snippet metrics.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ import statistics
 import subprocess
 import sys
 import time
+import tomllib
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,8 +66,13 @@ WCXB_LICENSE_SHA256 = (
     "6410290cc35ef75d893240d3736e96dc383ed123780702e56cf1a090ae003c72"
 )
 EXPECTED_SPLIT_PAGES = {"dev": 1497, "test": 511}
-EXTRACTION_PROFILE = "balanced"
+DEFAULT_EXTRACTION_PROFILE = "balanced"
+EXTRACTION_PROFILES = ("balanced", "article_body", "adaptive", "quality")
 DEFAULT_SEED = 20260727
+OPAQUE_CLASSIFIER_NAME = "web-page-classifier"
+OPAQUE_CLASSIFIER_VERSION = "0.1.0"
+OPAQUE_CLASSIFIER_CHECKSUM = "557ae9fe8bf3f86d972a8604cc5fe8c897359de9657fe7a3eda4fddfac7f3856"
+OPAQUE_CLASSIFIER_SOURCE = "https://github.com/Murrough-Foley/web-page-classifier"
 
 SOURCE_FIXED_FILES = (
     "bench/wcxb_benchmark.py",
@@ -117,6 +123,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="page workers; defaults to production max_concurrent_extractions",
     )
+    parser.add_argument(
+        "--extraction-profile",
+        choices=EXTRACTION_PROFILES,
+        default=DEFAULT_EXTRACTION_PROFILE,
+        help="production extraction profile passed unchanged to the extractor",
+    )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument(
         "--warmup-pages",
@@ -154,6 +166,46 @@ def _run(
         message = result.stderr.strip() or result.stdout.strip()
         raise BenchmarkError(f"{' '.join(args)} failed: {message}")
     return result
+
+
+def _embedded_classifier_provenance() -> dict[str, Any]:
+    document = tomllib.loads((ROOT / "native" / "Cargo.lock").read_text(encoding="utf-8"))
+    packages = [
+        package
+        for package in document.get("package", [])
+        if package.get("name") == OPAQUE_CLASSIFIER_NAME
+    ]
+    if not packages:
+        return {
+            "embedded": False,
+            "training_manifest_verified": False,
+        }
+    if len(packages) != 1:
+        raise BenchmarkError("native Cargo.lock contains multiple web-page-classifier packages")
+    package = packages[0]
+    version = str(package.get("version", ""))
+    checksum = str(package.get("checksum", ""))
+    pinned_known_release = (
+        version == OPAQUE_CLASSIFIER_VERSION and checksum == OPAQUE_CLASSIFIER_CHECKSUM
+    )
+    return {
+        "embedded": True,
+        "name": OPAQUE_CLASSIFIER_NAME,
+        "version": version,
+        "checksum": checksum,
+        "source": OPAQUE_CLASSIFIER_SOURCE,
+        "pinned_known_release": pinned_known_release,
+        "publisher_reported_training_pages": 1497 if pinned_known_release else None,
+        "publisher_reported_page_types": 7 if pinned_known_release else None,
+        "training_item_or_split_manifest": None,
+        "training_manifest_verified": False,
+        "interpretation": (
+            "The publisher reports 1,497 training pages across the same seven "
+            "page types as WCXB development, but publishes no item/split "
+            "manifest. Exact overlap is therefore unresolved rather than "
+            "asserted."
+        ),
+    }
 
 
 def _git(root: Path, *args: str) -> str:
@@ -426,6 +478,8 @@ def _peak_rss_bytes() -> int | None:
 def _environment_metadata(
     settings: Any,
     native_backend_version: Callable[[], str],
+    *,
+    extraction_profile: str,
 ) -> dict[str, Any]:
     rust_result = _run(["rustc", "--version"], check=False)
     return {
@@ -461,7 +515,7 @@ def _environment_metadata(
         },
         "production_extraction": {
             "entry_point": "app.services.extractor.extract_content_async",
-            "profile": EXTRACTION_PROFILE,
+            "profile": extraction_profile,
             "native_extraction_enabled": getattr(
                 settings,
                 "native_extraction_enabled",
@@ -530,6 +584,7 @@ async def _extract_split(
     split: str,
     concurrency: int,
     warmup_pages: int,
+    extraction_profile: str,
     extractor: Callable[..., Awaitable[Any]],
 ) -> tuple[dict[str, str], dict[str, dict[str, Any]], dict[str, Any]]:
     warmup_count = min(warmup_pages, len(jobs))
@@ -538,7 +593,7 @@ async def _extract_split(
         await extractor(
             html,
             job.url,
-            extraction_profile=EXTRACTION_PROFILE,
+            extraction_profile=extraction_profile,
         )
 
     gc.collect()
@@ -562,7 +617,7 @@ async def _extract_split(
                 result = await extractor(
                     html,
                     job.url,
-                    extraction_profile=EXTRACTION_PROFILE,
+                    extraction_profile=extraction_profile,
                 )
                 extraction_seconds = time.perf_counter() - started
                 predictions[job.file_id] = str(result.text or "")
@@ -910,6 +965,7 @@ async def async_main(args: argparse.Namespace) -> int:
     corpus_before = verify_corpus(corpus)
     evaluator = _load_official_evaluator(corpus)
     source_before = _source_provenance()
+    classifier_provenance = _embedded_classifier_provenance()
 
     from app.config import settings
     from app.services.extractor import (
@@ -923,7 +979,11 @@ async def async_main(args: argparse.Namespace) -> int:
             1,
             int(getattr(settings, "max_concurrent_extractions", 1)),
         )
-    environment = _environment_metadata(settings, native_backend_version)
+    environment = _environment_metadata(
+        settings,
+        native_backend_version,
+        extraction_profile=args.extraction_profile,
+    )
     smoke = args.limit_per_split is not None or set(splits) != {"dev", "test"}
     output = _make_output_dir(args.output, corpus=corpus, smoke=smoke)
     if smoke:
@@ -947,6 +1007,7 @@ async def async_main(args: argparse.Namespace) -> int:
             split=split,
             concurrency=concurrency,
             warmup_pages=args.warmup_pages,
+            extraction_profile=args.extraction_profile,
             extractor=extract_content_async,
         )
         ground_truth, official_rows, official_stdout = (
@@ -1009,6 +1070,14 @@ async def async_main(args: argparse.Namespace) -> int:
         claim_reasons.append("relevant Clusy source changed during the run")
     if not corpus_stable:
         claim_reasons.append("WCXB corpus changed during the run")
+    if (
+        classifier_provenance["embedded"]
+        and not classifier_provenance["training_manifest_verified"]
+    ):
+        claim_reasons.append(
+            "embedded page classifier has no verified item/split training "
+            "manifest, so WCXB training overlap cannot be excluded"
+        )
 
     report: dict[str, Any] = {
         "schema_version": 2,
@@ -1022,13 +1091,15 @@ async def async_main(args: argparse.Namespace) -> int:
                 "macro mean of per-page bag-of-words precision/recall/F1"
             ),
             "public_ground_truth": True,
+            "model_provenance": classifier_provenance,
         },
         "claimability": {
             "claimable": not claim_reasons,
             "scope": "WCXB extraction only",
             "reasons": claim_reasons,
             "warning": (
-                "Public labels and author overlap make this validation evidence, "
+                "Public labels, author overlap, and unresolved embedded-model "
+                "training provenance make this reproducible diagnostic evidence, "
                 "not an independent blind SOTA adjudication."
             ),
         },
@@ -1050,7 +1121,7 @@ async def async_main(args: argparse.Namespace) -> int:
             "concurrency": concurrency,
             "warmup_pages_per_split": args.warmup_pages,
             "entry_point": "app.services.extractor.extract_content_async",
-            "extraction_profile": EXTRACTION_PROFILE,
+            "extraction_profile": args.extraction_profile,
             "prediction_transform": "identity; exact production text",
         },
         "environment": {
