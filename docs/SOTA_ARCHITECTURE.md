@@ -275,6 +275,19 @@ retired instructions by `22.33%`, cycles by `21.77%`, and peak footprint by
 behavior only; they are not HTTP, live-web, vendor, quality-score, or SOTA
 evidence.
 
+A follow-on candidate removed a second parse of serializer-generated filtered
+HTML, but its exact-output implementation A/B was a formal `NO_GO`. Primary
+pooled gains were `+1.1121%` on WebMain and `+0.8700%` on WCXB, below the
+approximately 2% gate. A fixed WebMain sensitivity run reversed to `-0.6350%`,
+and mean maximum RSS/peak footprint regressed by `0.3293% / 0.7277%`.
+Candidate `415d36c` remains isolated and was not merged, mirrored, or deployed.
+The checked-in compact rejection record binds its lineage, all raw rate
+samples, complete ten-field equality, resource samples, and claim boundary;
+its `PROTOCOL.md` and `report.json` SHA-256 values are
+`243a4a4dee74ae0b541e2e98b0dfc8918e3d66bfad44208783125c32bc5c0516`
+and
+`91790a30279d0bd8472dfbfaeaf1fe44078a7f80f9653619d2a77bcfd308cd26`.
+
 A clean direct-OSS replay at public commit `9c7cc0a` reproduced the private
 `adaptive` dev/test prediction files byte for byte. Its `balanced` and
 `adaptive` artifact manifest hashes are
@@ -949,9 +962,10 @@ Use the narrowest statement supported by evidence:
 6. **Evidence — in progress:** baseline AEB, WCXB, Webis, and WebMainBench
    artifacts are captured against clean revision `a19ae17`; the adaptive WCXB
    artifact is captured against clean revision `70ec76d`, and two promoted
-   native hot-path changes have compact exact-output A/B records. Private
-   calibration, deployment-hardware replication, a permissioned live-web gate,
-   and a preregistered live vendor study remain separate gates.
+   native hot-path changes plus one explicitly rejected candidate have compact
+   exact-output A/B records. Private calibration, deployment-hardware
+   replication, a permissioned live-web gate, and a preregistered live vendor
+   study remain separate gates.
 
 The adaptive foundation can ship behind an opt-in profile. It becomes the
 platform default only after the quality, latency, cost, and escalation-budget

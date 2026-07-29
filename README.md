@@ -201,6 +201,16 @@ samples, dumps, binary/corpus hashes, contention annotations, deployment gates,
 and integrity roots are in the
 [`native-filter-stack-bdbfd7c` evidence record](bench/evidence/native-filter-stack-bdbfd7c/PROTOCOL.md).
 
+A later exact-output candidate removed the filtered-HTML reparse used only for
+paragraph/table fallback counts, but failed the predeclared promotion gates.
+Primary pooled gains were only `+1.1121%` on WebMain and `+0.8700%` on WCXB;
+the fixed WebMain sensitivity result reversed to `-0.6350%`, while mean maximum
+RSS and peak footprint regressed by `0.3293%` and `0.7277%`. Candidate
+`415d36c` was therefore not merged, mirrored, or deployed. The compact
+[`rejected-native-filtered-shape-415d36c` record](bench/evidence/rejected-native-filtered-shape-415d36c/PROTOCOL.md)
+preserves every raw rate sample, exact-output commitment, resource mean,
+lineage identity, and the `NO_GO` boundary.
+
 A separate clean run from public OSS commit `9c7cc0a` reproduced both
 `adaptive` prediction files byte for byte (the same dev/test SHA-256 values
 above), with zero extraction errors. Its manifest SHA-256 is
@@ -220,6 +230,7 @@ predictions; it does not resolve the classifier's training-item provenance.
 | WebMainBench | fixed-public-protocol diagnostic; broad-model provenance unresolved | `bench/results/webmainbench/20260729T101852Z` | `08530d7bc3e15cabdc94a2b405a996e6d277880cee8b9b3913d0c19c5ef04991` | `summary.json`: `e27c137b3edc675f7def70b5f78bb5f8212670e9e09fcceedfb96fee3551a3da` |
 | Native DOM clone A/B | local closed-loop implementation evidence; not a quality or SOTA claim | `bench/evidence/native-dom-clone-a51212c` | `PROTOCOL.md`: `3a1e2734770ae1fb0c1251181ad0c72bc8d1e212928665e26529ff144832e437` | `report.json`: `9cb75a3fc485c0cd5ff8d006f0cc33a8c37ee49c980ca2842a250e80f606839e` |
 | Native filtered-traversal A/B | formal local implementation evidence; exact outputs, not a service/vendor/SOTA claim | `bench/evidence/native-filter-stack-bdbfd7c` | `PROTOCOL.md`: `a7d74d63348f42071251ab6867399ece835c41e58478946ec5f55dd1466501be` | `report.json`: `b2c3e2ced89f6840aeaea8332d52fc423ce7a585d45b604c2e9af54a17f3e71c` |
+| Rejected filtered-HTML-shape A/B | formal local `NO_GO`; exact outputs but sub-threshold/direction-sensitive speed and memory regressions | `bench/evidence/rejected-native-filtered-shape-415d36c` | `PROTOCOL.md`: `243a4a4dee74ae0b541e2e98b0dfc8918e3d66bfad44208783125c32bc5c0516` | `report.json`: `91790a30279d0bd8472dfbfaeaf1fe44078a7f80f9653619d2a77bcfd308cd26` |
 
 On AEB `article_body`, all 181 current predictions are byte-identical to the
 prior strong run. A generic outermost-source-root guard had removed repeated

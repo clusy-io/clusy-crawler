@@ -1,0 +1,244 @@
+{
+  "schema": "clusy.native.filtered-html-shape-ab.compact-rejection.v1",
+  "artifact_path": "bench/evidence/rejected-native-filtered-shape-415d36c/report.json",
+  "recorded_at_utc": "2026-07-29T18:08:00Z",
+  "decision": {
+    "result": "NO_GO",
+    "recommendation": "Do not merge, push, mirror, or deploy the filtered-HTML-shape candidate. Retain the exact bdbfd7c native runtime.",
+    "rationale": "Primary gains are below the approximately 2% promotion threshold on both main corpora; WCXB has a negative paired round; WebMain sensitivity reverses sign; and mean RSS/peak footprint regress."
+  },
+  "claim_boundary": {
+    "sota_claim": false,
+    "service_benchmark": false,
+    "vendor_comparison": false,
+    "quality_score_improvement": false,
+    "scope": "Local closed-loop implementation promotion decision with complete ten-field output equality on three locked corpora."
+  },
+  "lineage": {
+    "baseline": {
+      "runtime_commit": "bdbfd7cb7c70739d85a109fede276d53692e843d",
+      "binary_sha256": "449f3a344cf3a4cbe49564b5ec6f7abdd7a978055f133480891fdc87443550b9"
+    },
+    "candidate": {
+      "git_commit": "415d36c017073cc15c10694323d70fcc6c761c39",
+      "parent_commit": "bdbfd7cb7c70739d85a109fede276d53692e843d",
+      "git_tree": "741c1bf26f6f336914a390f585f38bea8cd76ae0",
+      "mechanism": "Carry paragraph/table counts from the filtered serializer and remove reparsing of generated filtered HTML.",
+      "patch_sha256": "0dfd5cf7295b26a44043d10809d9afc9ce4ebe13e730394fab66aac700d5c951",
+      "extract_rs_sha256": "7537d2e65b0540134a12f829068aafae040bc003731a0b33336c5f18ee2d9fb8",
+      "binary_sha256": "b8dde75177c29eb013f6e688152a5df8f297fe1ea2d280454abf299fe317c1eb",
+      "merged": false,
+      "pushed": false,
+      "mirrored": false,
+      "deployed": false
+    }
+  },
+  "pre_timing_gates": {
+    "broad_tests": "934/934 pass",
+    "native_tests": "15/15 pass",
+    "structural_property_combinations": 1152,
+    "focused_route_and_adversarial_tests": "pass",
+    "complete_ten_field_outputs": "byte-identical on WebMain, WCXB, and stress"
+  },
+  "locked_corpora": {
+    "webmain": {
+      "pages": 7809,
+      "jsonl_sha256": "85765fe798f07c14eb1c92945046eaa56e0da59663f70b9c498647d7dfd78884"
+    },
+    "wcxb": {
+      "pages": 2008,
+      "jsonl_sha256": "3634f976b2a2234f36bb0e9892e31b9bf769bffe69fbf876eeddedaef1a2a919"
+    },
+    "stress": {
+      "pages": 248,
+      "jsonl_sha256": "506a8026f488405bbc0946effa256e819899c64d7a13185bbb2201508a6f8e05"
+    }
+  },
+  "protocol": {
+    "primary_samples_per_variant_per_corpus": 6,
+    "orders_per_variant": {
+      "forward": 3,
+      "reverse": 3
+    },
+    "ab_position_balanced": true,
+    "excluded_primary_samples": 0,
+    "warmup_records_per_binary_corpus_pair": 128,
+    "primary_samples_succeeded": "36/36",
+    "sensitivity_samples_succeeded": "8/8",
+    "resource_samples_succeeded": "4/4",
+    "dump_commands_succeeded": "6/6",
+    "detected_peer_wait_events": 0,
+    "ui_gate_wait_events": 1,
+    "primary_start_utc": "2026-07-29T17:30:33Z",
+    "primary_end_utc": "2026-07-29T17:55:21Z",
+    "sensitivity_start_utc": "2026-07-29T17:57:18Z",
+    "sensitivity_end_utc": "2026-07-29T18:03:47Z"
+  },
+  "throughput": {
+    "webmain": {
+      "baseline_pages_per_second": [
+        114.524502,
+        110.957875,
+        112.354523,
+        115.365958,
+        115.171976,
+        115.391099
+      ],
+      "candidate_pages_per_second": [
+        114.922291,
+        112.200477,
+        115.54661,
+        115.656283,
+        117.067273,
+        115.938834
+      ],
+      "baseline_pooled_pages_per_second": 113.935229,
+      "candidate_pooled_pages_per_second": 115.202263,
+      "pooled_gain_percent": 1.1121,
+      "median_gain_percent": 0.6558,
+      "p95_seconds_change_percent": -1.3866,
+      "forward_gain_percent": -0.4195,
+      "reverse_gain_percent": 2.6615,
+      "negative_paired_rounds": 0,
+      "sensitivity_pooled_gain_percent": -0.635
+    },
+    "wcxb": {
+      "baseline_pages_per_second": [
+        76.818932,
+        76.804618,
+        76.47499,
+        76.908464,
+        77.255637,
+        76.435608
+      ],
+      "candidate_pages_per_second": [
+        77.460704,
+        77.914777,
+        77.371753,
+        76.839577,
+        77.913173,
+        77.21171
+      ],
+      "baseline_pooled_pages_per_second": 76.782052,
+      "candidate_pooled_pages_per_second": 77.450084,
+      "pooled_gain_percent": 0.87,
+      "median_gain_percent": 0.7869,
+      "p95_seconds_change_percent": -0.6328,
+      "forward_gain_percent": 0.6551,
+      "reverse_gain_percent": 1.0847,
+      "negative_paired_rounds": 1,
+      "sensitivity_pooled_gain_percent": 1.1117
+    },
+    "stress": {
+      "baseline_pages_per_second": [
+        222.7558,
+        220.971568,
+        221.568032,
+        222.352982,
+        222.707432,
+        221.339929
+      ],
+      "candidate_pages_per_second": [
+        225.25863,
+        224.460796,
+        226.957494,
+        227.995154,
+        220.311099,
+        219.427051
+      ],
+      "baseline_pooled_pages_per_second": 221.947142,
+      "candidate_pooled_pages_per_second": 224.022774,
+      "pooled_gain_percent": 0.9352,
+      "median_gain_percent": 1.3062,
+      "p95_seconds_change_percent": 0.6447,
+      "forward_gain_percent": 0.4338,
+      "reverse_gain_percent": 1.4386,
+      "negative_paired_rounds": 2
+    }
+  },
+  "resource_wcxb_time_l": {
+    "runs_per_variant": 2,
+    "sequence": [
+      "baseline",
+      "candidate",
+      "candidate",
+      "baseline"
+    ],
+    "means": {
+      "baseline": {
+        "outer_real_seconds": 26.71,
+        "instructions_retired": 486489396493,
+        "cycles_elapsed": 109794806720.5,
+        "maximum_resident_set_size_bytes": 584613888,
+        "peak_memory_footprint_bytes": 568509292
+      },
+      "candidate": {
+        "outer_real_seconds": 26.39,
+        "instructions_retired": 482845606073.5,
+        "cycles_elapsed": 108814895851,
+        "maximum_resident_set_size_bytes": 586539008,
+        "peak_memory_footprint_bytes": 572646264
+      }
+    },
+    "candidate_change_percent": {
+      "outer_real_seconds": -1.1981,
+      "instructions_retired": -0.749,
+      "cycles_elapsed": -0.8925,
+      "maximum_resident_set_size_bytes": 0.3293,
+      "peak_memory_footprint_bytes": 0.7277
+    }
+  },
+  "quality": {
+    "all_dumps_byte_identical": true,
+    "all_record_field_framing_and_trailing_byte_checks_passed": true,
+    "corpora": {
+      "webmain": {
+        "records": 7809,
+        "fields": 78090,
+        "bytes": 150613567,
+        "sha256": "9b6f5e126f4bebc2a59e688138ae74b4677c7a2503038f7de1dd102a6e652f1b",
+        "cmp_exit_code": 0
+      },
+      "wcxb": {
+        "records": 2008,
+        "fields": 20080,
+        "bytes": 42028160,
+        "sha256": "356544b710fe4a255ed2264722ee719d6e45cee7fd00390482dd3bc8f761e77a",
+        "cmp_exit_code": 0
+      },
+      "stress": {
+        "records": 248,
+        "fields": 2480,
+        "bytes": 2444862,
+        "sha256": "72c75882e1c22a7d12a0b2b56ad4618f3e5d3805ecf092e4005e436486442704",
+        "cmp_exit_code": 0
+      }
+    }
+  },
+  "promotion_gates": {
+    "exact_complete_outputs": true,
+    "no_selected_resource_regression": false,
+    "sensitivity_direction_consistent": false,
+    "wcxb_all_paired_rounds_positive": false,
+    "wcxb_no_p95_latency_regression": true,
+    "wcxb_primary_gain_at_least_2_percent": false,
+    "webmain_all_paired_rounds_positive": true,
+    "webmain_no_p95_latency_regression": true,
+    "webmain_primary_gain_at_least_2_percent": false
+  },
+  "source_audit_bundle": {
+    "full_report_sha256": "e61e06fbe9ee3914b07a3906af9f18a03280224bd9ffa67fa5a1f0c744636e18",
+    "full_protocol_sha256": "46b4bada4396e16a5de261fa7c0eda246084d3a2980ce44ccb280fe934c7dc56",
+    "full_sha256_manifest_sha256": "42269812659c88578199568abc2225403b80de62019656842c782cde02191774",
+    "manifest_files_verified": 423,
+    "manifest_files_failed": 0,
+    "raw_bundle_checked_in": false
+  },
+  "limitations": [
+    "Local extraction-loop A/B only; no HTTP, browser, network, service, or vendor measurement.",
+    "Protected VS Code, Codex, and WindowServer remained active.",
+    "Process CPU values are observational snapshots, not per-sample attribution.",
+    "Exact output equality is established only for the locked corpora and ten fields.",
+    "The rejected candidate commit remains isolated and is not part of either repository branch."
+  ]
+}
