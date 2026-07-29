@@ -18,24 +18,56 @@ Implemented foundations in the current worktree:
   deduplication, trap/page/depth budgets, and fail-closed RFC 9309-style robots
   enforcement; completed requests replenish network capacity without allowing
   response completion order to reorder results;
-- bounded Rust `ordered-dom-ir.v1`, strict classifier/selection contracts, and
-  DOM-reserialized reconstruction, currently benchmark-only and unwired.
-  Full-corpus structural diagnostics show that this v1 representation is not
-  trainable/promotable as-is; the v2 contract below is required;
+- the benchmark-pinned Rust `ordered-dom-ir.v1` interface remains available;
+- additive, bounded native and Python `ordered-dom-ir.v2` APIs now expose a
+  stable ordered element/text graph, source-span reliability and truncation
+  provenance, typed table/list/code/math relations, exact preformatted-code
+  whitespace, and deterministic full or ID-selected Markdown serialization.
+  Selected text is closed under the minimum ancestor structure, and unknown IDs
+  never broaden the selection. These APIs do not replace the production
+  extractor path;
+- a deterministic v2 refiner now aligns an existing Markdown candidate to
+  source text in DOM order, promotes grounded structures, reconstructs through
+  the native serializer, and rejects fail-closed to the byte-identical input.
+  It is explicitly shadow-only and is not imported by the extraction cascade;
 - AEB, WCXB, Webis, and WebMainBench regression/evidence harnesses;
-- an Exa/Firecrawl runner whose artifact-integrity gate is separate from its
-  deliberately closed vendor-win gate.
+- a sealed fixed-URL Exa/Firecrawl comparison runner whose artifact-integrity
+  gate is separate from its deliberately closed vendor-win gate. Vendor output
+  is benchmark-only and never enters training, distillation, labels, routing,
+  or production extraction.
+
+The completed 545-page shadow diagnostic tested both the refiner's default
+acceptance rule and a stricter exact-visible-token-sequence rule. Both improved
+code and table structure metrics and aggregate score, but both regressed text
+and formula scores:
+
+| Shadow policy | Overall | Text | Code | Formula | Table edit | Table TEDS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline | `0.215484` | `0.758002` | `0.019236` | `0.300180` | `0` | `0` |
+| Default refiner | `0.280215` | `0.749641` | `0.084351` | `0.290650` | `0.110996` | `0.165437` |
+| Exact visible sequence | `0.227423` | `0.755028` | `0.054644` | `0.293024` | `0.011982` | `0.022439` |
+
+This was a development-only, non-claimable shadow run. Its acceptance decisions
+used only source HTML and the deterministic candidate; public references were
+revealed to the scorer only after both predictions existed. The regressions
+fail the monotonic promotion requirement, so neither policy is wired into
+runtime.
 
 Still required before a broad SOTA or vendor-win claim:
 
-- train and independently validate the multilingual block selector and boundary
-  refiner, then wire them behind the existing verifier and circuit breaker;
+- finish the v2 representation and serializer promotion gates, then train and
+  independently validate a multilingual block selector and boundary refiner;
+- wire any candidate only after clean shadow evidence passes the verifier,
+  quality, latency, cost, and circuit-breaker gates;
 - replace the process-local frontier with a transactional durable queue for
   resumable, multi-worker crawls beyond the bounded request API;
-- create a consented operator-owned domain/time corpus, calibrate the utility
-  router, and pass multilingual/structure/latency/cost holdouts;
+- create a separately consented, operator-owned domain/time corpus, calibrate
+  the utility router, and pass multilingual/structure/latency/cost holdouts;
 - run clean, immutable public benchmark candidates and an authorized,
   preregistered live Exa/Firecrawl study.
+
+No selector checkpoint, semantic model, deterministic v2 refiner policy, or
+Exa/Firecrawl vendor-win claim has passed its production promotion gates.
 
 ## Decision
 
@@ -52,18 +84,18 @@ Clusy will use a cascaded, uncertainty-routed extraction system:
 6. Verify the model output and fall back to the deterministic result on errors
    or implausible output.
 7. Return completeness, provenance, cache, render, and routing metadata so the
-   platform can make a safe fallback decision.
+   caller can make a safe fallback decision.
 
-This is the best fit for Clusy because it preserves the current fast path while
-adding model capacity where deterministic heuristics are weakest. A model-first
-pipeline would impose model cost and latency on every page. A rules-only
-pipeline is unlikely to close the large quality gap on heterogeneous pages.
+This preserves the current fast path while adding model capacity where
+deterministic heuristics are weakest. A model-first pipeline would impose model
+cost and latency on every page. A rules-only pipeline is unlikely to close the
+large quality gap on heterogeneous pages.
 
 ```text
 request
   |
   v
-admission control -> canonical URL -> durable, fair crawl frontier
+admission control -> canonical URL -> bounded process-local crawl frontier
                                       |
                                       +-> robots/policy + trap budgets
   |
@@ -104,18 +136,22 @@ model latency from weakening crawl politeness or host fairness.
 
 ## Evidence behind the decision
 
-The checked-in full-corpus results establish a mixed baseline:
+The retained full-corpus artifacts establish one clean, narrow pre-V2 result
+and several broader development baselines:
 
-| Benchmark | Scope | Current result | Interpretation |
+| Benchmark | Scope | Current result | Evidence status |
 | --- | --- | ---: | --- |
-| AEB | Article body | F1 `0.969955` | Matches the pinned leading baseline within the documented scope |
-| WCXB | Seven page types | Test `0.891727` | Strong, below the published leading test result |
-| Webis | Main-content extraction | ROUGE-LSum `0.854920` | Below Trafilatura and the published ensemble |
-| WebMainBench v1.1 | Broad HTML-to-Markdown | F1 `0.606672` | Materially below modern semantic-model systems |
-| WebMainBench fine-grained | Text/code/formula/table | Overall `0.214089` | Text `0.752301`; code `0.017775`, formula `0.300369`, table/TEDS `0` |
+| AEB | Article body | F1 `0.969955` | Clean public pre-V2 run at `c3ae00d`; matches the embedded pinned article backend |
+| WCXB | Seven page types | Test `0.891727` | Dirty development diagnostic; below the published leading test result |
+| Webis | Main-content extraction | ROUGE-LSum `0.854920` | Dirty development diagnostic; below Trafilatura and the published ensemble |
+| WebMainBench v1.1 | Broad HTML-to-Markdown | F1 `0.606672` | Dirty development diagnostic; materially below modern semantic-model systems |
+| WebMainBench fine-grained | Text/code/formula/table | Overall `0.214089` | Dirty development diagnostic; text `0.752301`, code `0.017775`, formula `0.300369`, table/TEDS `0` |
 
-Every row above was produced from a dirty development worktree and is therefore
-a regression/architecture diagnostic, not a clean release claim. The
+The AEB run is claimable only within its article-body contract. It predates V2,
+matches the backend Clusy intentionally embeds, and is neither an independent
+algorithmic win nor evidence for V2's broader `balanced` profile. Every other
+row was produced from a dirty development worktree and is a
+regression/architecture diagnostic, not a clean release claim. The
 fine-grained run had zero extraction errors, but its structure scores make the
 current ceiling unambiguous: flattened prose cannot be repaired into reliable
 code, equations, and tables after extraction.
@@ -150,7 +186,7 @@ With the initial adaptive defaults, a label-free replay over WebMainBench marks
 78.7% of pages below F1 `0.4`. The separation is useful, but the escalation rate
 is too high to call the router production-calibrated. Public labels are used
 only for this retrospective diagnostic; thresholds must be selected on a
-separate operator-owned calibration set and governed by a production budget.
+separate, operator-owned calibration set and governed by a production budget.
 
 Routing alone cannot create an absolute WebMainBench win: even a hypothetical
 perfect result on every currently risky page, combined with the unchanged safe
@@ -171,7 +207,7 @@ for a 210M encoder at 13.7 pages/s on an L4, using 8,192-token block chunks and
 source reconstruction. Those are author-reported subset results, not a Clusy
 reproduction or a full-corpus leaderboard comparison. The released Pulpie
 weights are also CC BY-NC 4.0, so they are a useful architectural reference but
-cannot be Clusy's commercial default.
+cannot be the project's commercially usable default.
 
 Recent controlled pretraining work also finds that different deterministic
 extractors retain complementary pages and structures: a union increased usable
@@ -261,15 +297,27 @@ origin traffic without widening the crawled document set.
 
 ### 3. Ordered document graph
 
-`ordered-dom-ir.v1` is a disposable diagnostic foundation, not the production
-schema. It copies `node.text()` and `try_html()` per block, suppresses
-descendants under atomic blocks, repeatedly scans descendant subtrees, and
-exposes only a 512-block prefix to its default classifier. It therefore is
-neither truly source-offset-backed nor asymptotically suitable for adversarial
-nested DOMs.
+`ordered-dom-ir.v1` remains a benchmark-pinned diagnostic interface, not the
+production schema. It copies `node.text()` and `try_html()` per block,
+suppresses descendants under atomic blocks, repeatedly scans descendant
+subtrees, and exposes only a 512-block prefix to its default classifier. It
+therefore is neither truly source-offset-backed nor asymptotically suitable for
+adversarial nested DOMs.
 
-Production uses a separate `ordered-dom-ir.v2` API with one decoded source
-buffer and reference-only graph records:
+The current worktree implements a separate, additive `ordered-dom-ir.v2` native
+API. It provides stable source-order element and text-run IDs, parent/child
+relationships, bounded source-span provenance, explicit completeness and
+truncation signals, typed tables/lists/code/math, and deterministic full or
+ID-selected serialization under `ordered-dom-ir.v2.markdown.1`. It preserves
+exact preformatted whitespace, closes selected runs under necessary ancestors,
+and never treats an unknown ID as a request for broader content. V1 remains
+unchanged.
+
+The v2 APIs are primitives, not a promoted extraction route. The deterministic
+refiner built on top of them remains unwired because its two 545-page shadow
+policies gained structure at the cost of text quality. The production target
+extends and validates these primitives as one decoded source buffer and
+reference-only graph records:
 
 ```text
 DocumentV2
@@ -305,10 +353,10 @@ Each model-visible block needs:
 - visibility and geometry when rendered;
 - deterministic main-content score.
 
-Both deterministic and model extractors must select from this same graph. The
-serializer then reconstructs selected original blocks in DOM order. This avoids
-the current failure mode where tables or code are appended out of position and
-gives the semantic model a compact, safe input.
+Both deterministic and model extractors must eventually select from this same
+graph. The target serializer then reconstructs selected original blocks in DOM
+order. This avoids the failure mode where tables or code are appended out of
+position and gives a future semantic model a compact, safe input.
 
 A block-only graph is not a sufficient final representation. Real pages can
 mix an article title with a comment count in one heading, or target text with
@@ -377,7 +425,8 @@ to the general path.
 
 The Rust extractor remains the default general extractor. The article-body
 profile stays isolated because its AEB behavior is a regression gate. The
-balanced profile remains deterministic and backwards compatible.
+balanced profile remains deterministic and preserves the additive API shape;
+V2 deliberately changes route, cache, completeness, and provenance semantics.
 
 ### 6. Risk router
 
@@ -393,8 +442,8 @@ whether to escalate. Initial label-free signals should include:
 - source-adapter completeness.
 
 Thresholds are configuration, versioned into cache keys, and calibrated on a
-private development corpus. Public benchmark labels must never enter production
-routing or post-processing.
+separately consented, operator-owned development corpus. Public benchmark
+labels must never enter production routing or post-processing.
 
 The production router should predict *incremental utility*, not merely whether
 a page looks unusual. A small calibrated structural model consumes the signals
@@ -418,20 +467,24 @@ source-backed text runs. Neither stage returns free-form page text. This keeps
 tokens, hallucination surface, latency, and reconstruction error bounded while
 allowing precise mixed-block boundaries.
 
-An OpenAI-compatible frontier model endpoint remains a useful fallback and an
-oracle for distillation, but it is not the desired per-page production default.
-Batching, connection reuse, deadlines, concurrency caps, and a circuit breaker
-are required.
+An OpenAI-compatible frontier model endpoint could be evaluated as a separately
+licensed fallback or teacher, but it is not the desired per-page production
+default and none has passed promotion. Batching, connection reuse, deadlines,
+concurrency caps, and a circuit breaker are required. This prospective model
+work is separate from vendor benchmarking: output captured from Exa or
+Firecrawl by the comparison runner is never used for training, distillation,
+labeling, synthetic labeling, or routing calibration.
 
 Architecture and weights are separate decisions. MinerU-HTML's code is
 Apache-2.0, while its official v1.1 compact weights are Hunyuan-derived and the
 model license excludes use in the EU, UK, and South Korea and restricts using
 outputs to improve another model. Those weights are useful as a reference
-implementation only where licensed; they are not suitable as Clusy's global
-default. Production promotion requires a globally deployable checkpoint and
-documented base-model, training-data, synthetic-data, and output rights.
+implementation only where licensed; they are not suitable as a broadly
+deployable default. Production promotion requires a broadly deployable
+checkpoint and documented base-model, training-data, synthetic-data, and
+output rights.
 
-For the first Clusy-owned checkpoint, the leading serving candidate is
+For a future project-trained checkpoint, the leading serving candidate is
 `jhu-clsp/mmBERT-base`: its official model card reports an MIT license, 307M
 parameters, 8,192-token context, and pretraining across more than 1,800
 languages. An encoder is a better default fit for bounded per-block labels than
@@ -453,7 +506,7 @@ mmBERT-small distilled variant, and the constrained Qwen candidate. Select by
 the Pareto frontier of held-out quality, GPU-seconds/page, peak memory, p95
 latency, and multilingual worst-stratum quality—not aggregate quality alone.
 Pulpie's non-commercial weights may be used only as a published reference
-point unless Clusy obtains separate commercial rights.
+point unless the operator obtains separate commercial rights.
 
 The model is fine-tuned as a constrained selector:
 
@@ -477,11 +530,11 @@ incremental held-out quality justifies its GPU-seconds, memory, and tail latency
 within a separately budgeted quality lane.
 
 Public benchmark pages and labels remain evaluation-only. Training and routing
-calibration use a separately consented Clusy workload sample with node-level
-human labels, hard negatives, and licensed teacher assistance. Splits are by
-registrable domain and time, not random page, so templates cannot leak between
-train and validation. A sealed domain/time holdout, near-duplicate audit,
-canaries, label provenance, and model/data hashes are release artifacts.
+calibration use a separately consented, operator-owned workload sample with
+node-level human labels, hard negatives, and licensed teacher assistance.
+Splits are by registrable domain and time, not random page, so templates cannot
+leak between train and validation. A sealed domain/time holdout, near-duplicate
+audit, canaries, label provenance, and model/data hashes are release artifacts.
 Active learning prioritizes pages with deterministic/model disagreement,
 uncertain boundaries, rare languages, tables/code/formulas, rendering, and
 production fallbacks.
@@ -499,17 +552,16 @@ must not reduce availability.
 Downstream applications should expose one stable extraction capability:
 
 - Clusy handles configured, supported full-text extraction.
-- Search/discovery and optional external extraction fallbacks remain separate
-  host-application concerns.
-- Automatic fallback should occur only for retryable transport/service
-  failures, blocked/empty/incomplete content, or an explicit caller mode.
-- Missing endpoints/tokens and non-retryable authentication or contract
-  responses should fail closed and alert the operator instead of silently
-  creating paid traffic.
+- Search, discovery, and external fallbacks are separate host-application
+  concerns.
+- A host may fall back only on retryable transport/service failures,
+  blocked/empty/incomplete content, or an explicit provider-only mode.
+- Missing endpoints or tokens and non-retryable authentication or contract
+  errors must fail closed instead of silently creating external traffic.
 
 The response must expose `content_scope`, `truncated`, `strategy`, `rendered`,
 `cached`, `word_count`, and a machine-readable incompleteness reason. Without
-this contract a caller cannot distinguish a successful landing-page summary
+this contract the caller cannot distinguish a successful landing-page summary
 from a complete extraction.
 
 ### 10. Serving and observability
@@ -556,7 +608,7 @@ the strongest results currently recorded by the project:
 | WebMainBench fine-grained subset | Exceed overall `0.8256`, including table/code/formula metrics |
 
 These are engineering objectives, not claims. Public-label results must be
-replicated on a sealed operator-owned time/domain holdout before the adaptive
+replicated on a sealed, operator-owned time/domain holdout before the adaptive
 profile becomes the default.
 
 ### Live Exa/Firecrawl comparison
@@ -564,8 +616,9 @@ profile becomes the default.
 The existing small hand-picked vendor scripts are smoke tests, not credible
 SOTA evidence. A claimable comparison requires:
 
-1. A preregistered, time-stamped URL sample drawn from the deployment workload,
-   stratified by page type, language, geography, rendering need, and difficulty.
+1. A preregistered, time-stamped URL sample drawn from an authorized,
+   representative workload and stratified by page type, language, geography,
+   rendering need, and difficulty.
 2. Frozen URLs and task definitions before any system output is inspected.
 3. Identical requested scope and freshness semantics for every provider.
 4. Blinded human judgments or source-derived references for completeness,
@@ -578,11 +631,20 @@ SOTA evidence. A claimable comparison requires:
    exclusions disclosed.
 8. A held-out final set that is not used for routing or threshold calibration.
 
-The checked-in v1 live runner now reports p50/p90/p95/p99 provider
-distributions and per-stratum paired estimates. Its legacy `claimable` value is
-explicitly `artifact_integrity_only`; `vendor_win_claimable` remains false
-until structural references/TEDS, matched cold and warm tracks, and at least
-two independent time windows are all complete.
+The checked-in v3 live runner reports p50/p90/p95/p99 provider distributions
+and per-stratum paired estimates. Its public vendor-win gate remains
+unconditionally closed: the retained hash-only artifacts cannot independently
+reconstruct or rescore ephemeral provider content, trusted-execution
+attestation is not implemented, and the documented Exa/Firecrawl cache and
+content contracts do not satisfy all matched-scope evidence requirements.
+Structural references, matched cold/warm tracks, two independent time windows,
+and every statistical/latency/cost gate are still required, but cannot by
+themselves reopen that public claim gate.
+
+The Exa and Firecrawl calls made by this runner are benchmark-only. Their
+responses are scored under the sealed comparison protocol and are never used
+as training data, distillation targets, human or synthetic labels, or
+production routing-calibration inputs.
 
 Exa advertises content retrieval across complex layouts and configurable
 freshness, while Firecrawl exposes cached scraping, rendering/proxy options, and
@@ -598,25 +660,32 @@ from their current official documentation when the comparison is executed:
 
 Use the narrowest statement supported by evidence:
 
-- “SOTA-matching on AEB article-body extraction” is acceptable with the pinned
-  run and its documented caveats.
-- “Better than Exa/Firecrawl” requires a completed live paired evaluation whose
-  confidence interval and operational metrics support that exact claim.
+- “The clean pre-V2 AEB run at `c3ae00d` matched the embedded pinned
+  `rs-trafilatura` article backend” is acceptable within the article-body
+  extraction scope. “SOTA-matching” must retain the embedded-backend caveat;
+  it is not an independent algorithmic win or evidence for V2 `balanced`.
+- “Better than Exa/Firecrawl” cannot be supported by the current hash-only v3
+  artifacts. It requires a redesigned independently rescorable or attested,
+  matched-scope protocol plus favorable paired confidence and operational
+  evidence.
 - “Universal SOTA crawler” is not an acceptable inference from extraction-only
   corpora.
 
 ## Delivery sequence
 
-1. **Adaptive foundation:** deterministic-first routing, versioned thresholds,
-   quality fallback, cache correctness, and host fallback integration.
-2. **Ordered block IR:** Rust block graph, structure-preserving serializer, and
-   deterministic table/code/list improvements.
-3. **Compact model:** local block classifier, batching, constrained labels,
-   verifier, circuit breaker, and distillation workflow.
-4. **Serving scale:** split fetch/render/model worker pools, tenant budgets,
-   backpressure, distributed cache, tracing, and per-route SLOs.
-5. **Evidence:** operator-owned calibration corpus, clean public benchmark runs,
-   then a preregistered live vendor study.
+1. **Adaptive foundation — implemented, opt-in:** deterministic-first routing,
+   versioned thresholds, quality fallback, and cache correctness.
+2. **Ordered block IR — additive API implemented, runtime promotion pending:**
+   bounded Rust graph, typed serializers, ID-selected reconstruction, and the
+   shadow-only deterministic refiner.
+3. **Compact model — planned:** local block classifier, batching, constrained
+   labels, verifier, and circuit breaker.
+4. **Serving scale — partial/planned:** split fetch/render/model worker pools,
+   tenant budgets, backpressure, distributed cache, tracing, and per-route
+   SLOs.
+5. **Evidence — in progress:** clean V2 public benchmark runs and
+   operator-owned calibration must precede any broad claim; a preregistered
+   live vendor study is a separate final gate.
 
 The adaptive foundation can ship behind an opt-in profile. It becomes the
 default only after the quality, latency, cost, and escalation-budget gates pass

@@ -41,14 +41,18 @@ Operators should still:
 1. **Set `CRAWL4AI_API_TOKEN`** so crawl/extraction endpoints require a bearer
    token. Health diagnostics and OpenAPI discovery remain public; with no token,
    the data endpoints are unauthenticated and safe only on a trusted network.
-2. **Do not expose the service directly to the public internet** without an
+2. **Set an independent `SERVING_FINGERPRINT_KEY`** with at least 32 diverse
+   characters. Production mode requires it, and it must differ from the bearer
+   token. It keys the public serving-configuration fingerprint so
+   secret-bearing state can be bound without exposing the underlying values.
+3. **Do not expose the service directly to the public internet** without an
    auth token and, ideally, network egress restrictions.
-3. **Leave `CORS_ALLOW_ORIGINS` empty** unless a specific browser origin needs
+4. **Leave `CORS_ALLOW_ORIGINS` empty** unless a specific browser origin needs
    access; `*` is discouraged.
-4. Run it with **least-privilege egress** — the SSRF guard blocks the common
+5. Run it with **least-privilege egress** — the SSRF guard blocks the common
    cases, but network-level egress policy is defense in depth against novel
    DNS-rebinding or IPv6 edge cases.
-5. Keep the container **non-root** and use the checked-in
+6. Keep the container **non-root** and use the checked-in
    `seccomp_profile.json`. The profile is Docker's default policy plus the
    user-namespace syscalls required for Chromium's sandbox. When Playwright is
    enabled, do not add `no-new-privileges` or drop every Linux capability:
