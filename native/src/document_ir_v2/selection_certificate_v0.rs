@@ -54,6 +54,12 @@ enum SelectionKind {
     Text,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ValidationScope {
+    FullDocument,
+    LocalAtomic,
+}
+
 impl SelectionKind {
     fn wire(self) -> u8 {
         match self {
@@ -242,6 +248,31 @@ fn create_selection_certificate_v0_native(
 }
 
 #[pyfunction]
+#[pyo3(signature = (
+    document,
+    selected_ids,
+    max_output_bytes=DEFAULT_MAX_OUTPUT_BYTES,
+))]
+fn create_local_atomic_selection_certificate_v0_native(
+    py: Python<'_>,
+    document: PyRef<'_, NativeDocumentIRV2>,
+    selected_ids: &Bound<'_, PyList>,
+    max_output_bytes: usize,
+) -> PyResult<NativeSelectionCertificateV0> {
+    let output_limit = validate_output_limit(max_output_bytes).map_err(CertificateError::python)?;
+    let selected_ids = bounded_selected_ids(selected_ids)?;
+    let owned = OwnedCertificateDocument::from_native(&document);
+    drop(document);
+    py.detach(move || {
+        let view = owned.view();
+        let certificate = create_local_atomic_certificate(&view, &selected_ids, output_limit)
+            .map_err(CertificateError::python)?;
+        let encoded = encode_certificate(&certificate).map_err(CertificateError::python)?;
+        native_certificate(encoded, &certificate).map_err(CertificateError::python)
+    })
+}
+
+#[pyfunction]
 fn decode_selection_certificate_v0_native(
     py: Python<'_>,
     encoded: &[u8],
@@ -315,6 +346,71 @@ fn verify_and_replay_selection_certificate_v0_native(
     })
 }
 
+#[pyfunction]
+#[pyo3(signature = (
+    document,
+    encoded,
+    max_output_bytes=DEFAULT_MAX_OUTPUT_BYTES,
+))]
+fn verify_and_replay_local_atomic_selection_certificate_v0_native(
+    py: Python<'_>,
+    document: PyRef<'_, NativeDocumentIRV2>,
+    encoded: &[u8],
+    max_output_bytes: usize,
+) -> PyResult<NativeSelectionReplayV0> {
+    let verifier_limit =
+        validate_output_limit(max_output_bytes).map_err(CertificateError::python)?;
+    if encoded.len() > HARD_MAX_CERTIFICATE_BYTES {
+        return Err(CertificateError::new("certificate exceeds hard byte limit").python());
+    }
+    let encoded = encoded.to_vec();
+    let certificate = py.detach({
+        let encoded = &encoded;
+        move || decode_certificate(encoded).map_err(CertificateError::python)
+    })?;
+    let owned = OwnedCertificateDocument::from_native(&document);
+    drop(document);
+    let replay = py.detach(move || {
+        verify_decoded_and_replay_scoped(
+            &owned.view(),
+            certificate,
+            &encoded,
+            verifier_limit,
+            ValidationScope::LocalAtomic,
+        )
+        .map_err(CertificateError::python)
+    })?;
+    let receipt = Py::new(
+        py,
+        NativeSelectionReceiptV0 {
+            contract_version: CONTRACT_VERSION,
+            wire_version: WIRE_VERSION,
+            certificate_digest: hex_digest(&certificate_digest_v0(&replay.encoded)),
+            source_digest: hex_digest(&replay.certificate.source_digest),
+            graph_digest: hex_digest(&replay.certificate.graph_digest),
+            output_digest: hex_digest(&replay.certificate.output_digest),
+            output_bytes: usize_from_u64(replay.certificate.output_bytes)
+                .map_err(CertificateError::python)?,
+            certificate_output_limit_bytes: usize_from_u64(replay.certificate.max_output_bytes)
+                .map_err(CertificateError::python)?,
+            verifier_output_limit_bytes: verifier_limit,
+            selection_count: replay.certificate.entries.len(),
+            selected_ids: replay
+                .certificate
+                .entries
+                .iter()
+                .map(|entry| entry.id.clone())
+                .collect(),
+            verified: true,
+            deterministic: true,
+        },
+    )?;
+    Ok(NativeSelectionReplayV0 {
+        markdown: replay.markdown,
+        receipt,
+    })
+}
+
 pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<NativeSelectionCertificateV0>()?;
     module.add_class::<NativeSelectionReceiptV0>()?;
@@ -324,11 +420,19 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
+        create_local_atomic_selection_certificate_v0_native,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
         decode_selection_certificate_v0_native,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
         verify_and_replay_selection_certificate_v0_native,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        verify_and_replay_local_atomic_selection_certificate_v0_native,
         module
     )?)?;
     Ok(())
@@ -346,9 +450,42 @@ fn create_certificate(
     selected_ids: &[String],
     max_output_bytes: usize,
 ) -> CertificateResult<DecodedCertificate> {
+    create_certificate_scoped(
+        document,
+        selected_ids,
+        max_output_bytes,
+        ValidationScope::FullDocument,
+    )
+}
+
+fn create_local_atomic_certificate(
+    document: &CertificateDocument<'_>,
+    selected_ids: &[String],
+    max_output_bytes: usize,
+) -> CertificateResult<DecodedCertificate> {
+    create_certificate_scoped(
+        document,
+        selected_ids,
+        max_output_bytes,
+        ValidationScope::LocalAtomic,
+    )
+}
+
+fn create_certificate_scoped(
+    document: &CertificateDocument<'_>,
+    selected_ids: &[String],
+    max_output_bytes: usize,
+    scope: ValidationScope,
+) -> CertificateResult<DecodedCertificate> {
     validate_selection_shape(selected_ids)?;
-    validate_document(document)?;
-    let entries = validate_selection(document, selected_ids)?;
+    validate_document_scoped(document, scope)?;
+    if scope == ValidationScope::LocalAtomic {
+        validate_local_atomic_selection_shape(document, selected_ids)?;
+    }
+    let entries = validate_selection_scoped(document, selected_ids, scope)?;
+    if scope == ValidationScope::LocalAtomic {
+        validate_local_atomic_selection(document, selected_ids, &entries)?;
+    }
     let markdown = render_selection(document, selected_ids, max_output_bytes)?;
     Ok(DecodedCertificate {
         source_digest: source_digest_v0(document.source.as_bytes()),
@@ -376,7 +513,23 @@ fn verify_decoded_and_replay(
     encoded: &[u8],
     verifier_output_limit: usize,
 ) -> CertificateResult<VerifiedReplay> {
-    validate_document(document)?;
+    verify_decoded_and_replay_scoped(
+        document,
+        certificate,
+        encoded,
+        verifier_output_limit,
+        ValidationScope::FullDocument,
+    )
+}
+
+fn verify_decoded_and_replay_scoped(
+    document: &CertificateDocument<'_>,
+    certificate: DecodedCertificate,
+    encoded: &[u8],
+    verifier_output_limit: usize,
+    scope: ValidationScope,
+) -> CertificateResult<VerifiedReplay> {
+    validate_document_scoped(document, scope)?;
     let expected_source_digest = source_digest_v0(document.source.as_bytes());
     if certificate.source_digest != expected_source_digest {
         return Err(CertificateError::new("source digest mismatch"));
@@ -390,7 +543,13 @@ fn verify_decoded_and_replay(
         .iter()
         .map(|entry| entry.id.clone())
         .collect::<Vec<_>>();
-    let expected_entries = validate_selection(document, &selected_ids)?;
+    if scope == ValidationScope::LocalAtomic {
+        validate_local_atomic_selection_shape(document, &selected_ids)?;
+    }
+    let expected_entries = validate_selection_scoped(document, &selected_ids, scope)?;
+    if scope == ValidationScope::LocalAtomic {
+        validate_local_atomic_selection(document, &selected_ids, &expected_entries)?;
+    }
     if certificate.entries != expected_entries {
         return Err(CertificateError::new(
             "selection ID, event order, or source span mismatch",
@@ -412,37 +571,42 @@ fn verify_decoded_and_replay(
     })
 }
 
-fn validate_document(document: &CertificateDocument<'_>) -> CertificateResult<()> {
+fn validate_document_scoped(
+    document: &CertificateDocument<'_>,
+    scope: ValidationScope,
+) -> CertificateResult<()> {
     if !document.source_complete {
         return Err(CertificateError::new("decoded UTF-8 source is incomplete"));
     }
     if document.document_truncated {
         return Err(CertificateError::new("document graph is truncated"));
     }
-    if !document.source_mapping_complete {
-        return Err(CertificateError::new(
-            "explicit DOM/source mapping is incomplete",
-        ));
-    }
-    if document.parse_error_count != 0 {
-        return Err(CertificateError::new(
-            "HTML parse errors prevent exact source provenance",
-        ));
-    }
-    if document
-        .graph
-        .elements
-        .iter()
-        .any(|element| !element.exposed.implicit && !element.exposed.source_span_reliable)
-    {
-        return Err(CertificateError::new(
-            "an explicit element lacks a complete source span",
-        ));
-    }
     validate_graph_topology(document.graph)?;
     validate_structure_references(document.graph)?;
-    validate_source_nesting(document)?;
-    validate_exact_text_provenance(document)?;
+    if scope == ValidationScope::FullDocument {
+        if !document.source_mapping_complete {
+            return Err(CertificateError::new(
+                "explicit DOM/source mapping is incomplete",
+            ));
+        }
+        if document.parse_error_count != 0 {
+            return Err(CertificateError::new(
+                "HTML parse errors prevent exact source provenance",
+            ));
+        }
+        if document
+            .graph
+            .elements
+            .iter()
+            .any(|element| !element.exposed.implicit && !element.exposed.source_span_reliable)
+        {
+            return Err(CertificateError::new(
+                "an explicit element lacks a complete source span",
+            ));
+        }
+        validate_source_nesting(document)?;
+        validate_exact_text_provenance(document)?;
+    }
     Ok(())
 }
 
@@ -1183,6 +1347,14 @@ fn validate_selection(
     document: &CertificateDocument<'_>,
     selected_ids: &[String],
 ) -> CertificateResult<Vec<SelectionEntry>> {
+    validate_selection_scoped(document, selected_ids, ValidationScope::FullDocument)
+}
+
+fn validate_selection_scoped(
+    document: &CertificateDocument<'_>,
+    selected_ids: &[String],
+    scope: ValidationScope,
+) -> CertificateResult<Vec<SelectionEntry>> {
     validate_selection_shape(selected_ids)?;
     let graph = document.graph;
     let mut known = HashMap::with_capacity(graph.elements.len() + graph.texts.len());
@@ -1223,7 +1395,17 @@ fn validate_selection(
                 "ancestor-overlapping selections are forbidden",
             ));
         }
-        let (kind, start, end) = validate_selected_event(document, event)?;
+        let (kind, start, end) = if scope == ValidationScope::LocalAtomic {
+            let EventRef::Element(index) = event else {
+                return Err(CertificateError::new(
+                    "local atomic certificate requires an element selection",
+                ));
+            };
+            let span = validate_local_complete_subtree(document, index)?;
+            (SelectionKind::Element, span.0, span.1)
+        } else {
+            validate_selected_event(document, event)?
+        };
         if previous_source_end.is_some_and(|previous| start < previous) {
             return Err(CertificateError::new(
                 "selection source spans overlap or are out of order",
@@ -1241,6 +1423,210 @@ fn validate_selection(
         previous_source_end = Some(end);
     }
     Ok(entries)
+}
+
+fn validate_local_atomic_selection(
+    document: &CertificateDocument<'_>,
+    selected_ids: &[String],
+    entries: &[SelectionEntry],
+) -> CertificateResult<()> {
+    let root_index = validate_local_atomic_selection_shape(document, selected_ids)?;
+    let entry = entries
+        .first()
+        .ok_or_else(|| CertificateError::new("local atomic certificate entry is unavailable"))?;
+    if entries.len() != 1 || entry.kind != SelectionKind::Element || entry.id != selected_ids[0] {
+        return Err(CertificateError::new(
+            "local atomic certificate entry disagrees with the selection",
+        ));
+    }
+    let root_span = (
+        usize_from_u64(entry.source_start)?,
+        usize_from_u64(entry.source_end)?,
+    );
+    validate_local_atomic_ancestors(document, root_index, root_span)?;
+    validate_local_exact_text_provenance(document, root_index, root_span)
+}
+
+fn validate_local_atomic_selection_shape(
+    document: &CertificateDocument<'_>,
+    selected_ids: &[String],
+) -> CertificateResult<usize> {
+    if selected_ids.len() != 1 {
+        return Err(CertificateError::new(
+            "local atomic certificate requires exactly one selection",
+        ));
+    }
+    let root_index = document
+        .graph
+        .element_by_id
+        .get(&selected_ids[0])
+        .copied()
+        .ok_or_else(|| {
+            CertificateError::new("local atomic certificate requires an element selection")
+        })?;
+    let root = &document.graph.elements[root_index];
+    if !matches!(root.exposed.tag.as_str(), "pre" | "table") {
+        return Err(CertificateError::new(
+            "local atomic certificate only supports pre and table elements",
+        ));
+    }
+    Ok(root_index)
+}
+
+fn validate_local_atomic_ancestors(
+    document: &CertificateDocument<'_>,
+    root_index: usize,
+    root_span: (usize, usize),
+) -> CertificateResult<()> {
+    let graph = document.graph;
+    let mut parent = graph.elements[root_index].parent_index;
+    let mut seen = HashSet::new();
+    while let Some(index) = parent {
+        if !seen.insert(index) {
+            return Err(CertificateError::new(
+                "local atomic ancestor chain contains a cycle",
+            ));
+        }
+        let element = graph
+            .elements
+            .get(index)
+            .ok_or_else(|| CertificateError::new("local atomic ancestor is out of bounds"))?;
+        if is_atomic_element(graph, index) {
+            return Err(CertificateError::new(
+                "local atomic selection is nested in another atomic structure",
+            ));
+        }
+        if element.exposed.implicit {
+            if !matches!(element.exposed.tag.as_str(), "html" | "head" | "body") {
+                return Err(CertificateError::new(
+                    "local atomic ancestor requires parser repair",
+                ));
+            }
+        } else {
+            let ancestor_span = validate_element_span(document, index)?;
+            if ancestor_span.0 > root_span.0 || ancestor_span.1 < root_span.1 {
+                return Err(CertificateError::new(
+                    "local atomic ancestor does not contain the selected source span",
+                ));
+            }
+        }
+        parent = element.parent_index;
+    }
+    Ok(())
+}
+
+fn validate_local_exact_text_provenance(
+    document: &CertificateDocument<'_>,
+    root_index: usize,
+    root_span: (usize, usize),
+) -> CertificateResult<()> {
+    let fragment = document
+        .source
+        .get(root_span.0..root_span.1)
+        .ok_or_else(|| CertificateError::new("local atomic source span is not UTF-8 aligned"))?;
+    let tokens = tokenize_exact_source_text(fragment)?;
+    let token_by_span = tokens
+        .iter()
+        .map(|token| ((token.start, token.end), token))
+        .collect::<HashMap<_, _>>();
+    if token_by_span.len() != tokens.len() {
+        return Err(CertificateError::new(
+            "local atomic tokenizer produced duplicate text spans",
+        ));
+    }
+
+    let graph = document.graph;
+    let mut pending = vec![root_index];
+    let mut text_indexes = Vec::new();
+    while let Some(index) = pending.pop() {
+        for child in &graph.elements[index].children {
+            match *child {
+                EventRef::Element(child_index) => pending.push(child_index),
+                EventRef::Text(text_index) => text_indexes.push(text_index),
+            }
+        }
+    }
+    text_indexes.sort_unstable_by_key(|index| graph.texts[*index].exposed.order);
+    let allow_table_trivia = graph.elements[root_index].exposed.tag == "table";
+    let mut previous_end = None;
+    let mut consumed_source_spans = HashSet::with_capacity(text_indexes.len());
+    for text_index in text_indexes {
+        let Some((start, end)) =
+            validate_local_text_span(document, text_index, allow_table_trivia)?
+        else {
+            continue;
+        };
+        if start < root_span.0 || end > root_span.1 {
+            return Err(CertificateError::new(
+                "local atomic text escapes the selected source span",
+            ));
+        }
+        if previous_end.is_some_and(|previous| start < previous) {
+            return Err(CertificateError::new(
+                "local atomic text spans overlap or are out of order",
+            ));
+        }
+        let relative = (start - root_span.0, end - root_span.0);
+        let token = token_by_span.get(&relative).ok_or_else(|| {
+            CertificateError::new("local atomic text is not backed by one complete tokenizer token")
+        })?;
+        if !consumed_source_spans.insert(relative) {
+            return Err(CertificateError::new(
+                "local atomic source text span is consumed more than once",
+            ));
+        }
+        let text = &graph.texts[text_index];
+        let parent = graph
+            .elements
+            .get(text.parent_index)
+            .ok_or_else(|| CertificateError::new("local atomic text parent is out of bounds"))?;
+        let parent_start = parent.exposed.source_start.ok_or_else(|| {
+            CertificateError::new("local atomic text parent is not source-backed")
+        })?;
+        if parent_start < root_span.0 || token.parent_start != Some(parent_start - root_span.0) {
+            return Err(CertificateError::new(
+                "local atomic tokenizer parent disagrees with the DOM parent",
+            ));
+        }
+        let source_slice = fragment.get(relative.0..relative.1).ok_or_else(|| {
+            CertificateError::new("local atomic tokenizer span is not UTF-8 aligned")
+        })?;
+        if source_slice != text.exposed.text {
+            return Err(CertificateError::new(
+                "local atomic tokenizer bytes do not match decoded DOM text",
+            ));
+        }
+        if source_slice
+            .as_bytes()
+            .iter()
+            .any(|byte| matches!(*byte, b'&' | b'\r' | b'\0'))
+        {
+            return Err(CertificateError::new(
+                "local atomic text requires an unsupported HTML decoding transform",
+            ));
+        }
+        if token.kind == SourceTextTokenKind::RcData && source_slice.as_bytes().contains(&b'<') {
+            return Err(CertificateError::new(
+                "local atomic RCDATA contains an unsupported less-than transition",
+            ));
+        }
+        previous_end = Some(end);
+    }
+    for token in &tokens {
+        if consumed_source_spans.contains(&(token.start, token.end)) {
+            continue;
+        }
+        let source_slice = fragment.get(token.start..token.end).ok_or_else(|| {
+            CertificateError::new("local atomic tokenizer span is not UTF-8 aligned")
+        })?;
+        if allow_table_trivia && is_ascii_html_whitespace(source_slice.as_bytes()) {
+            continue;
+        }
+        return Err(CertificateError::new(
+            "local atomic source text is not represented by the selected subtree",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_selected_event(
@@ -1265,6 +1651,203 @@ fn validate_selected_event(
             Ok((SelectionKind::Text, span.0, span.1))
         }
     }
+}
+
+fn validate_local_complete_subtree(
+    document: &CertificateDocument<'_>,
+    root_index: usize,
+) -> CertificateResult<(usize, usize)> {
+    let graph = document.graph;
+    let root_span = validate_element_span(document, root_index)?;
+    let allow_table_trivia = graph.elements[root_index].exposed.tag == "table";
+    let mut pending = vec![root_index];
+    while let Some(index) = pending.pop() {
+        let (element_span, content_start) =
+            local_element_span(document, index, root_index, root_span)?;
+        if element_span.0 < root_span.0 || element_span.1 > root_span.1 {
+            return Err(CertificateError::new(
+                "descendant element escapes selected source span",
+            ));
+        }
+        validate_atomic_structure(graph, index)?;
+        let element = &graph.elements[index];
+        let mut previous_child_end = content_start;
+        for child in &element.children {
+            let child_span = match *child {
+                EventRef::Element(child_index) => {
+                    let (span, _) =
+                        local_element_span(document, child_index, root_index, root_span)?;
+                    pending.push(child_index);
+                    Some(span)
+                }
+                EventRef::Text(text_index) => {
+                    validate_local_text_span(document, text_index, allow_table_trivia)?
+                }
+            };
+            let Some(child_span) = child_span else {
+                continue;
+            };
+            if child_span.0 < content_start
+                || child_span.1 > element_span.1
+                || child_span.0 < previous_child_end
+            {
+                return Err(CertificateError::new(
+                    "child source spans are incomplete, overlapping, or out of order",
+                ));
+            }
+            previous_child_end = child_span.1;
+        }
+    }
+    Ok(root_span)
+}
+
+fn validate_local_text_span(
+    document: &CertificateDocument<'_>,
+    index: usize,
+    allow_table_trivia: bool,
+) -> CertificateResult<Option<(usize, usize)>> {
+    let text = document
+        .graph
+        .texts
+        .get(index)
+        .ok_or_else(|| CertificateError::new("text-run index is out of bounds"))?;
+    if allow_table_trivia
+        && !text.exposed.truncated
+        && is_ascii_html_whitespace(text.exposed.text.as_bytes())
+    {
+        return Ok(None);
+    }
+    validate_text_span(document, index).map(Some)
+}
+
+fn is_ascii_html_whitespace(value: &[u8]) -> bool {
+    value
+        .iter()
+        .all(|byte| matches!(*byte, b' ' | b'\t' | b'\n' | 0x0c))
+}
+
+fn local_element_span(
+    document: &CertificateDocument<'_>,
+    index: usize,
+    root_index: usize,
+    root_span: (usize, usize),
+) -> CertificateResult<((usize, usize), usize)> {
+    let element = document
+        .graph
+        .elements
+        .get(index)
+        .ok_or_else(|| CertificateError::new("element index is out of bounds"))?;
+    if element.exposed.implicit {
+        let span = validate_local_implicit_tbody(document, index, root_index, root_span)?;
+        return Ok((span, span.0));
+    }
+    let span = validate_element_span(document, index)?;
+    let content_start = element
+        .exposed
+        .source_start_tag_end
+        .ok_or_else(|| CertificateError::new("element content span is unavailable"))?;
+    Ok((span, content_start))
+}
+
+fn validate_local_implicit_tbody(
+    document: &CertificateDocument<'_>,
+    index: usize,
+    root_index: usize,
+    root_span: (usize, usize),
+) -> CertificateResult<(usize, usize)> {
+    let graph = document.graph;
+    let element = graph
+        .elements
+        .get(index)
+        .ok_or_else(|| CertificateError::new("implicit tbody index is out of bounds"))?;
+    let root = graph
+        .elements
+        .get(root_index)
+        .ok_or_else(|| CertificateError::new("local atomic root is out of bounds"))?;
+    if element.exposed.tag != "tbody"
+        || element.parent_index != Some(root_index)
+        || root.exposed.tag != "table"
+        || element.exposed.source_span_reliable
+        || element.exposed.source_start.is_some()
+        || element.exposed.source_start_tag_end.is_some()
+        || element.exposed.source_end.is_some()
+        || !element.attrs.is_empty()
+        || element.children.is_empty()
+    {
+        return Err(CertificateError::new(
+            "local atomic subtree requires unsupported parser repair",
+        ));
+    }
+
+    let mut first_start = None;
+    let mut previous_end = None;
+    for child in &element.children {
+        let row_index = match *child {
+            EventRef::Element(row_index) => row_index,
+            EventRef::Text(text_index) => {
+                if validate_local_text_span(document, text_index, true)?.is_none() {
+                    continue;
+                }
+                return Err(CertificateError::new(
+                    "implicit tbody contains a non-row event",
+                ));
+            }
+        };
+        let row = graph
+            .elements
+            .get(row_index)
+            .ok_or_else(|| CertificateError::new("implicit tbody row is out of bounds"))?;
+        if row.exposed.implicit || row.exposed.tag != "tr" || row.parent_index != Some(index) {
+            return Err(CertificateError::new(
+                "implicit tbody contains a repaired or non-row child",
+            ));
+        }
+        let row_span = validate_element_span(document, row_index)?;
+        if row_span.0 < root_span.0 || row_span.1 > root_span.1 {
+            return Err(CertificateError::new(
+                "implicit tbody row escapes the selected table",
+            ));
+        }
+        if let Some(end) = previous_end {
+            if row_span.0 < end
+                || !is_html_inter_row_trivia(document.source.get(end..row_span.0).ok_or_else(
+                    || CertificateError::new("implicit tbody inter-row source is unavailable"),
+                )?)
+            {
+                return Err(CertificateError::new(
+                    "implicit tbody rows are not source-adjacent",
+                ));
+            }
+        } else {
+            first_start = Some(row_span.0);
+        }
+        previous_end = Some(row_span.1);
+    }
+    let start = first_start
+        .ok_or_else(|| CertificateError::new("implicit tbody has no source-backed rows"))?;
+    let end = previous_end
+        .ok_or_else(|| CertificateError::new("implicit tbody has no source-backed rows"))?;
+    Ok((start, end))
+}
+
+fn is_html_inter_row_trivia(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+            continue;
+        }
+        if bytes[cursor..].starts_with(b"<!--") {
+            let Some(relative_end) = value[cursor + 4..].find("-->") else {
+                return false;
+            };
+            cursor = cursor + 4 + relative_end + 3;
+            continue;
+        }
+        return false;
+    }
+    true
 }
 
 fn validate_complete_subtree(

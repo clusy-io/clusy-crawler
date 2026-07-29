@@ -12,8 +12,10 @@ from ._native import (
     NativeSelectionCertificateV0,
     NativeSelectionReceiptV0,
     NativeSelectionReplayV0,
+    create_local_atomic_selection_certificate_v0_native,
     create_selection_certificate_v0_native,
     decode_selection_certificate_v0_native,
+    verify_and_replay_local_atomic_selection_certificate_v0_native,
     verify_and_replay_selection_certificate_v0_native,
 )
 
@@ -39,6 +41,31 @@ def create_selection_certificate_v0(
     authoritative for ID validation and certificate eligibility.
     """
 
+    bounded_ids = _bounded_selection_ids(selected_ids)
+    return create_selection_certificate_v0_native(
+        document,
+        bounded_ids,
+        max_output_bytes=max_output_bytes,
+    )
+
+
+def create_local_atomic_selection_certificate_v0(
+    document: NativeDocumentIRV2,
+    selected_ids: Iterable[str],
+    *,
+    max_output_bytes: int = DEFAULT_SELECTION_CERTIFICATE_V0_MAX_OUTPUT_BYTES,
+) -> SelectionCertificateV0:
+    """Certify one exact local ``pre`` or ``table`` despite unrelated parse errors."""
+
+    bounded_ids = _bounded_selection_ids(selected_ids)
+    return create_local_atomic_selection_certificate_v0_native(
+        document,
+        bounded_ids,
+        max_output_bytes=max_output_bytes,
+    )
+
+
+def _bounded_selection_ids(selected_ids: Iterable[str]) -> list[str]:
     bounded_ids: list[str] = []
     for value in selected_ids:
         if len(bounded_ids) == SELECTION_CERTIFICATE_V0_MAX_SELECTIONS:
@@ -52,11 +79,7 @@ def create_selection_certificate_v0(
         ):
             raise ValueError("selection-certificate.v0: selection ID is not canonical")
         bounded_ids.append(value)
-    return create_selection_certificate_v0_native(
-        document,
-        bounded_ids,
-        max_output_bytes=max_output_bytes,
-    )
+    return bounded_ids
 
 
 def decode_selection_certificate_v0(encoded: bytes) -> SelectionCertificateV0:
@@ -79,6 +102,26 @@ def verify_and_replay_selection_certificate_v0(
         else certificate
     )
     return verify_and_replay_selection_certificate_v0_native(
+        document,
+        encoded,
+        max_output_bytes=max_output_bytes,
+    )
+
+
+def verify_and_replay_local_atomic_selection_certificate_v0(
+    document: NativeDocumentIRV2,
+    certificate: SelectionCertificateV0 | bytes,
+    *,
+    max_output_bytes: int = DEFAULT_SELECTION_CERTIFICATE_V0_MAX_OUTPUT_BYTES,
+) -> SelectionReplayV0:
+    """Verify one local atomic certificate; this is not authentication."""
+
+    encoded = (
+        certificate.encoded
+        if isinstance(certificate, NativeSelectionCertificateV0)
+        else certificate
+    )
+    return verify_and_replay_local_atomic_selection_certificate_v0_native(
         document,
         encoded,
         max_output_bytes=max_output_bytes,

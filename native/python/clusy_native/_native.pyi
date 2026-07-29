@@ -288,10 +288,20 @@ def create_selection_certificate_v0_native(
     selected_ids: list[str],
     max_output_bytes: int = 4 * 1024 * 1024,
 ) -> NativeSelectionCertificateV0: ...
+def create_local_atomic_selection_certificate_v0_native(
+    document: NativeDocumentIRV2,
+    selected_ids: list[str],
+    max_output_bytes: int = 4 * 1024 * 1024,
+) -> NativeSelectionCertificateV0: ...
 def decode_selection_certificate_v0_native(
     encoded: bytes,
 ) -> NativeSelectionCertificateV0: ...
 def verify_and_replay_selection_certificate_v0_native(
+    document: NativeDocumentIRV2,
+    encoded: bytes,
+    max_output_bytes: int = 4 * 1024 * 1024,
+) -> NativeSelectionReplayV0: ...
+def verify_and_replay_local_atomic_selection_certificate_v0_native(
     document: NativeDocumentIRV2,
     encoded: bytes,
     max_output_bytes: int = 4 * 1024 * 1024,

@@ -38,8 +38,10 @@ from .selection_certificate_v0 import (
     SelectionCertificateV0,
     SelectionReceiptV0,
     SelectionReplayV0,
+    create_local_atomic_selection_certificate_v0,
     create_selection_certificate_v0,
     decode_selection_certificate_v0,
+    verify_and_replay_local_atomic_selection_certificate_v0,
     verify_and_replay_selection_certificate_v0,
 )
 
@@ -69,6 +71,7 @@ __all__ = [
     "SelectionCertificateV0",
     "SelectionReceiptV0",
     "SelectionReplayV0",
+    "create_local_atomic_selection_certificate_v0",
     "create_selection_certificate_v0",
     "decode_selection_certificate_v0",
     "extract_document_blocks",
@@ -78,4 +81,5 @@ __all__ = [
     "extract_html",
     "reconstruct_document_ir_v2",
     "verify_and_replay_selection_certificate_v0",
+    "verify_and_replay_local_atomic_selection_certificate_v0",
 ]

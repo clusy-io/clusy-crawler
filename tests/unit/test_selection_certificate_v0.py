@@ -8,10 +8,12 @@ import pytest
 from clusy_native import (
     SELECTION_CERTIFICATE_V0_MAX_SELECTIONS,
     NativeDocumentIRV2,
+    create_local_atomic_selection_certificate_v0,
     create_selection_certificate_v0,
     decode_selection_certificate_v0,
     extract_document_ir_v2,
     reconstruct_document_ir_v2,
+    verify_and_replay_local_atomic_selection_certificate_v0,
     verify_and_replay_selection_certificate_v0,
 )
 from clusy_native._native import create_selection_certificate_v0_native
@@ -204,3 +206,74 @@ def test_certificate_is_deterministic_across_parallel_native_calls() -> None:
         outputs = list(pool.map(issue, range(16)))
 
     assert len(set(outputs)) == 1
+
+
+def test_local_atomic_certificate_ignores_unrelated_parse_error_only() -> None:
+    html = _document(
+        "<div><span>broken outside</div>"
+        '<pre><code class="language-python">def safe():\n  return 1</code></pre>'
+    )
+    document = extract_document_ir_v2(html)
+    pre_id = _tag_id(document, "pre")
+
+    assert document.parse_error_count > 0
+    assert document.source_mapping_complete
+    with pytest.raises(ValueError, match="HTML parse errors"):
+        create_selection_certificate_v0(document, [pre_id])
+
+    certificate = create_local_atomic_selection_certificate_v0(document, [pre_id])
+    replay = verify_and_replay_local_atomic_selection_certificate_v0(
+        document,
+        certificate,
+    )
+
+    assert replay.receipt.verified
+    assert replay.markdown == "```python\ndef safe():\n  return 1\n```"
+    with pytest.raises(ValueError, match="HTML parse errors"):
+        verify_and_replay_selection_certificate_v0(document, certificate)
+
+
+def test_local_atomic_certificate_allows_only_standard_implicit_tbody() -> None:
+    document = extract_document_ir_v2(
+        _document(
+            "<table>\n<tr><th>A</th><th>B</th></tr>\n"
+            "<!-- inter-row -->\n<tr><td>1</td><td>2</td></tr>\n</table>"
+        )
+    )
+    implicit = [element for element in document.elements if element.implicit]
+
+    assert [(element.tag, element.parent_id) for element in implicit] == [
+        ("tbody", _tag_id(document, "table")),
+    ]
+    certificate = create_local_atomic_selection_certificate_v0(
+        document,
+        [_tag_id(document, "table")],
+    )
+    replay = verify_and_replay_local_atomic_selection_certificate_v0(
+        document,
+        certificate,
+    )
+
+    assert replay.receipt.verified
+    assert "A" in replay.markdown
+    assert "1" in replay.markdown
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<pre><code>broken inside</pre>",
+        "<table><td>A</td><td>B</td></table>",
+        "<table><tr><th>A</th><th>B</th></tr>noise"
+        "<tr><td>1</td><td>2</td></tr></table>",
+    ],
+)
+def test_local_atomic_certificate_rejects_repair_inside_selection(body: str) -> None:
+    document = extract_document_ir_v2(_document(body))
+    selected_tag = "pre" if body.startswith("<pre") else "table"
+
+    with pytest.raises(ValueError, match="reliable|repair|tokenizer|source"):
+        create_local_atomic_selection_certificate_v0(
+            document,
+            [_tag_id(document, selected_tag)],
+        )
