@@ -174,6 +174,38 @@ class NativeIRSerializationV2:
     truncated: Final[bool]
     truncation_reasons: Final[list[str]]
 
+class NativeSelectionCertificateV0:
+    encoded: Final[bytes]
+    contract_version: Final[str]
+    wire_version: Final[int]
+    source_digest: Final[str]
+    graph_digest: Final[str]
+    output_digest: Final[str]
+    output_bytes: Final[int]
+    max_output_bytes: Final[int]
+    selection_count: Final[int]
+    selected_ids: Final[list[str]]
+    certificate_digest: Final[str]
+
+class NativeSelectionReceiptV0:
+    contract_version: Final[str]
+    wire_version: Final[int]
+    certificate_digest: Final[str]
+    source_digest: Final[str]
+    graph_digest: Final[str]
+    output_digest: Final[str]
+    output_bytes: Final[int]
+    certificate_output_limit_bytes: Final[int]
+    verifier_output_limit_bytes: Final[int]
+    selection_count: Final[int]
+    selected_ids: Final[list[str]]
+    verified: Final[bool]
+    deterministic: Final[bool]
+
+class NativeSelectionReplayV0:
+    markdown: Final[str]
+    receipt: Final[NativeSelectionReceiptV0]
+
 class NativeDocumentIRV2:
     elements: Final[list[NativeIRElementV2]]
     text_runs: Final[list[NativeIRTextRunV2]]
@@ -251,4 +283,17 @@ def extract_document_ir_v2_native(
     max_math_bytes: int = 256 * 1024,
     max_table_columns: int = 1_024,
 ) -> NativeDocumentIRV2: ...
+def create_selection_certificate_v0_native(
+    document: NativeDocumentIRV2,
+    selected_ids: list[str],
+    max_output_bytes: int = 4 * 1024 * 1024,
+) -> NativeSelectionCertificateV0: ...
+def decode_selection_certificate_v0_native(
+    encoded: bytes,
+) -> NativeSelectionCertificateV0: ...
+def verify_and_replay_selection_certificate_v0_native(
+    document: NativeDocumentIRV2,
+    encoded: bytes,
+    max_output_bytes: int = 4 * 1024 * 1024,
+) -> NativeSelectionReplayV0: ...
 def backend_version() -> str: ...

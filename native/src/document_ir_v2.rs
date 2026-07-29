@@ -4,6 +4,8 @@ use dom_query::{Document, NodeData, NodeId, NodeRef};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+mod selection_certificate_v0;
+
 const SCHEMA_VERSION: &str = "ordered-dom-ir.v2";
 const SERIALIZATION_CONTRACT: &str = "ordered-dom-ir.v2.markdown.1";
 
@@ -653,6 +655,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<NativeIRSerializationV2>()?;
     module.add_class::<NativeDocumentIRV2>()?;
     module.add_function(wrap_pyfunction!(extract_document_ir_v2_native, module)?)?;
+    selection_certificate_v0::register(module)?;
     Ok(())
 }
 

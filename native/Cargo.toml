@@ -19,3 +19,4 @@ rs-trafilatura-broad = { package = "rs-trafilatura", version = "=0.2.2", path = 
 # release: the former is precision-tuned for articles while the latter adds
 # page classification and richer non-article Markdown.
 rs-trafilatura-article = { package = "rs-trafilatura", path = "vendor/rs-trafilatura" }
+sha2 = "=0.10.9"
