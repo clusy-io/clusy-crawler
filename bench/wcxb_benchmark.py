@@ -42,6 +42,11 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from bench.source_provenance import (  # noqa: E402
+    SourceInventoryError,
+    git_visible_vendor_files,
+)
+
 WCXB_REPOSITORY = (
     "https://github.com/Murrough-Foley/web-content-extraction-benchmark.git"
 )
@@ -65,6 +70,7 @@ DEFAULT_SEED = 20260727
 
 SOURCE_FIXED_FILES = (
     "bench/wcxb_benchmark.py",
+    "bench/source_provenance.py",
     "pyproject.toml",
     "uv.lock",
     "native/Cargo.toml",
@@ -338,6 +344,10 @@ def _source_hashes() -> dict[str, str]:
     paths.update((ROOT / "native" / "src").rglob("*.rs"))
     paths.update((ROOT / "native" / "python").rglob("*.py"))
     paths.update((ROOT / "native" / "python").rglob("*.pyi"))
+    try:
+        paths.update(git_visible_vendor_files(ROOT))
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native vendor source inventory failed: {error}") from error
     py_typed = ROOT / "native" / "python" / "clusy_native" / "py.typed"
     if py_typed.is_file():
         paths.add(py_typed)

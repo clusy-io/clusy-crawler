@@ -48,6 +48,12 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from bench.source_provenance import (  # noqa: E402
+    SourceInventoryError,
+    git_visible_vendor_files,
+    git_visible_vendor_runtime_text_files,
+)
+
 DATASET_REPOSITORY = "https://huggingface.co/datasets/opendatalab/WebMainBench"
 DATASET_REVISION = "5da0972e9b58d0c7891ae75053ced97c268f52e3"
 DATASET_FILENAME = "webmainbench.jsonl"
@@ -93,6 +99,7 @@ PRODUCTION_SOURCE_GLOBS = (
 
 SOURCE_FIXED_FILES = (
     "bench/webmainbench_benchmark.py",
+    "bench/source_provenance.py",
     "app/config.py",
     "app/services/extractor.py",
     "pyproject.toml",
@@ -583,6 +590,10 @@ def _source_paths() -> list[Path]:
         base = ROOT / base_relative
         if base.is_dir():
             paths.update(path for path in base.rglob(pattern) if path.is_file())
+    try:
+        paths.update(git_visible_vendor_files(ROOT))
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native vendor source inventory failed: {error}") from error
     return sorted(paths)
 
 
@@ -621,34 +632,40 @@ def scan_label_leak_guard() -> dict[str, Any]:
     matches: list[dict[str, Any]] = []
     scanned: list[str] = []
     encoded_patterns = tuple(pattern.encode("utf-8") for pattern in LABEL_LEAK_PATTERNS)
+    scan_paths: set[Path] = set()
     for base_relative, glob_pattern in PRODUCTION_SOURCE_GLOBS:
         base = ROOT / base_relative
         if not base.is_dir():
             continue
         for path in sorted(base.rglob(glob_pattern)):
-            if not path.is_file():
-                continue
-            relative = path.relative_to(ROOT).as_posix()
-            scanned.append(relative)
-            content = path.read_bytes().lower()
-            for pattern, encoded in zip(
-                LABEL_LEAK_PATTERNS,
-                encoded_patterns,
-                strict=True,
-            ):
-                if encoded in content:
-                    line_numbers = [
-                        index
-                        for index, line in enumerate(content.splitlines(), start=1)
-                        if encoded in line
-                    ]
-                    matches.append(
-                        {
-                            "file": relative,
-                            "pattern": pattern,
-                            "lines": line_numbers[:20],
-                        }
-                    )
+            if path.is_file():
+                scan_paths.add(path)
+    try:
+        scan_paths.update(git_visible_vendor_runtime_text_files(ROOT))
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native vendor source inventory failed: {error}") from error
+    for path in sorted(scan_paths):
+        relative = path.relative_to(ROOT).as_posix()
+        scanned.append(relative)
+        content = path.read_bytes().lower()
+        for pattern, encoded in zip(
+            LABEL_LEAK_PATTERNS,
+            encoded_patterns,
+            strict=True,
+        ):
+            if encoded in content:
+                line_numbers = [
+                    index
+                    for index, line in enumerate(content.splitlines(), start=1)
+                    if encoded in line
+                ]
+                matches.append(
+                    {
+                        "file": relative,
+                        "pattern": pattern,
+                        "lines": line_numbers[:20],
+                    }
+                )
     report = {
         "passed": not matches,
         "patterns": list(LABEL_LEAK_PATTERNS),

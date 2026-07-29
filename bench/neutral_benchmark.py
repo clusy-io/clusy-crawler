@@ -43,6 +43,11 @@ if TYPE_CHECKING:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from bench.source_provenance import (  # noqa: E402
+    SourceInventoryError,
+    git_visible_vendor_files,
+)
+
 AEB_REPOSITORY = "https://github.com/scrapinghub/article-extraction-benchmark.git"
 AEB_COMMIT = "4a3bc979f76c0df73cb95fe272e2fc1b96f9f010"
 AEB_TREE = "258fee1bb38bcb642afec48cb80e51bd1594c259"
@@ -56,6 +61,7 @@ SPLIT_ALGORITHM = "sha1(item_key) parity: even=dev, odd=test"
 PREDICTION_TRANSFORM = "identity-production-output-v1"
 SOURCE_FIXED_FILES = (
     "bench/neutral_benchmark.py",
+    "bench/source_provenance.py",
     "pyproject.toml",
     "uv.lock",
     "native/Cargo.toml",
@@ -512,6 +518,10 @@ def _source_hashes() -> dict[str, str]:
     paths.update((PROJECT_ROOT / "native" / "src").rglob("*.rs"))
     paths.update((PROJECT_ROOT / "native" / "python").rglob("*.py"))
     paths.update((PROJECT_ROOT / "native" / "python").rglob("*.pyi"))
+    try:
+        paths.update(git_visible_vendor_files(PROJECT_ROOT))
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native vendor source inventory failed: {error}") from error
     py_typed = PROJECT_ROOT / "native" / "python" / "clusy_native" / "py.typed"
     if py_typed.is_file():
         paths.add(py_typed)

@@ -41,6 +41,11 @@ from typing import Any, Literal
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from bench.source_provenance import (  # noqa: E402
+    SourceInventoryError,
+    git_visible_vendor_files,
+)
+
 OFFICIAL_REPOSITORY = "https://github.com/chatnoir-eu/web-content-extraction-benchmark"
 OFFICIAL_COMMIT = "36be6d9c4f96d3c613c21144c4d39e5d0cce93af"
 OFFICIAL_TREE = "b22ec66c35eb201acfa73d1bc8bfddb4f2e46cfb"
@@ -960,18 +965,28 @@ class OfficialScorerPool:
 def _source_paths() -> list[Path]:
     paths: set[Path] = {
         ROOT / "bench/webis_benchmark.py",
+        ROOT / "bench/source_provenance.py",
         ROOT / "pyproject.toml",
         ROOT / "uv.lock",
+        ROOT / "native/Cargo.toml",
+        ROOT / "native/Cargo.lock",
+        ROOT / "native/pyproject.toml",
+        ROOT / "native/python/clusy_native/py.typed",
     }
     for base, patterns in (
         (ROOT / "app", ("*.py",)),
-        (ROOT / "native", ("*.py", "*.pyi", "*.rs", "*.toml", "*.lock")),
+        (ROOT / "native/src", ("*.rs",)),
+        (ROOT / "native/python", ("*.py", "*.pyi")),
     ):
         if not base.exists():
             continue
         for pattern in patterns:
             paths.update(path for path in base.rglob(pattern) if path.is_file())
-    return sorted(paths)
+    try:
+        paths.update(git_visible_vendor_files(ROOT))
+    except SourceInventoryError as error:
+        raise BenchmarkError(f"native vendor source inventory failed: {error}") from error
+    return sorted(path for path in paths if path.is_file())
 
 
 def _source_hashes() -> dict[str, str]:
