@@ -8,7 +8,9 @@ services:
   crawler:
     build:
       context: .
-      target: ${CRAWLER_DOCKER_TARGET:-runtime}
+      # Select the browser target explicitly so sequential builders stop before
+      # the optional quality stages; `runtime` remains a compatibility alias.
+      target: ${CRAWLER_DOCKER_TARGET:-browser-runtime}
       args:
         GIT_SHA: ${GIT_SHA:-unknown}
     image: clusy-crawler:latest

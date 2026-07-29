@@ -58,64 +58,88 @@ jobs:
 
   container-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build deterministic runtime image
+      - name: Build static runtime image
         run: >-
           docker build
           --build-arg GIT_SHA="${GITHUB_SHA}"
-          --target runtime
-          --tag clusy-crawler:ci
+          --target static-runtime
+          --tag clusy-crawler:static-ci
           .
 
-      - name: Verify image identity and non-root runtime
+      - name: Verify static boundary, image identity, and licenses
         run: |
-          test "$(docker image inspect clusy-crawler:ci --format '{{.Config.User}}')" = "crawler"
-          docker image inspect clusy-crawler:ci --format '{{range .Config.Env}}{{println .}}{{end}}' \
+          test "$(docker image inspect clusy-crawler:static-ci --format '{{.Config.User}}')" = "crawler"
+          docker image inspect clusy-crawler:static-ci --format '{{range .Config.Env}}{{println .}}{{end}}' \
             | grep -Fx "GIT_SHA=${GITHUB_SHA}"
-          test "$(docker image inspect clusy-crawler:ci --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${GITHUB_SHA}"
+          docker image inspect clusy-crawler:static-ci --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep -Fx "PLAYWRIGHT_ENABLED=false"
+          docker image inspect clusy-crawler:static-ci --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep -Fx "PLAYWRIGHT_JAVA_SCRIPT_ENABLED=false"
+          test "$(docker image inspect clusy-crawler:static-ci --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = \
+            "https://github.com/clusy-io/clusy-crawler"
+          test "$(docker image inspect clusy-crawler:static-ci --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = \
+            "Apache-2.0"
+          test "$(docker image inspect clusy-crawler:static-ci --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = \
+            "${GITHUB_SHA}"
+          docker run --rm --entrypoint python clusy-crawler:static-ci -c \
+            "import importlib.util as i; assert i.find_spec('playwright') is None; import app.main"
+          docker run --rm --entrypoint sh clusy-crawler:static-ci -c \
+            "test ! -e /ms-playwright \
+             && test ! -e /usr/local/sbin/chrome-devel-sandbox \
+             && ! command -v chromium >/dev/null 2>&1 \
+             && ! command -v chromium-browser >/dev/null 2>&1 \
+             && ! command -v google-chrome >/dev/null 2>&1"
           for notice in LICENSE NOTICE THIRD_PARTY_LICENSES.md; do
-            docker run --rm --entrypoint test clusy-crawler:ci -r "/licenses/${notice}"
+            docker run --rm --entrypoint test clusy-crawler:static-ci -r "/licenses/${notice}"
           done
           for notice in \
             /licenses/native-vendor/NOTICE.md \
             /licenses/native-vendor/rs-trafilatura/LICENSE-APACHE \
             /licenses/native-vendor/rs-trafilatura/LICENSE-MIT \
+            /licenses/native-vendor/rs-trafilatura-broad/LICENSE-APACHE \
+            /licenses/native-vendor/rs-trafilatura-broad/LICENSE-MIT \
             /licenses/native-vendor/html-cleaning/LICENSE-APACHE \
             /licenses/native-vendor/html-cleaning/LICENSE-MIT \
             /licenses/native-vendor/quick_html2md/LICENSE-APACHE \
             /licenses/native-vendor/quick_html2md/LICENSE-MIT; do
-            docker run --rm --entrypoint test clusy-crawler:ci -r "${notice}"
+            docker run --rm --entrypoint test clusy-crawler:static-ci -r "${notice}"
           done
 
-      - name: Runtime, auth, SSRF, static, and sandboxed JS smoke
+      - name: Smoke static auth, SSRF, and crawl paths
         run: |
-          docker run --detach --name clusy-crawler-ci \
+          docker run --detach --name clusy-crawler-static-ci \
             --publish 127.0.0.1:11235:11235 \
-            --user 10001:10001 --init --read-only --shm-size=1g \
+            --user 10001:10001 --init --read-only \
             --tmpfs /tmp:size=512m,mode=1777 \
             --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
-            --security-opt "seccomp=${PWD}/seccomp_profile.json" \
             --pids-limit=256 --memory=4g --cpus=2 \
+            --env-file .env.example \
             --env ENVIRONMENT=prod \
             --env GIT_SHA="${GITHUB_SHA}" \
             --env CRAWL4AI_API_TOKEN=ci-smoke-token \
             --env SERVING_FINGERPRINT_KEY=ci-fingerprint-key-0123456789abcdef \
-            clusy-crawler:ci
+            clusy-crawler:static-ci
 
           for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:11235/health/ready > /tmp/ready.json; then
+            if curl --fail --silent http://127.0.0.1:11235/health/ready > /tmp/static-ready.json; then
               break
             fi
             if [ "${attempt}" = 60 ]; then
-              docker logs clusy-crawler-ci
+              docker logs clusy-crawler-static-ci
               exit 1
             fi
             sleep 1
           done
-          jq -e '.status == "ready" and .checks.playwright == "ok"' /tmp/ready.json
+          jq -e \
+            '.status == "ready" and (.checks | has("playwright") | not)' \
+            /tmp/static-ready.json
+          curl --fail --silent http://127.0.0.1:11235/health/version \
+            | jq -e \
+              '.playwright_enabled == false and .playwright_version == "not installed"'
 
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
             --header 'content-type: application/json' \
@@ -134,15 +158,64 @@ jobs:
             --header 'content-type: application/json' \
             --data '{"urls":["https://example.com"],"js_render":false}' \
             http://127.0.0.1:11235/crawl \
-            | jq -e '.status == "ok" and .results[0].error == null and (.results[0].markdown | length > 0)'
+            | jq -e \
+              '.status == "ok" and .results[0].error == null and .results[0].metadata.rendered == false and (.results[0].markdown | length > 0)'
+          docker rm --force clusy-crawler-static-ci
 
+      - name: Build browser runtime image
+        run: >-
+          docker build
+          --build-arg GIT_SHA="${GITHUB_SHA}"
+          --target browser-runtime
+          --tag clusy-crawler:browser-ci
+          .
+
+      - name: Verify sandboxed browser runtime and JavaScript rendering
+        run: |
+          test "$(docker image inspect clusy-crawler:browser-ci --format '{{.Config.User}}')" = "crawler"
+          docker run --rm --entrypoint python clusy-crawler:browser-ci -c \
+            "import importlib.util as i; assert i.find_spec('playwright') is not None"
+          docker run --rm --entrypoint sh clusy-crawler:browser-ci -c \
+            "test -d /ms-playwright \
+             && test -u /usr/local/sbin/chrome-devel-sandbox \
+             && find /ms-playwright -type f -name chrome -print -quit | grep -q ."
+
+          docker run --detach --name clusy-crawler-browser-ci \
+            --publish 127.0.0.1:11235:11235 \
+            --user 10001:10001 --init --read-only --shm-size=1g \
+            --tmpfs /tmp:size=512m,mode=1777 \
+            --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
+            --security-opt "seccomp=${PWD}/seccomp_profile.json" \
+            --pids-limit=256 --memory=4g --cpus=2 \
+            --env ENVIRONMENT=prod \
+            --env GIT_SHA="${GITHUB_SHA}" \
+            --env CRAWL4AI_API_TOKEN=ci-smoke-token \
+            --env SERVING_FINGERPRINT_KEY=ci-fingerprint-key-0123456789abcdef \
+            clusy-crawler:browser-ci
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11235/health/ready > /tmp/browser-ready.json; then
+              break
+            fi
+            if [ "${attempt}" = 60 ]; then
+              docker logs clusy-crawler-browser-ci
+              exit 1
+            fi
+            sleep 1
+          done
+          jq -e \
+            '.status == "ready" and .checks.playwright == "ok"' \
+            /tmp/browser-ready.json
           curl --fail --silent \
             --header 'authorization: Bearer ci-smoke-token' \
             --header 'content-type: application/json' \
             --data '{"urls":["https://example.com"],"js_render":true}' \
             http://127.0.0.1:11235/crawl \
-            | jq -e '.status == "ok" and .results[0].error == null and .results[0].metadata.rendered == true'
+            | jq -e \
+              '.status == "ok" and .results[0].error == null and .results[0].metadata.rendered == true'
 
-      - name: Stop smoke container
+      - name: Stop smoke containers
         if: always()
-        run: docker rm --force clusy-crawler-ci 2>/dev/null || true
+        run: |
+          docker rm --force clusy-crawler-static-ci 2>/dev/null || true
+          docker rm --force clusy-crawler-browser-ci 2>/dev/null || true

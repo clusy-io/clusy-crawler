@@ -11,7 +11,8 @@ Apache-2.0. Use the Docker image, or build from source with Python 3.12 and
 Rust 1.85+.
 
 ```bash
-docker build --build-arg GIT_SHA="$(git rev-parse HEAD)" -t clusy-crawler .
+docker build --target browser-runtime \
+  --build-arg GIT_SHA="$(git rev-parse HEAD)" -t clusy-crawler .
 docker run --rm -d --name clusy-crawler -p 11235:11235 \
   --user 10001:10001 --init --read-only --shm-size=1g \
   --tmpfs /tmp:size=512m,mode=1777 \
@@ -914,7 +915,7 @@ crawler/
 │   └── *_BENCHMARK.md                  # Reproduction and claim boundaries
 ├── docs/SOTA_ARCHITECTURE.md            # Architecture record and promotion gates
 ├── tests/                               # Unit, integration, load, and contract tests
-├── Dockerfile                           # Multi-stage FastAPI/Chromium runtime
+├── Dockerfile                           # Static, browser, quality, and compatibility runtimes
 ├── docker-compose.yml                   # Self-contained crawler + Redis stack
 ├── pyproject.toml / uv.lock             # Locked Python project and tooling
 ├── .env.example                         # Environment configuration template
@@ -980,8 +981,9 @@ Use `".[dev,llm]"` in the pip command if structured extraction is required.
 ### Docker Compose
 
 The checked-in Compose stack is self-contained: it builds the deterministic
-runtime image, starts a bounded Redis cache, and publishes the crawler on
-`localhost:11235`.
+browser runtime, starts a bounded Redis cache, and publishes the crawler on
+`localhost:11235`. Compose selects `browser-runtime` explicitly; `runtime`
+remains the browser-capable compatibility alias for existing Docker users.
 
 ```bash
 cp .env.example .env
@@ -999,7 +1001,8 @@ deployment, set `ENVIRONMENT=prod`, an exact `GIT_SHA`, a non-empty
 ### Bare Docker
 
 ```bash
-docker build --build-arg GIT_SHA="$(git rev-parse HEAD)" -t clusy-crawler .
+docker build --target browser-runtime \
+  --build-arg GIT_SHA="$(git rev-parse HEAD)" -t clusy-crawler .
 docker run --rm -d --name clusy-crawler -p 11235:11235 --shm-size=1g \
   --user 10001:10001 --init --read-only \
   --tmpfs /tmp:size=512m,mode=1777 \
@@ -1016,23 +1019,52 @@ curl -sf -X POST http://localhost:11235/crawl \
   -d '{"urls":["https://example.com"]}'
 ```
 
-The Dockerfile is a multi-stage build: digest-pinned `rust:1.85-slim` supplies
-the toolchain, a digest-pinned Python 3.12/maturin stage builds a wheel using
-`native/Cargo.lock` and exports hash-locked Python requirements from `uv.lock`.
-The final Python 3.12 image receives only those verified dependencies, the
-wheel, Chromium, and the application. The Rust compiler and Cargo caches are
-not copied into the runtime stage. The service runs as the non-root `crawler`
-user (UID 10001). `seccomp_profile.json` is the Playwright 1.60 profile derived
-from Docker's default policy with `clone`, `setns`, and `unshare` permitted so
-Chromium can create its user namespace sandbox. The checked-in Compose service
-applies it automatically. It intentionally does not set
-`no-new-privileges` or drop every Linux capability: on hosts that disable
-unprivileged user namespaces, either setting would prevent Chromium's
-version-matched SUID sandbox helper from providing the secure fallback. The
-application process still runs non-root, and Chromium's sandbox remains
-explicitly enabled.
+The Dockerfile is an ordered multi-stage DAG. Digest-pinned Rust and Python
+builder stages compile the `clusy-native` wheel using `native/Cargo.lock` and
+export hash-locked Python requirements from `uv.lock`. `runtime-core` installs
+the native wheel, application, Apache-2.0 notices under `/licenses`, OCI
+source/revision/license labels, non-root user, health check, and shared command.
+The Rust compiler and Cargo caches never enter a service image.
 
-The default `runtime` image is deterministic and does not contain MinerU-HTML.
+Four service targets are available:
+
+- `static-runtime` is declared before every browser and quality stage. It
+  prunes Playwright and its otherwise-unused `greenlet` and `pyee`
+  dependencies, contains no Chromium, and bakes
+  `PLAYWRIGHT_ENABLED=false` plus
+  `PLAYWRIGHT_JAVA_SCRIPT_ENABLED=false`.
+- `browser-runtime` adds the complete locked Playwright graph, its matching
+  Chromium build, and the version-matched SUID sandbox helper. This is the
+  explicit Compose and documented Docker default.
+- `quality-runtime` extends `browser-runtime` with the separately verified,
+  revision-pinned MinerU-HTML wheel.
+- `runtime` is a compatibility alias for `browser-runtime`, preserving
+  historical unqualified `docker build .` behavior.
+
+Build the smaller deterministic static image when JavaScript rendering is not
+needed. Its baked Playwright flags must not be overridden to `true`, because
+the corresponding dependency and browser are intentionally absent. The
+checked-in `.env.example` deliberately leaves both profile-selecting flags
+unset so it is safe to reuse with either image target:
+
+```bash
+docker build --target static-runtime \
+  --build-arg GIT_SHA="$(git rev-parse HEAD)" -t clusy-crawler:static .
+# Or with Compose:
+GIT_SHA="$(git rev-parse HEAD)" \
+  CRAWLER_DOCKER_TARGET=static-runtime docker compose build crawler
+```
+
+`seccomp_profile.json` is the Playwright 1.60 profile derived from Docker's
+default policy with `clone`, `setns`, and `unshare` permitted so Chromium can
+create its user namespace sandbox. The checked-in Compose service applies it
+automatically. It intentionally does not set `no-new-privileges` or drop every
+Linux capability: on hosts that disable unprivileged user namespaces, either
+setting would prevent Chromium's version-matched SUID sandbox helper from
+providing the secure fallback. The application process still runs as the
+non-root `crawler` user (UID 10001), and Chromium's sandbox remains explicitly
+enabled.
+
 Build the opt-in, revision-pinned quality image only when an operator endpoint
 is available:
 
@@ -1046,15 +1078,18 @@ GIT_SHA="$(git rev-parse HEAD)" \
 
 ### Operational notes
 
-- **Memory**: Chromium is the heaviest component. Observe real workload RSS and
-  lower `MAX_CONCURRENT_TASKS` / `MAX_CONCURRENT_PAGES` if the container
-  approaches its limit. The Compose example sets a 4 GiB hard limit.
-- **`/dev/shm`**: the examples allocate 1 GiB for Chromium. Increase it if
-  browser processes crash under parallel rendering.
-- **Browser installation**: Chromium is included in the runtime image whether
-  or not `PLAYWRIGHT_ENABLED` is false. That setting disables use at runtime; it
-  does not create a smaller image. A static-only image requires a separate
-  Dockerfile that omits the browser packages and install step.
+- **Memory**: Chromium is the heaviest component in `browser-runtime`,
+  `quality-runtime`, and `runtime`. Observe real workload RSS and lower
+  `MAX_CONCURRENT_TASKS` / `MAX_CONCURRENT_PAGES` if the container approaches
+  its limit. `static-runtime` avoids the browser processes and binaries. The
+  Compose example sets a 4 GiB hard limit for either profile.
+- **`/dev/shm`**: the browser examples allocate 1 GiB for Chromium. Increase it
+  if browser processes crash under parallel rendering; static-only deployments
+  do not need browser shared memory.
+- **Browser installation**: Chromium is included only in `browser-runtime`,
+  `quality-runtime`, and the compatibility `runtime` alias. Use
+  `static-runtime` for a genuinely browser-free image; merely disabling
+  Playwright at runtime does not remove browser packages from a browser image.
 - **Browser isolation**: URL validation reduces SSRF risk but cannot close every
   DNS/proxy time-of-check-to-time-of-use gap. Chromium's sandbox is explicitly
   enabled by default, the image runs non-root, and Compose applies the pinned

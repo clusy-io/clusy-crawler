@@ -40,6 +40,12 @@ Optional extra `[llm]` (off by default for source installs):
 `anthropic>=0.69` (MIT). The checked-in Dockerfile installs this package in the
 runtime image, but the feature remains inactive unless configured.
 
+The Dockerfile's `static-runtime` deployment profile uses the frozen lock graph
+with `playwright` pruned and therefore also omits its otherwise-unreferenced
+`greenlet` and `pyee` dependencies. The `browser-runtime`, `quality-runtime`,
+and compatibility `runtime` targets retain the complete direct dependency
+graph shown above.
+
 Optional extra `[quality]` (off by default) pins
 `mineru-html[openai]` (Apache-2.0) to upstream revision
 `73cf266690befd209cae7e6fdff9716d5b31a976`. It provides the MinerU-HTML v1.1
@@ -107,6 +113,8 @@ effective license of your distribution.
 
 Playwright downloads its matching Chromium build during local setup
 (`playwright install chromium`) or during the Docker image build. The resulting
-browser binaries are included in the runtime Docker image. Chromium uses the
-BSD license and contains components under additional licenses; retain
-Chromium's bundled third-party notices when redistributing the image.
+browser binaries are included in `browser-runtime`, `quality-runtime`, and the
+compatibility `runtime` alias. `static-runtime` contains neither Playwright nor
+Chromium. Chromium uses the BSD license and contains components under
+additional licenses; retain Chromium's bundled third-party notices when
+redistributing a browser-capable image.

@@ -31,7 +31,9 @@ RUN uv export \
     --extra llm \
     --no-emit-project \
     --no-emit-package clusy-native \
-    --output-file /requirements.txt
+    --prune playwright \
+    --output-file /static-requirements.txt \
+    && ! grep -Eq '^(greenlet|playwright|pyee)==' /static-requirements.txt
 
 WORKDIR /build/native
 RUN maturin build \
@@ -41,41 +43,7 @@ RUN maturin build \
     --out /wheels
 
 
-# Keep the VCS package itself out of the hash-locked requirements file. It is
-# built into a wheel from the exact revision below; uv still exports all of its
-# lockfile-resolved transitive dependencies with hashes.
-FROM native-builder AS quality-builder
-
-WORKDIR /build
-RUN uv export \
-    --frozen \
-    --no-dev \
-    --extra llm \
-    --extra quality \
-    --no-emit-project \
-    --no-emit-package clusy-native \
-    --no-emit-package mineru-html \
-    --output-file /quality-requirements.txt \
-    && ! grep -q "git+" /quality-requirements.txt
-
-RUN git init /build/mineru-html \
-    && git -C /build/mineru-html remote add origin \
-        https://github.com/opendatalab/MinerU-HTML.git \
-    && git -C /build/mineru-html fetch --depth 1 origin \
-        73cf266690befd209cae7e6fdff9716d5b31a976 \
-    && git -C /build/mineru-html checkout --detach FETCH_HEAD \
-    && test "$(git -C /build/mineru-html rev-parse HEAD)" = \
-        "73cf266690befd209cae7e6fdff9716d5b31a976"
-RUN SOURCE_DATE_EPOCH=1774521487 uv build \
-        --wheel \
-        --out-dir /quality-wheels \
-        /build/mineru-html \
-    && echo \
-        "ff55e06b0f463a89e5a87015a1afd8d8468759166931fb92661daf340cbd06fe  /quality-wheels/mineru_html-1.1.2-py3-none-any.whl" \
-        | sha256sum --check -
-
-
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS runtime-base
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS runtime-core
 
 ARG GIT_SHA=unknown
 LABEL org.opencontainers.image.source="https://github.com/clusy-io/clusy-crawler" \
@@ -83,30 +51,18 @@ LABEL org.opencontainers.image.source="https://github.com/clusy-io/clusy-crawler
       org.opencontainers.image.revision="${GIT_SHA}"
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox \
     GIT_SHA=${GIT_SHA}
 
 WORKDIR /app
 
 COPY --from=native-builder /wheels /wheels
-COPY --from=native-builder /requirements.txt /requirements.txt
-RUN pip install --no-cache-dir --require-hashes -r /requirements.txt \
+COPY --from=native-builder /static-requirements.txt /static-requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r /static-requirements.txt \
     && pip install --no-cache-dir --no-deps /wheels/*.whl \
-    && rm -rf /wheels
+    && rm -rf /wheels /static-requirements.txt
 
-# Preserve Playwright's version-matched SUID helper as a secure fallback on
-# container platforms that block Chromium's unprivileged-user-namespace
-# sandbox. Do not disable Chromium's sandbox for untrusted pages.
-RUN python -m playwright install --with-deps chromium \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --uid 10001 crawler \
-    && chown -R crawler:crawler /app /home/crawler \
-    && chmod -R a=rX /ms-playwright \
-    && browser_sandbox="$(find /ms-playwright -type f -name chrome_sandbox -print -quit)" \
-    && test -n "${browser_sandbox}" \
-    && install -o root -g root -m 4755 \
-        "${browser_sandbox}" /usr/local/sbin/chrome-devel-sandbox
+RUN useradd --create-home --uid 10001 crawler \
+    && chown -R crawler:crawler /app /home/crawler
 
 COPY --chown=crawler:crawler \
     LICENSE \
@@ -144,10 +100,93 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=5 --start-period=30s \
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "11235", "--log-level", "info"]
 
 
+# Static-only production target. It is deliberately declared before every
+# browser and quality stage so sequential builders stop without resolving or
+# installing optional Playwright, MinerU-HTML, Torch, or CUDA layers.
+FROM runtime-core AS static-runtime
+
+ENV PLAYWRIGHT_ENABLED=false \
+    PLAYWRIGHT_JAVA_SCRIPT_ENABLED=false
+
+
+# Export the full browser-capable dependency graph only after static-runtime.
+# Source installs retain Playwright as a normal dependency; the static image is
+# the narrowly pruned deployment profile.
+FROM native-builder AS browser-deps-builder
+
+WORKDIR /build
+RUN uv export \
+    --frozen \
+    --no-dev \
+    --extra llm \
+    --no-emit-project \
+    --no-emit-package clusy-native \
+    --output-file /browser-requirements.txt \
+    && grep -q '^playwright==' /browser-requirements.txt
+
+
+FROM runtime-core AS browser-runtime
+
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox
+
+COPY --from=browser-deps-builder /browser-requirements.txt /browser-requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r /browser-requirements.txt \
+    && rm -f /browser-requirements.txt
+
+# Some container hosts block Chromium's unprivileged-user-namespace sandbox.
+# Preserve Playwright's version-matched SUID helper as the secure fallback
+# instead of disabling Chromium's sandbox for untrusted pages.
+RUN python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod -R a=rX /ms-playwright \
+    && browser_sandbox="$(find /ms-playwright -type f -name chrome_sandbox -print -quit)" \
+    && test -n "${browser_sandbox}" \
+    && install -o root -g root -m 4755 \
+        "${browser_sandbox}" /usr/local/sbin/chrome-devel-sandbox
+
+USER crawler
+
+
+# Keep the VCS package itself out of the hash-locked requirements file. It is
+# built into a wheel from the exact revision below; uv still exports all of its
+# lockfile-resolved transitive dependencies with hashes.
+FROM browser-deps-builder AS quality-builder
+
+WORKDIR /build
+RUN uv export \
+    --frozen \
+    --no-dev \
+    --extra llm \
+    --extra quality \
+    --no-emit-project \
+    --no-emit-package clusy-native \
+    --no-emit-package mineru-html \
+    --output-file /quality-requirements.txt \
+    && ! grep -q "git+" /quality-requirements.txt
+
+RUN git init /build/mineru-html \
+    && git -C /build/mineru-html remote add origin \
+        https://github.com/opendatalab/MinerU-HTML.git \
+    && git -C /build/mineru-html fetch --depth 1 origin \
+        73cf266690befd209cae7e6fdff9716d5b31a976 \
+    && git -C /build/mineru-html checkout --detach FETCH_HEAD \
+    && test "$(git -C /build/mineru-html rev-parse HEAD)" = \
+        "73cf266690befd209cae7e6fdff9716d5b31a976"
+RUN SOURCE_DATE_EPOCH=1774521487 uv build \
+        --wheel \
+        --out-dir /quality-wheels \
+        /build/mineru-html \
+    && echo \
+        "ff55e06b0f463a89e5a87015a1afd8d8468759166931fb92661daf340cbd06fe  /quality-wheels/mineru_html-1.1.2-py3-none-any.whl" \
+        | sha256sum --check -
+
+
 # Opt-in image target containing the pinned MinerU-HTML OpenAI-compatible
 # production path. Install third-party dependencies from the hash-locked export
 # first, then install only the separately built, revision-pinned VCS wheel.
-FROM runtime-base AS quality-runtime
+FROM browser-runtime AS quality-runtime
 
 USER root
 COPY --from=quality-builder /quality-requirements.txt /quality-requirements.txt
@@ -161,6 +200,6 @@ ENV MINERU_HTML_SOURCE_REVISION=73cf266690befd209cae7e6fdff9716d5b31a976
 USER crawler
 
 
-# Keep the lightweight deterministic image as both the named and implicit
-# default target. `docker build .` therefore does not pull/build MinerU-HTML.
-FROM runtime-base AS runtime
+# Preserve the historical browser-capable default alias. Compose and CI select
+# explicit early targets so sequential builders stop before the quality stage.
+FROM browser-runtime AS runtime
