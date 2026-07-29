@@ -1,4 +1,5 @@
 mod document_ir;
+mod document_ir_v2;
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -99,5 +100,6 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(extract_html, module)?)?;
     module.add_function(wrap_pyfunction!(backend_version, module)?)?;
     document_ir::register(module)?;
+    document_ir_v2::register(module)?;
     Ok(())
 }

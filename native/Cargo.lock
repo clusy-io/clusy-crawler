@@ -293,7 +293,6 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 [[package]]
 name = "html-cleaning"
 version = "0.2.0"
-source = "git+https://github.com/Murrough-Foley/html-cleaning#ba5f8e95e4dc8a6af1f6742c8f31957a47b2327e"
 dependencies = [
  "dom_query",
  "thiserror",
@@ -748,7 +747,6 @@ dependencies = [
 [[package]]
 name = "quick_html2md"
 version = "0.1.0"
-source = "git+https://github.com/Murrough-Foley/quick_html2md#6260677b3aed7bfc83bc7fae90599120467c4c55"
 dependencies = [
  "dom_query",
 ]
@@ -812,7 +810,6 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 [[package]]
 name = "rs-trafilatura"
 version = "0.1.0"
-source = "git+https://github.com/Murrough-Foley/rs-trafilatura?rev=9261e087deca9c7a38ddc284a60dd62a47de7b33#9261e087deca9c7a38ddc284a60dd62a47de7b33"
 dependencies = [
  "chrono",
  "dom_query",
