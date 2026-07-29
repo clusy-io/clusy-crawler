@@ -145,12 +145,12 @@ remain clean private-revision `a19ae17` diagnostics and are not represented as
 OSS runs. None of these fixed-corpus results proves universal, live-crawler,
 Exa-comparative, or Firecrawl-comparative SOTA.
 
-The Clusy-hosted platform currently deploys private source revision `0fb00ee`
+The Clusy-hosted platform currently deploys private source revision `a51212c`
 as OCI digest
-`sha256:fa54e92290f3f6670840c827337fac101c073a08ef212a87cf6f7d0dcda678ff`.
-Its native fallback optimization is mirrored in this repository at public
-revision `f5647e1`; the differing commit IDs reflect the two repository
-histories.
+`sha256:86b3e6e4003dff15fdd8096d4d04a30df1068fea9cdf0cbb501ff509ee397b79`.
+Its fallback dead-work removal is mirrored here at public revision `f5647e1`;
+the direct parsed-DOM clone is mirrored at `ffd61db`. Differing private/public
+commit IDs reflect the two repository histories.
 
 | Suite / profile | Pages | Quality | Extraction throughput | Honest comparison |
 |---|---:|---:|---:|---|
@@ -174,6 +174,7 @@ histories.
 | WCXB `adaptive` | public `9c7cc0a` | `bench/results/wcxb/20260729T-oss-adaptive-9c7cc0a` | `c02cccf91d77540de9e52a795285abcfe9baae244edf236a5e28b70b056908ba` |
 | Webis | private `a19ae17` | `bench/results/webis-v3-a19ae17-20260729T1028Z` | `4fae36a0d91b369f1858f029b04e005d8ba4372d67001060a1e3b8106c5e626f` |
 | WebMainBench | private `a19ae17` | `bench/results/webmainbench/20260729T101852Z` | `08530d7bc3e15cabdc94a2b405a996e6d277880cee8b9b3913d0c19c5ef04991` |
+| Native DOM clone A/B | public `ffd61db` / private `a51212c` | `bench/evidence/native-dom-clone-a51212c` | `report.json`: `9cb75a3fc485c0cd5ff8d006f0cc33a8c37ee49c980ca2842a250e80f606839e` |
 
 All fixed-corpus runs completed with zero extraction errors; Webis also had
 zero empty predictions. Direct OSS WCXB `adaptive` changed 83 outputs versus
@@ -210,6 +211,27 @@ while the two-run mean rose from `129.4730` to `142.0023` pages/s (`+9.68%`).
 That direct measurement includes local file reads and JSON parsing with two
 threads; neither result is an HTTP-service, live-web, or universal throughput
 claim.
+
+The next independent cross-order A/B replaced serialize-and-reparse DOM clones
+with `Document::clone()`. Against runtime baseline `0fb00ee`, the timed
+candidate contained exactly that one-line runtime change; private `a51212c`
+and public `ffd61db` add only focused tests around it. Across WCXB's 2,008
+pages, all ten returned extraction fields stayed exact (aggregate SHA-256
+`ddb0ff4f7a1d209a5baf3658e9da1afb42ed83317d140dbffe0efac68916aec2`)
+while the two-run mean rose from `93.2901` to `104.3447` pages/s
+(`+11.85%`). Across all 7,809 WebMainBench pages, those fields stayed exact
+(SHA-256
+`cf85a7510cb3ecca15d38abbe920a73cfc7780ad705ad3b540b403b3f8339175`)
+while throughput rose from `152.2089` to `174.9288` pages/s (`+14.93%`).
+A deterministic 20,000-page malformed-HTML set was also exact and improved
+from `7,712.19` to `8,161.16` pages/s (`+5.82%`). A constructed
+`<form><plaintext>` fallback intentionally changed: direct cloning removed
+serializer-inserted closing-tag contamination while preserving source text.
+Only two timing samples per main variant were collected, so these remain local
+implementation results without a confidence interval, service claim, or
+vendor comparison. See the checked-in
+[`native-dom-clone-a51212c` evidence record](bench/evidence/native-dom-clone-a51212c/PROTOCOL.md)
+for exact lineage, samples, hashes, gates, and limitations.
 
 The source-backed v2 refiner has also been evaluated in a 545-page,
 reference-isolated shadow run:

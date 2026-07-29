@@ -1,0 +1,212 @@
+{
+  "schema": "clusy.native.dom-clone-ab.compact-evidence.v1",
+  "artifact_path": "bench/evidence/native-dom-clone-a51212c/report.json",
+  "recorded_at_utc": "2026-07-29T15:36:00Z",
+  "verdict": {
+    "promotion": "GREEN",
+    "blocker": 0,
+    "major": 0,
+    "minor": 1,
+    "minor_summary": "The timed candidate wheel contains the exact promoted one-line runtime change but predates the promoted commit's test-only additions."
+  },
+  "claim_boundary": {
+    "sota_claim": false,
+    "service_benchmark": false,
+    "vendor_comparison": false,
+    "quality_score_claim": false,
+    "scope": "Local closed-loop two-worker implementation A/B.",
+    "prohibited_conclusions": [
+      "Universal or benchmark-wide SOTA",
+      "A comparison with Exa, Firecrawl, or any live vendor",
+      "HTTP, rendering, network, service-latency, reliability, or cost performance",
+      "A population-level statistically significant speedup"
+    ]
+  },
+  "lineage": {
+    "baseline": {
+      "git_commit": "0fb00ee12c6bd02852dd08329f641f303f568570",
+      "git_tree": "1b7688177e7f41e8faf519ae7e070b6a0a6e39e3",
+      "native_source_sha256": "72b679203a51bbff077109cc413efcf31c94eab99cee1a3d91b8e445efc4b157"
+    },
+    "timed_candidate_snapshot": {
+      "base_commit": "0fb00ee12c6bd02852dd08329f641f303f568570",
+      "runtime_path": "native/vendor/rs-trafilatura-broad/src/dom.rs",
+      "runtime_before": "Document::from(doc.html().to_string())",
+      "runtime_after": "doc.clone()",
+      "diff_sha256": "d7ec54bcd8f139988356e60f2d4f181cbc0b052266db557acee74fafc3295c2d",
+      "native_source_sha256": "11da6ff333edf75e0f906bcc7769637ae94e52fd43a61d42ece5207f1ab9a8b3"
+    },
+    "promoted_private": {
+      "git_commit": "a51212c38a41522110bb3a556d88858ee15fbaba",
+      "git_tree": "939938ef1d20247abfa32f406f4182b0386f785f",
+      "runtime_changes": 1,
+      "other_changes": "Focused tests and test comments only"
+    },
+    "promoted_public": {
+      "git_commit": "ffd61dbe68c81ad0c85e0c30374d4e3c165e2ae7"
+    },
+    "production": {
+      "revision": "clusy-crawler--v2-a51212c-static",
+      "source_commit": "a51212c38a41522110bb3a556d88858ee15fbaba",
+      "source_archive_sha256": "c34cf963834573411fa6e8d9fc34bb9286a163549a8012ba842d15551a0d5779",
+      "acr_run": "chf",
+      "image_digest": "sha256:86b3e6e4003dff15fdd8096d4d04a30df1068fea9cdf0cbb501ff509ee397b79",
+      "traffic_percent": 100,
+      "health": "Healthy",
+      "rollback_revisions_healthy": 4
+    }
+  },
+  "source_audit_bundle": {
+    "full_report_sha256": "a143322f6b941211f0472083c21bb094bfac906cbeeaa3c5114c6b0bf28473ec",
+    "full_protocol_sha256": "1c9249025440c4cc1eb3b1fdae13d693d5d5141490b54cccdd0c63a67eb1664d",
+    "raw_bundle_checked_in": false,
+    "reason": "The compact checked-in record retains claim-relevant lineage, samples, hashes, gates, and limitations; machine-local raw paths and binaries are ephemeral."
+  },
+  "corpora": {
+    "wcxb": {
+      "pages": 2008,
+      "repository_commit": "c039d5ee9f5a3a984a0e167e63aacd04e76e78a9",
+      "git_tree": "1d3d493fed8c3e01f3c62f817b2123548c5cfd1a",
+      "input_tree_sha256": "4d5c9be2094ba5a2b5a8046fdc846b0518a799b60710b4581b457f9731bc3aae",
+      "labels_used": false
+    },
+    "webmainbench": {
+      "pages": 7809,
+      "declared_revision": "5da0972e9b58d0c7891ae75053ced97c268f52e3",
+      "jsonl_bytes": 1354734941,
+      "jsonl_sha256": "85765fe798f07c14eb1c92945046eaa56e0da59663f70b9c498647d7dfd78884",
+      "labels_used": false
+    },
+    "malformed_synthetic": {
+      "pages": 20000,
+      "seed_hex": "0xC1057",
+      "generator_sha256": "d9a1744f1cdf4b4fc1460f535755979724d3a132bbd87b4c0b759ecfee5af61b"
+    }
+  },
+  "protocol": {
+    "workers": 2,
+    "chunk_size": 32,
+    "run_order": [
+      "baseline_1",
+      "candidate_1",
+      "candidate_2",
+      "baseline_2"
+    ],
+    "hashed_extraction_fields": [
+      "text",
+      "plain_text",
+      "article_text",
+      "title",
+      "description",
+      "language",
+      "page_type",
+      "word_count",
+      "confidence",
+      "strategy"
+    ],
+    "timed_region": "Local corpus reads, gzip or JSONL parsing, thread-pool scheduling, native extraction, canonical JSON serialization, and SHA-256 hashing.",
+    "excluded": [
+      "Python process startup",
+      "Module imports before timer creation",
+      "HTTP fetching",
+      "Browser rendering",
+      "Ground-truth scoring"
+    ]
+  },
+  "results": {
+    "wcxb": {
+      "pages": 2008,
+      "output_sha256_all_runs": "ddb0ff4f7a1d209a5baf3658e9da1afb42ed83317d140dbffe0efac68916aec2",
+      "outputs_exact": true,
+      "baseline_samples_seconds": [
+        21.889294374966994,
+        21.171193541027606
+      ],
+      "candidate_samples_seconds": [
+        19.41705191717483,
+        19.07381183304824
+      ],
+      "baseline_mean_pages_per_second": 93.2900992423919,
+      "candidate_mean_pages_per_second": 104.34474546876214,
+      "pages_per_second_gain_percent": 11.849752884973785,
+      "elapsed_time_reduction_percent": 10.61210494104542,
+      "confidence_interval": null
+    },
+    "webmainbench": {
+      "pages": 7809,
+      "output_sha256_all_runs": "cf85a7510cb3ecca15d38abbe920a73cfc7780ad705ad3b540b403b3f8339175",
+      "outputs_exact": true,
+      "baseline_samples_seconds": [
+        51.75227100006305,
+        50.86438416596502
+      ],
+      "candidate_samples_seconds": [
+        44.81024979217909,
+        44.47304845787585
+      ],
+      "baseline_mean_pages_per_second": 152.20891097756495,
+      "candidate_mean_pages_per_second": 174.92882860286215,
+      "pages_per_second_gain_percent": 14.926798621301508,
+      "elapsed_time_reduction_percent": 12.993365350293761,
+      "confidence_interval": null
+    },
+    "malformed_synthetic": {
+      "pages": 20000,
+      "output_sha256_all_runs": "40c7678b303b2347baabc111d1f48ff5e3e5ec0c72093abb6005802c4e805c32",
+      "outputs_exact": true,
+      "baseline_samples_seconds": [
+        2.5862042501103133,
+        2.6004314590245485
+      ],
+      "candidate_samples_seconds": [
+        2.460043374914676,
+        2.4412942500784993
+      ],
+      "baseline_mean_pages_per_second": 7712.186322451443,
+      "candidate_mean_pages_per_second": 8161.156889859876,
+      "pages_per_second_gain_percent": 5.821573139401548,
+      "elapsed_time_reduction_percent": 5.5006385669078455,
+      "confidence_interval": null
+    },
+    "article_body_control": {
+      "pages": 5000,
+      "output_sha256_both_variants": "9d9ed9966060c6d66b8e732e8a9b2c4b0e9c73e6cf9daba37388e1e3a3eee28a",
+      "outputs_exact": true,
+      "timing_claimable": false
+    }
+  },
+  "intentional_correctness_difference": {
+    "case": "form_plaintext_fallback",
+    "baseline_behavior": "Serializer-inserted closing tags were reparsed as plaintext.",
+    "candidate_behavior": "Source plaintext is preserved without serializer-inserted closing-tag contamination.",
+    "source_text_removed": false
+  },
+  "gates": {
+    "private_ci": {
+      "run_id": 30465266738,
+      "conclusion": "success"
+    },
+    "public_ci": {
+      "run_id": 30465279502,
+      "conclusion": "success"
+    },
+    "broad_cargo_test_all_targets": "pass",
+    "broad_cargo_clippy_lib": "pass_with_existing_warnings",
+    "native_rust_tests": "15/15 pass",
+    "relevant_python_tests": "107/107 pass",
+    "promoted_focused_tests": "pass",
+    "revision_health": "pass",
+    "revision_auth": "pass",
+    "revision_ssrf": "pass",
+    "revision_live_crawl": "pass",
+    "main_url_version_identity": "pass",
+    "main_url_live_crawl": "pass"
+  },
+  "limitations": [
+    "Only two timed samples per main variant; no confidence interval or significance test.",
+    "The timed wheel is not bit-identical to a build of the later test-augmented promoted commit.",
+    "No per-page outputs, raw logs, p50/p95 distribution, RSS, energy, or hardware counters were retained.",
+    "Other interactive and system processes were present.",
+    "No vendor API, vendor key, live-vendor output, or network benchmark was used."
+  ]
+}
