@@ -85,53 +85,61 @@ predictions, and artifact hashes. Article-body and general main-content
 Markdown remain separate contracts; no benchmark labels enter runtime routing
 and no scoring-only cleanup is applied.
 
-### Published pre-V2 release evidence
+### Current public AEB validation
 
 The full AEB corpus was run from clean public commit
-[`c3ae00d`](https://github.com/clusy-io/clusy-crawler/commit/c3ae00d90b19003b7c635af5dec87ba177abbd85)
+[`4252a0b`](https://github.com/clusy-io/clusy-crawler/commit/4252a0b71a0a2157194d3466445b70bb373d73b6)
 through the production asynchronous entry point:
 
 | Suite / profile | Pages | Precision | Recall | F1 | Extraction throughput |
 |---|---:|---:|---:|---:|---:|
-| AEB `article_body` | 181 | `0.951014` | `0.989665` | **`0.969955`** | **133.3 pages/s** |
+| AEB `article_body` | 181 | `0.955147` | `0.989721` | **`0.972127`** | **137.844 pages/s** |
 
-This exactly matches the embedded, pinned `rs-trafilatura` article backend on
-AEB's aggregate metrics. Against Trafilatura 2.0, ΔF1 was `+0.012452`, with a
-paired-bootstrap 95% CI of `[+0.002093, +0.023745]` and
-`P(Clusy > Trafilatura) = 0.9892`. It is a narrow,
-**SOTA-matching article-body result**, not an independent algorithmic win:
-Clusy intentionally embeds that pinned Rust backend.
+Against the pinned `rs-trafilatura` prediction, ΔF1 was `+0.002172`, with a
+paired-bootstrap 95% CI of `[0, +0.006589]`, no observed loss, and
+`P(Clusy > rs-trafilatura) = 0.6349`. Against Trafilatura 2.0, ΔF1 was
+`+0.014624`, with a 95% CI of `[+0.005346, +0.025342]` and
+`P(Clusy > Trafilatura) = 0.9995`. This remains a narrow article-body result,
+not an independent algorithmic win: Clusy embeds and patches that pinned Rust
+backend.
 
 The clean run used all 181 pages, two workers, five warmup pages, and 10,000
 paired-bootstrap replicates. It completed with zero extraction errors, p50
-12.97 ms, p95 30.59 ms, and 246,333,440 bytes peak RSS. The harness marked it
-claimable only within the AEB article-body extraction scope. This result
-predates V2 and is not evidence for V2's broader `balanced` profile. Throughput
-is an in-memory extractor measurement on an Apple M4 Pro, not a live-network
-crawl result or a portable hardware guarantee.
+12.933 ms, p95 26.488 ms, and 264,536,064 bytes peak RSS. Its ignored artifact
+directory is `bench/results/aeb/20260729T090959Z`; the `manifest.json` SHA-256
+is `7b014b56cd8d99dc8280bb2ac7b5f86e3c55972fb4c380289b9025fe13be29b0`.
+The harness marked it claimable only within the AEB article-body extraction
+scope. Throughput is an in-memory extractor measurement on an Apple M4 Pro,
+not a live-network crawl result or a portable hardware guarantee.
 
-### Clean V2 fixed-corpus evidence — private execution, OSS source audit
+A generic outermost-source-root guard removed repeated serialization of one
+nested JSON-LD subtree. That one prediction changed while the other 180 are
+byte-identical to the earlier clean public run; equal text from disjoint source
+nodes remains. There is no page, hostname, or benchmark-specific condition.
 
-The following results were executed from clean private revision `10ff0c1`,
-with WebMainBench's primary clean repeat from documentation-only child
-`7f202f4`. They were not executed from OSS commit `837ddda`.
+### Fixed-corpus evidence — public AEB plus private source-audited V2 suites
+
+The AEB row below is the direct clean public `4252a0b` run above. WCXB, Webis,
+and the original WebMainBench run were executed from clean private revision
+`10ff0c1`; WebMainBench's primary repeat is from documentation-only child
+`7f202f4`. Those three suites were not executed from OSS commit `837ddda`.
 
 A post-run SHA-256 audit found the benchmark drivers, core extraction
 implementation, vendored native algorithm sources, Cargo lockfiles, and
-`uv.lock` byte-identical to OSS parent `837ddda`. Of each AEB, WCXB, and
-WebMainBench sealed 49-file source set, 44 files were exact. Five files differed:
-two comment-only files, two OSS package/lint metadata files, and one config file
-with comment wording plus an adaptive page-type validator entry. This branch
-ports that only executable delta (`service` pages); it was not exercised by
-these fixed `article_body` or `balanced` profiles. Webis additionally
-inventories generated native build files absent from public Git. This is
-source-audited evidence for the exercised extraction paths, not a benchmark run
-of the OSS commit or proof of universal, live-crawler, or vendor-comparative
-SOTA.
+`uv.lock` byte-identical to OSS parent `837ddda`. Of the pre-fix private AEB,
+WCXB, and WebMainBench sealed 49-file source sets, 44 files were exact. Five
+files differed: two comment-only files, two OSS package/lint metadata files,
+and one config file with comment wording plus an adaptive page-type validator
+entry. This branch ports that only executable delta (`service` pages); it was
+not exercised by those fixed `article_body` or `balanced` profiles. Webis
+additionally inventories generated native build files absent from public Git.
+Those private rows are source-audited evidence for the exercised extraction
+paths, not benchmark runs of the OSS commit or proof of universal,
+live-crawler, or vendor-comparative SOTA.
 
 | Suite / profile | Pages | Quality | Extraction throughput | Honest comparison |
 |---|---:|---:|---:|---|
-| AEB `article_body` | 181 | P/R/F1 `0.951014 / 0.989665 / 0.969955` | `157.205` pages/s | Matches the embedded pinned `rs-trafilatura` aggregate; not an independent algorithmic win |
+| AEB `article_body` | 181 | P/R/F1 `0.955147 / 0.989721 / 0.972127` | `137.844` pages/s | Direct clean OSS run; `+0.002172` F1 above the embedded pinned baseline point estimate, with paired CI including equality |
 | WCXB `balanced`, development | 1,497 | P/R/F1 `0.852732 / 0.898934 / 0.848433` | `90.65` pages/s | Public-label development evidence, not a blind test |
 | WCXB `balanced`, public test | 511 | P/R/F1 `0.894822 / 0.928969 / 0.891727` | `139.86` pages/s | Below the published `rs-trafilatura` public-test F1 `0.903` |
 | WCXB `balanced`, combined | 2,008 | P/R/F1 `0.863443 / 0.906577 / 0.859450` | `99.5618` pages/s | Sequential split aggregate; not comparable with a development-only headline |
@@ -139,9 +147,9 @@ SOTA.
 | WebMainBench `balanced`, raw Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615569 / 0.677841 / 0.606672` | `127.4899` pages/s | Below published Trafilatura `0.6402` and leading model-assisted `0.9098`; output contracts also differ |
 | WebMainBench `balanced`, scrubbed Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615698 / 0.676570 / 0.605703` | `57.8572` pages/s | Annotation markers removed before extraction; paired delta versus raw was `-0.000969` |
 
-| Suite | Clean private source | `manifest.json` SHA-256 |
+| Suite | Clean source | `manifest.json` SHA-256 |
 |---|---|---|
-| AEB | `10ff0c1` | `bcd55239efd34908c300aa062ea5272d1cb62f4c78207eb6ab562f5cdaa381da` |
+| AEB | public `4252a0b` | `7b014b56cd8d99dc8280bb2ac7b5f86e3c55972fb4c380289b9025fe13be29b0` |
 | WCXB | `10ff0c1` | `a051965f480fd3a1cae780d7ccdd289b237163f7e644ba2dde9a9acc53e4b8d0` |
 | Webis | `10ff0c1` | `b43a79097a1a04ae3b2254cf25a7ecda9fe2b05be42304e9f79b25638f5ab51e` |
 | WebMainBench primary clean repeat | `7f202f4` | `df0deb7b3a2565b164cd0fff8f6687fd5d10173d402156425f9d3e07c6bb35d3` |

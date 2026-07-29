@@ -99,46 +99,48 @@ It is a closed-loop bounded-worker microbenchmark, not an HTTP-service or
 Internet throughput benchmark. Static HTTP, browser rendering, and live-network
 capacity must be measured separately.
 
-## Retained clean validations
+## Current clean public validation
 
-The public-origin validation remains the full 2026-07-28 run from clean public
-commit
-[`c3ae00d`](https://github.com/clusy-io/clusy-crawler/commit/c3ae00d90b19003b7c635af5dec87ba177abbd85).
-It used the production asynchronous entry point, two workers, five warmup
-pages, and 10,000 paired-bootstrap replicates:
+The full 2026-07-29 run used clean public source revision
+`4252a0b71a0a2157194d3466445b70bb373d73b6`, the production asynchronous entry
+point, two workers, five warmup pages, and 10,000 paired-bootstrap replicates:
 
 | Mode | Precision | Recall | F1 | pages/s | p50 | p95 | errors |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| async | 0.951014 | 0.989665 | 0.969955 | 133.33 | 12.97 ms | 30.59 ms | 0 |
+| async | 0.955147 | 0.989721 | 0.972127 | 137.844 | 12.933 ms | 26.488 ms | 0 |
 
-A separate full run on 2026-07-29 used clean private source revision
-`10ff0c1a7c9a2083958b674d64e15bb5a8a1b90e`. It was not executed from public
-OSS revision `837dddababc612bfa1ce438307b1e2fb29b4c2f5` or from the current public
-commit:
+The candidate is +0.002172 F1 above the pinned `rs_trafilatura` prediction,
+with a paired-bootstrap 95% interval of [0, +0.006589], win probability
+0.6349, loss probability 0, and equality probability 0.3651. Versus
+Trafilatura 2.0, ΔF1 is +0.014624 with a paired-bootstrap 95% interval of
+[+0.005346, +0.025342] and win probability 0.9995. Peak process RSS was
+264,536,064 bytes.
 
-| Mode | Precision | Recall | F1 | pages/s | p50 | p95 | errors |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| async | 0.951014 | 0.989665 | 0.969955 | 157.205 | 11.617 ms | 22.813 ms | 0 |
+The only changed prediction relative to the earlier clean public run is a page
+that exercised overlapping wrapper and descendant roots in temporary JSON-LD
+DOM serialization; the other 180 prediction records are byte-identical. The
+generic fix filters selected roots by source ancestry before serialization. It
+does not collapse equal text from disjoint source nodes and contains no page,
+hostname, or benchmark-specific condition.
 
-Both results match the pinned `rs_trafilatura` aggregate under AEB's metric.
-Versus Trafilatura 2.0, ΔF1 is +0.012452 with a paired-bootstrap 95% interval
-of [+0.002093, +0.023745] and win probability 0.9892. Peak process RSS was
-246,333,440 bytes for the public-origin run and 259,997,696 bytes for the
-private V2 run.
+The artifact directory is `bench/results/aeb/20260729T090959Z` (ignored by
+Git). Its `manifest.json` SHA-256 is
+`7b014b56cd8d99dc8280bb2ac7b5f86e3c55972fb4c380289b9025fe13be29b0`;
+the report SHA-256 is
+`fc80a5840b81e9f871faa2a0f60c4829f9cf6fea3224bf520c1c0ac207df6b3f`.
+The harness verified clean, stable public source before and after execution and
+marked the complete result `CLAIMABLE` only within the AEB article-body scope.
+Throughput is an in-memory extractor result on an Apple M4 Pro and is not a
+live-network crawling claim.
 
-The public-origin artifact directory is
-`bench/results/aeb/public-c3ae00d-clean/` (ignored by Git). The harness marked
-the run `CLAIMABLE` within the scope **AEB article-body extraction only** after
-verifying the clean source revision, pinned corpus and evaluator, full page set,
-native backend, and unchanged relevant-source hash. Throughput is an in-memory
-extractor result on an Apple M4 Pro and is not a live-network crawling claim.
+For historical context, clean public commit `c3ae00d` and clean private
+revision `10ff0c1` both scored F1 0.969955 before this fix, at 133.33 and
+157.205 pages/s respectively. The local throughput difference between runs is
+not a quality or service-capacity comparison.
 
-The retained private V2 artifact identifier is
+The retained private pre-fix V2 artifact identifier is
 `bench/results/aeb/20260729T000138Z`; its `manifest.json` SHA-256 is
 `bcd55239efd34908c300aa062ea5272d1cb62f4c78207eb6ab562f5cdaa381da`.
-The harness recorded clean, stable `10ff0c1` source before and after execution
-and marked the complete 181-page result claimable only within the same AEB
-article-body scope.
 
 A post-run SHA-256 audit compared the private artifact's 49 recorded source
 files with public `837ddda`: 44 matched and none was missing. The suite runner,

@@ -30,6 +30,14 @@ Implemented foundations in the current worktree:
   source text in DOM order, promotes grounded structures, reconstructs through
   the native serializer, and rejects fail-closed to the byte-identical input.
   It is explicitly shadow-only and is not imported by the extraction cascade;
+- the article backend now serializes only outermost selected source roots in
+  temporary JSON-LD/Discourse DOMs, preventing one source subtree from being
+  emitted through both an ancestor and a descendant while retaining legitimate
+  equal text from disjoint source nodes;
+- a backend-neutral render manager now owns lifecycle, readiness, and dispatch
+  for the existing isolated local Playwright backend. Defaults are unchanged;
+  the contract creates a safe seam for a separately sandboxed render plane
+  without adding an unsafe browser launch mode;
 - AEB, WCXB, Webis, and WebMainBench regression/evidence harnesses;
 - a sealed fixed-URL Exa/Firecrawl comparison runner whose artifact-integrity
   gate is separate from its deliberately closed vendor-win gate. Vendor output
@@ -136,18 +144,19 @@ model latency from weakening crawl politeness or host fairness.
 
 ## Evidence behind the decision
 
-The first complete four-suite pass on 2026-07-29 ran from clean private source
-revision `10ff0c1a7c9a2083958b674d64e15bb5a8a1b90e`. A later clean
-WebMainBench run from its documentation-only child
-`7f202f43cdf21d076415fa3a1f7cfd005533de56` is the primary repeat. These
-artifacts were not produced from public OSS revision
-`837dddababc612bfa1ce438307b1e2fb29b4c2f5` or from the current public commit.
-They establish scoped fixed-corpus extraction evidence, not universal or
-vendor-comparative SOTA:
+The current AEB result ran directly from clean public source revision
+`4252a0b71a0a2157194d3466445b70bb373d73b6`. The other complete fixed-corpus
+runs on 2026-07-29 came from clean private revision
+`10ff0c1a7c9a2083958b674d64e15bb5a8a1b90e`, with the primary WebMainBench
+repeat from documentation-only child
+`7f202f43cdf21d076415fa3a1f7cfd005533de56`. Those private artifacts were not
+produced from public OSS revision
+`837dddababc612bfa1ce438307b1e2fb29b4c2f5`. Together they establish scoped
+fixed-corpus extraction evidence, not universal or vendor-comparative SOTA:
 
 | Benchmark | Scope | Current result | Interpretation |
 | --- | --- | ---: | --- |
-| AEB | 181-page article body | P/R/F1 `0.951014 / 0.989665 / 0.969955`; `157.205` pages/s; p50/p95 `11.617 / 22.813 ms` | Claimable in AEB scope; matches the embedded pinned leading baseline |
+| AEB | 181-page article body | P/R/F1 `0.955147 / 0.989721 / 0.972127`; `137.844` pages/s; p50/p95 `12.933 / 26.488 ms` | Direct clean OSS run; `+0.002172` F1 above the embedded pinned baseline point estimate, with paired CI including equality and no observed loss |
 | WCXB development | 1,497 pages, seven page types | P/R/F1 `0.852732 / 0.898934 / 0.848433`; `90.65` pages/s; p50/p95 `13.61 / 59.42 ms` | Claimable public-label extraction evidence, not blind validation |
 | WCXB public test | 511 pages, seven page types | P/R/F1 `0.894822 / 0.928969 / 0.891727`; `139.86` pages/s; p50/p95 `11.08 / 33.04 ms` | Below the published leading test result |
 | WCXB combined | 2,008 pages | P/R/F1 `0.863443 / 0.906577 / 0.859450`; `99.5618` pages/s | Sequential split aggregate; not comparable with a development-only headline |
@@ -156,17 +165,18 @@ vendor-comparative SOTA:
 | WebMainBench v1.1 scrubbed | 7,809-page broad Direct-MD | P/R/F1 `0.615698 / 0.676570 / 0.605703`; `57.8572` pages/s; original clean run `57.3376` | Required annotation-contamination diagnostic; zero extraction errors |
 | WebMainBench fine-grained | Text/code/formula/table | Overall `0.214089` | Dirty, non-claimable diagnostic; text `0.752301`, code `0.017775`, formula `0.300369`, table/TEDS `0` |
 
-| Suite | Retained private artifact identifier | `manifest.json` SHA-256 |
+| Suite | Artifact identifier | `manifest.json` SHA-256 |
 | --- | --- | --- |
-| AEB | `bench/results/aeb/20260729T000138Z` | `bcd55239efd34908c300aa062ea5272d1cb62f4c78207eb6ab562f5cdaa381da` |
+| AEB, public `4252a0b` | `bench/results/aeb/20260729T090959Z` | `7b014b56cd8d99dc8280bb2ac7b5f86e3c55972fb4c380289b9025fe13be29b0` |
 | WCXB | `bench/results/wcxb/20260729T000227Z` | `a051965f480fd3a1cae780d7ccdd289b237163f7e644ba2dde9a9acc53e4b8d0` |
 | Webis | `bench/results/webis-v2-10ff0c1-20260729T0004Z` | `b43a79097a1a04ae3b2254cf25a7ecda9fe2b05be42304e9f79b25638f5ab51e` |
 | WebMainBench primary repeat | `bench/results/webmainbench/v2-isolated2-7f202f4-20260729T0728Z` | `df0deb7b3a2565b164cd0fff8f6687fd5d10173d402156425f9d3e07c6bb35d3` |
 | WebMainBench original clean run | `bench/results/webmainbench/v2-10ff0c1-20260729T0033Z` | `10350d98d93498b2f00217f4ebea3716a2a101f20c851b695ede30c55fdc505e` |
 
-A post-run SHA-256 audit compared each artifact's sealed source map with public
-`837ddda`. AEB, WCXB, and both WebMainBench runs matched 44 of 49 recorded
-files, with none missing. The five differences were `app/config.py`,
+A post-run SHA-256 audit compared each retained private artifact's sealed
+source map with public `837ddda`. The pre-fix private AEB run, WCXB, and both
+WebMainBench runs matched 44 of 49 recorded files, with none missing. The five
+differences were `app/config.py`,
 `app/main.py`, `app/services/renderer.py`, `native/pyproject.toml`, and
 `pyproject.toml`; they are OSS configuration, comments, and package metadata,
 and the only executable delta is an adaptive-profile page-type validator not
@@ -176,12 +186,13 @@ recorded paths, with the same five differences and 40 ignored generated
 runners, core extractor, native algorithm/vendor sources, Cargo files, and
 `uv.lock` matched byte-for-byte.
 
-The complete snapshots are therefore not byte-identical, and no executed
-native binary was reproduced from a public `837ddda` build. Describe these as
-clean, source-audited private-revision results for the exercised paths, not as
-benchmark runs of the OSS commit. The older clean public AEB run at `c3ae00d`
-remains the only public-commit execution in this evidence set; it recorded the
-same F1 `0.969955` at `133.33` pages/s.
+The private snapshots are therefore not byte-identical, and their executed
+native binaries were not reproduced from a public `837ddda` build. Describe
+those rows as clean, source-audited private-revision results for the exercised
+paths, not as benchmark runs of the OSS commit. The current AEB row is
+different: it was executed directly from clean public `4252a0b`, including a
+fresh native rebuild. The earlier clean public `c3ae00d` run remains historical
+evidence at F1 `0.969955` and `133.33` pages/s.
 
 AEB and WCXB are claimable only within their stated extraction scopes; Webis
 is archival-reproducible; WebMainBench is claimable only on its fixed public
@@ -650,7 +661,7 @@ the strongest results currently recorded by the project:
 
 | Suite | Promotion objective |
 | --- | ---: |
-| AEB article body | Retain F1 `0.969955` without changing its contract |
+| AEB article body | Retain F1 `0.972127` without changing its contract |
 | WCXB public test | Exceed `0.903`, with page-type and paired uncertainty reported |
 | Webis | Exceed macro ROUGE-LSum `0.898844` |
 | WebMainBench full | Exceed ROUGE-5 F1 `0.9098` |
@@ -709,10 +720,11 @@ from their current official documentation when the comparison is executed:
 
 Use the narrowest statement supported by evidence:
 
-- “The clean pre-V2 AEB run at `c3ae00d` matched the embedded pinned
-  `rs-trafilatura` article backend” is acceptable within the article-body
-  extraction scope. “SOTA-matching” must retain the embedded-backend caveat;
-  it is not an independent algorithmic win or evidence for V2 `balanced`.
+- “The clean public AEB run at `4252a0b` scored F1 `0.972127`, `+0.002172`
+  above the embedded pinned `rs-trafilatura` prediction” is acceptable within
+  the article-body extraction scope when accompanied by the paired 95% CI
+  `[0, +0.006589]`. It is a generic bug fix to a patched embedded backend, not
+  an independent algorithmic win or evidence for V2 `balanced`.
 - The clean private V2 rows may be described as source-audited fixed-corpus
   evidence only when their private `10ff0c1` / `7f202f4` execution provenance
   and the five-file OSS mismatch are stated. They must not be attributed to
@@ -733,14 +745,14 @@ Use the narrowest statement supported by evidence:
    shadow-only deterministic refiner.
 3. **Compact model — planned:** local block classifier, batching, constrained
    labels, verifier, and circuit breaker.
-4. **Serving scale — partial/planned:** split fetch/render/model worker pools,
-   tenant budgets, backpressure, distributed cache, tracing, and per-route
-   SLOs.
-5. **Evidence — in progress:** clean private AEB, WCXB, Webis, and WebMainBench
-   artifacts are retained at `10ff0c1`, with the WebMainBench repeat at
-   `7f202f4`; a direct OSS-commit reproduction, operator-owned calibration, and
-   a preregistered live vendor study remain separate gates before any broad
-   claim.
+4. **Serving scale — partial/planned:** backend-neutral render lifecycle is
+   implemented; split fetch/render/model worker pools, tenant budgets,
+   backpressure, distributed cache, tracing, and per-route SLOs remain.
+5. **Evidence — in progress:** the current AEB run is reproduced directly from
+   clean public `4252a0b`; clean private WCXB, Webis, and WebMainBench artifacts
+   remain at `10ff0c1`, with the WebMainBench repeat at `7f202f4`.
+   Operator-owned calibration and a preregistered live vendor study remain
+   separate gates before any broad claim.
 
 The adaptive foundation can ship behind an opt-in profile. It becomes the
 default only after the quality, latency, cost, and escalation-budget gates pass
