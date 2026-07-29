@@ -1022,15 +1022,6 @@ fn try_fallback_extraction(
     };
     let extracted_sel = extracted_doc.select("body");
 
-    // Clone for modification (remove share plugins) - doc_backup is already pre-cleaning
-    let doc_for_fallback = dom::clone_document(doc_backup);
-
-    // Remove social share plugin elements before fallback extraction
-    const SHARE_PLUGIN_SELECTOR: &str = "[class*=\"dpsp-\"], [class*=\"wabtn\"], [class*=\"addtoany\"], [class*=\"shareaholic\"], [class*=\"share-wrapper\"], [class*=\"social-share\"], [class*=\"share-buttons\"], [id*=\"share-buttons\"], [class*=\"post-share\"], [class*=\"entry-share\"], [class*=\"shareModal\"], [class*=\"ShareModal\"]";
-    for node in doc_for_fallback.select(SHARE_PLUGIN_SELECTOR).nodes() {
-        dom::remove(&Selection::from(*node));
-    }
-
     // Go-trafilatura flow (core.go lines 157-165):
     // 1. Try comparison-based fallback with candidateIsUsable
     // 2. Only if still below MinExtractedSize, use baseline as unconditional rescue
@@ -1038,7 +1029,7 @@ fn try_fallback_extraction(
     // 1. Try fallback extraction using candidateIsUsable
     // compare_external_extraction uses candidateIsUsable internally
     let (result_doc, result_text) =
-        fallback::compare_external_extraction(&doc_for_fallback, &extracted_sel, options);
+        fallback::compare_external_extraction(doc_backup, &extracted_sel, options);
     let result_len = result_text.chars().count();
     let result_sel = result_doc.select("body");
 
@@ -1057,6 +1048,16 @@ fn try_fallback_extraction(
     // Only triggers when current content is still below min_size
     // Skip if favor_precision mode (go: Focus != FavorPrecision)
     if current_len < min_size && !options.favor_precision {
+        // Baseline mutates its input. Clone and prune the original document only
+        // when the unconditional rescue can actually run; the comparison above
+        // operates solely on the already-extracted candidate.
+        let doc_for_fallback = dom::clone_document(doc_backup);
+
+        const SHARE_PLUGIN_SELECTOR: &str = "[class*=\"dpsp-\"], [class*=\"wabtn\"], [class*=\"addtoany\"], [class*=\"shareaholic\"], [class*=\"share-wrapper\"], [class*=\"social-share\"], [class*=\"share-buttons\"], [id*=\"share-buttons\"], [class*=\"post-share\"], [class*=\"entry-share\"], [class*=\"shareModal\"], [class*=\"ShareModal\"]";
+        for node in doc_for_fallback.select(SHARE_PLUGIN_SELECTOR).nodes() {
+            dom::remove(&Selection::from(*node));
+        }
+
         let (baseline_doc, baseline_text) = fallback::baseline(&doc_for_fallback);
         let baseline_len = baseline_text.chars().count();
 

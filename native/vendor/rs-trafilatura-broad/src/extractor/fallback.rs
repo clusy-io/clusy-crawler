@@ -12,7 +12,6 @@ use crate::dom;
 use crate::etree;
 use crate::selector::discard::should_discard;
 use crate::Options;
-use super::pruning::prune_unwanted_nodes;
 use super::tags::VALID_TAG_CATALOG;
 
 // === Baseline Extraction ===
@@ -550,7 +549,8 @@ fn sanitize_tree(tree: &Selection, opts: &Options) {
 /// Go equivalent: `compareExternalExtraction(originalDoc, extractedDoc, opts)` (lines 50-101)
 ///
 /// # Arguments
-/// * `original_doc` - The original document
+/// * `_original_doc` - Retained for the stable call shape; the current
+///   comparator returns the sanitized extracted candidate and does not read it
 /// * `extracted_doc` - Our extraction result
 /// * `opts` - Extraction options
 ///
@@ -558,7 +558,7 @@ fn sanitize_tree(tree: &Selection, opts: &Options) {
 /// * `(final_doc, final_text)` - The best extraction result
 #[must_use]
 pub fn compare_external_extraction(
-    original_doc: &Document,
+    _original_doc: &Document,
     extracted_doc: &Selection,
     opts: &Options,
 ) -> (Document, String) {
@@ -574,29 +574,9 @@ pub fn compare_external_extraction(
         return (result_doc, extracted_text);
     }
 
-    // Prior cleaning for precision mode
-    let cleaned_doc = if opts.favor_precision {
-        let cloned = dom::clone_document(original_doc);
-        let _ = prune_unwanted_nodes(
-            &cloned.select("body"),
-            crate::selector::discard::OVERALL_DISCARDED_CONTENT,
-            true,
-        );
-        cloned
-    } else {
-        dom::clone_document(original_doc)
-    };
-
-    // Remove social share plugin elements before comparison
-    // This prevents share buttons from being included in the article content
-    let share_elements = cleaned_doc.select(SHARE_PLUGIN_SELECTOR).nodes().to_vec();
-    for node in share_elements.into_iter().rev() {
-        etree::remove(&Selection::from(node), false);
-    }
-
-    let _ = cleaned_doc;
-
-    // Use our extraction directly
+    // The current comparator returns the already-extracted candidate directly.
+    // Do not clone and prune the original DOM here: that local tree never
+    // contributes to either the returned document or the returned text.
     let result_doc = {
         let extracted_html = dom::outer_html(extracted_doc);
         Document::from(extracted_html)
@@ -994,6 +974,33 @@ mod tests {
         sanitize_tree(&root, &opts);
 
         assert_eq!(root.select("a").length(), 0);
+    }
+
+    #[test]
+    fn test_external_comparator_depends_only_on_extracted_candidate() {
+        let first_original =
+            dom::parse("<html><body><form><p>First original</p></form></body></html>");
+        let second_original = dom::parse(
+            "<html><body><nav>Different original</nav><div class='share-buttons'>Share</div></body></html>",
+        );
+        let extracted = dom::parse(
+            "<html><body><article><p>Stable <a href='/source'>candidate</a></p></article></body></html>",
+        );
+        let opts = Options {
+            favor_precision: true,
+            include_links: false,
+            ..Options::default()
+        };
+
+        let first = compare_external_extraction(&first_original, &extracted.select("body"), &opts);
+        let second =
+            compare_external_extraction(&second_original, &extracted.select("body"), &opts);
+
+        assert_eq!(first.1, second.1);
+        assert_eq!(
+            dom::outer_html(&first.0.select("body")),
+            dom::outer_html(&second.0.select("body"))
+        );
     }
 }
 
