@@ -3,12 +3,25 @@
 //! Provides go-shiori/dom-style operations using the `dom_query` crate.
 //! This adapter layer offers familiar function names that map to dom_query,
 //! establishing a consistent DOM manipulation API matching go-trafilatura's expectations.
+//!
+//! Modified by Clusy on 2026-07-29 to add composite tree/node source identity
+//! and outermost-root text traversal for reviewed JSON-LD normalization.
+
+use std::collections::HashSet;
 
 // Re-export core types for external use
 pub use dom_query::{Document, Selection};
 
 // Re-export StrTendril for external use (EPIC-04)
 pub use tendril::StrTendril;
+
+type SourceNodeId = (*const dom_query::Tree, dom_query::NodeId);
+
+#[inline]
+#[must_use]
+fn source_node_id(node: dom_query::NodeRef<'_>) -> SourceNodeId {
+    (std::ptr::from_ref(node.tree), node.id)
+}
 
 // === Attribute Operations ===
 
@@ -93,6 +106,41 @@ pub fn tag_name(sel: &Selection) -> Option<String> {
 #[must_use]
 pub fn text_content(sel: &Selection) -> StrTendril {
     sel.text()
+}
+
+/// Get text content once for each source node represented by a selection.
+///
+/// `Selection::text()` concatenates the complete subtree of every selected
+/// root. When a broad selector contains both an ancestor and its descendants,
+/// that repeats the descendants' source text. Keep only the outermost selected
+/// roots, and emit an identical selected root only once. Node identity includes
+/// the tree because `NodeId` values are local to each DOM arena. Disjoint roots
+/// remain distinct even when their text is identical.
+#[must_use]
+pub fn text_content_from_unique_roots(sel: &Selection) -> StrTendril {
+    if sel.nodes().len() <= 1 {
+        return sel.text();
+    }
+
+    let selected_ids: HashSet<_> = sel.nodes().iter().copied().map(source_node_id).collect();
+    let mut seen_ids = HashSet::with_capacity(selected_ids.len());
+    let mut text = StrTendril::new();
+
+    for node in sel.nodes().iter().copied() {
+        let node_id = source_node_id(node);
+        if !seen_ids.insert(node_id) {
+            continue;
+        }
+        if node
+            .ancestors_it(None)
+            .any(|ancestor| selected_ids.contains(&source_node_id(ancestor)))
+        {
+            continue;
+        }
+        text.push_tendril(&node.text());
+    }
+
+    text
 }
 
 /// Get inner HTML content
@@ -434,6 +482,62 @@ mod tests {
 
         assert_eq!(text_content(&div), "before bold after".into());
         assert!(doc.select("b").is_empty());
+    }
+
+    #[test]
+    fn test_unique_root_text_skips_selected_descendants() {
+        let doc =
+            parse(r#"<div id="outer">before <div id="inner">nested source</div> after</div>"#);
+        let all_divs = doc.select("div");
+
+        assert_eq!(
+            text_content_from_unique_roots(&all_divs),
+            text_content(&doc.select("#outer"))
+        );
+        assert_eq!(
+            text_content_from_unique_roots(&all_divs)
+                .matches("nested source")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_unique_root_text_preserves_disjoint_equal_text_and_order() {
+        let doc =
+            parse(r#"<div>first</div><div>same text</div><div>same text</div><div>last</div>"#);
+
+        assert_eq!(
+            text_content_from_unique_roots(&doc.select("div")),
+            "firstsame textsame textlast".into()
+        );
+    }
+
+    #[test]
+    fn test_unique_root_text_emits_repeated_node_ref_once() {
+        let doc = parse(r#"<div id="source">source text</div>"#);
+        let node = doc.select("#source").nodes()[0];
+        let repeated_selection = Selection::from(vec![node, node]);
+
+        assert_eq!(
+            text_content_from_unique_roots(&repeated_selection),
+            "source text".into()
+        );
+    }
+
+    #[test]
+    fn test_unique_root_text_distinguishes_equal_node_ids_in_distinct_trees() {
+        let first_doc = parse(r#"<div>first tree</div>"#);
+        let second_doc = parse(r#"<div>second tree</div>"#);
+        let first = first_doc.select("div").nodes()[0];
+        let second = second_doc.select("div").nodes()[0];
+        assert_eq!(first.id, second.id);
+        let cross_tree_selection = Selection::from(vec![first, second]);
+
+        assert_eq!(
+            text_content_from_unique_roots(&cross_tree_selection),
+            "first treesecond tree".into()
+        );
     }
 
     #[test]

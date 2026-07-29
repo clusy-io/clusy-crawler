@@ -91,7 +91,7 @@ fn extract_html(
 
 #[pyfunction]
 fn backend_version() -> &'static str {
-    "rs-trafilatura article@9261e08 + broad@0.2.2"
+    "rs-trafilatura article@9261e08+clusy-outermost-roots.1 + broad@0.2.2+clusy-source-roots.1"
 }
 
 #[pymodule]

@@ -2,6 +2,9 @@
 //!
 //! This module ports fallback extraction from go-trafilatura's baseline.go and external.go.
 //! It provides baseline extraction (JSON-LD, paragraph scraping) and comparison-based fallback.
+//!
+//! Modified by Clusy on 2026-07-29 to preserve distinct DOM source roots while
+//! suppressing repeated or ancestor-covered JSON-LD selections.
 
 use dom_query::{Document, Selection};
 use serde_json::Value;
@@ -169,7 +172,11 @@ pub fn extract_json_ld_article_body(doc: &Document) -> Option<String> {
                 // If contains HTML, extract text
                 if body.contains("<p>") {
                     let temp_doc = Document::from(format!("<div>{body}</div>"));
-                    return Some(dom::text_content(&temp_doc.select("div")).trim().to_string());
+                    return Some(
+                        dom::text_content_from_unique_roots(&temp_doc.select("div"))
+                            .trim()
+                            .to_string(),
+                    );
                 }
                 return Some(body);
             }
@@ -227,7 +234,11 @@ fn find_product_description(value: &Value, best: &mut Option<String>, best_len: 
                         // Strip HTML if present
                         if desc.contains('<') {
                             let temp_doc = Document::from(format!("<div>{desc}</div>"));
-                            *best = Some(dom::text_content(&temp_doc.select("div")).trim().to_string());
+                            *best = Some(
+                                dom::text_content_from_unique_roots(&temp_doc.select("div"))
+                                    .trim()
+                                    .to_string(),
+                            );
                         } else {
                             *best = Some(desc.to_string());
                         }
@@ -707,6 +718,162 @@ mod tests {
         let text = result.unwrap();
         assert!(text.contains("Paragraph one"));
         assert!(!text.contains("<p>"));
+    }
+
+    #[test]
+    fn test_extract_json_ld_html_emits_each_source_node_once() {
+        let html = r#"<!DOCTYPE html>
+        <html>
+        <head>
+            <script type="application/ld+json">
+            {
+                "articleBody": "<p>Lead paragraph.</p><div><p>Nested source span.</p></div><div><p>Legitimate repeated text.</p></div><div><p>Legitimate repeated text.</p></div>"
+            }
+            </script>
+        </head>
+        <body></body>
+        </html>"#;
+
+        let doc = Document::from(html);
+        let Some(text) = extract_json_ld_article_body(&doc) else {
+            panic!("expected JSON-LD articleBody");
+        };
+
+        assert_eq!(text.matches("Nested source span.").count(), 1);
+        assert_eq!(text.matches("Legitimate repeated text.").count(), 2);
+    }
+
+    #[test]
+    fn test_extract_json_ld_product_html_emits_each_source_node_once() {
+        let html = r#"<!DOCTYPE html>
+        <html>
+        <head>
+            <script type="application/ld+json">
+            {
+                "@type": "Product",
+                "description": "<p>Lead product copy.</p><div><p>Nested product detail.</p></div><div><p>Legitimate repeated spec.</p></div><div><p>Legitimate repeated spec.</p></div>"
+            }
+            </script>
+        </head>
+        <body></body>
+        </html>"#;
+
+        let doc = Document::from(html);
+        let Some(text) = extract_json_ld_product_description(&doc) else {
+            panic!("expected JSON-LD Product description");
+        };
+
+        assert_eq!(text.matches("Nested product detail.").count(), 1);
+        assert_eq!(text.matches("Legitimate repeated spec.").count(), 2);
+    }
+
+    #[test]
+    fn test_product_schema_variants_preserve_plain_text() {
+        for schema_type in [
+            serde_json::json!(["Thing", "Product"]),
+            serde_json::json!("SoftwareApplication"),
+        ] {
+            let payload = serde_json::json!({
+                "@type": schema_type,
+                "description": "Plain product description."
+            });
+            let doc = Document::from(format!(
+                r#"<script type="application/ld+json">{payload}</script>"#
+            ));
+
+            assert_eq!(
+                extract_json_ld_product_description(&doc).as_deref(),
+                Some("Plain product description.")
+            );
+        }
+    }
+
+    #[test]
+    fn test_public_product_extraction_normalizes_json_ld_source_roots() {
+        let payload = serde_json::json!({
+            "@type": "Product",
+            "name": "Source Identity Fixture",
+            "description": "<p>Lead product copy.</p><div><p>Nested public product detail.</p></div><div><p>Legitimate public repeated spec.</p></div><div><p>Legitimate public repeated spec.</p></div>"
+        });
+        let html = format!(
+            r#"<!DOCTYPE html><html><head>
+            <script type="application/ld+json">{payload}</script>
+            </head><body><main><p>Short DOM placeholder.</p></main></body></html>"#
+        );
+        let options = crate::Options {
+            page_type: Some(crate::page_type::PageType::Product),
+            use_fallback_extraction: false,
+            min_extracted_len: 0,
+            min_output_size: 0,
+            ..crate::Options::default()
+        };
+        let Ok(result) = crate::extract_with_options(&html, &options) else {
+            panic!("public product extraction failed");
+        };
+
+        assert_eq!(result.metadata.page_type.as_deref(), Some("product"));
+        assert_eq!(
+            result
+                .content_text
+                .matches("Nested public product detail.")
+                .count(),
+            1
+        );
+        assert_eq!(
+            result
+                .content_text
+                .matches("Legitimate public repeated spec.")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn test_public_article_extraction_normalizes_json_ld_source_roots() {
+        let filler =
+            "Substantive source-backed article sentence with enough context for extraction. "
+                .repeat(12);
+        let article_body = format!(
+            "<p>{filler}</p><div><p>Nested public article detail.</p></div>\
+             <div><p>Legitimate public repeated sentence.</p></div>\
+             <div><p>Legitimate public repeated sentence.</p></div>"
+        );
+        assert!(article_body.chars().count() >= 500);
+        let payload = serde_json::json!({
+            "@type": "Article",
+            "articleBody": article_body
+        });
+        let html = format!(
+            r#"<!DOCTYPE html><html><head>
+            <script type="application/ld+json">{payload}</script>
+            </head><body><main><p>Short DOM placeholder.</p></main></body></html>"#
+        );
+        let options = crate::Options {
+            page_type: Some(crate::page_type::PageType::Article),
+            use_fallback_extraction: false,
+            min_extracted_len: 0,
+            min_output_size: 0,
+            ..crate::Options::default()
+        };
+        let Ok(result) = crate::extract_with_options(&html, &options) else {
+            panic!("public article extraction failed");
+        };
+
+        assert_eq!(result.metadata.page_type.as_deref(), Some("article"));
+        assert_eq!(
+            result
+                .content_text
+                .matches("Nested public article detail.")
+                .count(),
+            1
+        );
+        assert_eq!(
+            result
+                .content_text
+                .matches("Legitimate public repeated sentence.")
+                .count(),
+            2
+        );
     }
 
     #[test]

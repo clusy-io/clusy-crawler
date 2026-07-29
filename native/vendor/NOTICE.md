@@ -41,6 +41,22 @@ existing trailing whitespace. The manifest modifications are:
   benchmarks were removed. This keeps clean metadata and `--all-targets`
   checks from referring to intentionally omitted files.
 
+## Clusy modifications to the broad 0.2.2 baseline
+
+The exact archive baseline is preserved in repository history before the
+separately reviewed `clusy-source-roots.1` patch. The current tree modifies:
+
+- `rs-trafilatura-broad/src/dom.rs` to identify a source node by its DOM tree
+  identity plus `NodeId`, preserve document order, and emit only outermost
+  selected roots;
+- `rs-trafilatura-broad/src/extractor/fallback.rs` to use that traversal for
+  JSON-LD `Article`, `Product`, and `SoftwareApplication` text fields.
+
+The patch suppresses only the same selected node or a selected descendant
+already covered by a selected ancestor. Distinct nodes with identical text
+remain distinct. Both modified upstream files carry a prominent modification
+notice; the original MIT and Apache-2.0 license texts remain unchanged.
+
 `quick_html2md` declared `MIT OR Apache-2.0` but its cached checkout did not
 contain license files. Canonical MIT and Apache-2.0 texts are included beside
 it; the MIT attribution uses the upstream commit author and project
