@@ -1,0 +1,16 @@
+{
+  "allowed_input_commitment_sha256": [],
+  "asset_sha256": {
+    "UNICODE_LICENSE.txt": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96",
+    "confusables-16.0.0.txt": "95bd0aad6dced5ebc63436f459c06ab21a8d107cd842fb57f5c3a1e91bca8611",
+    "synthetic_fixtures.json": "e42be4fd64cdc4f103b904d8544f276105ca1b7b6f0206a51151ec6698d7b25c"
+  },
+  "protocol_manifest_sha256": null,
+  "repository_commit": null,
+  "schema": "clusy.blind-vendor.external-trust-root.v1",
+  "scorer_source_sha256": null,
+  "signature": null,
+  "signature_scheme": null,
+  "signing_key_id": null,
+  "status": "UNSIGNED_NOT_TRUSTED"
+}
