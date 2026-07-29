@@ -1,57 +1,71 @@
 # Changelog
 
-All notable changes to this project are documented here. The format is based on
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
-follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Notable changes are recorded using
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) categories. The
+project has not published a stable semantic-version tag; source commits and
+container digests remain the authoritative release identities.
 
-## [Unreleased]
+## Unreleased
+
+This public branch contains the public mirror of the separately deployed
+`bdbfd7c` extraction implementation and later repository-only changes.
+Repository presence does not imply that the current branch is deployed.
 
 ### Added
-- Initial public release as an Apache-2.0 open-source project.
-- Native Rust/PyO3 extraction backend with pinned crates and a
-  confidence-gated Python fallback.
+
+- Native Rust/PyO3 extraction with ordered DOM IR v2, typed structures, source
+  spans, deterministic serialization, and replayable selection certificates.
 - Explicit `balanced`, `article_body`, `adaptive`, and `quality` extraction
-  profiles with bounded model-assisted fallback behavior.
-- Opt-in recursive crawling with a deterministic fair frontier, canonical
-  deduplication, crawl-trap budgets, scope checks, and fail-closed robots
-  enforcement.
-- Dedicated GitHub, academic/PDF, and scholarly-metadata extraction paths.
-- Admission, request-body, response-size, timeout, concurrency, and cache-entry
-  resource limits.
-- Commit-pinned AEB, WCXB, Webis, WebMainBench, fine-grained structure, and
-  sealed live-vendor benchmark harnesses with provenance and claimability gates.
-- Hardened non-root container build, Chromium sandbox profile, and
-  self-contained local Compose stack.
-- `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and GitHub Actions CI
-  for Python, Rust, tests, and the deterministic container image.
-- `CORS_ALLOW_ORIGINS` setting — CORS is now off by default (opt-in per origin).
+  profiles with a deterministic fallback.
+- Bounded recursive discovery with robots, same-site, host-fairness, trap, and
+  resource policies.
+- GitHub, PDF, academic, and scholarly-metadata specialists.
+- Fixed-protocol harnesses for AEB, WCXB, Webis, WebMainBench v1.1,
+  WebMainBench 545, synthetic focused-frontier behavior, and sealed
+  live-vendor evaluation.
+- Separate static, browser, and optional quality container targets with OCI
+  source, license, and revision labels.
+- Readiness/version endpoints with source, image, dependency, pipeline, router,
+  and non-secret serving-configuration identities.
+- Apache-2.0 self-hosting, architecture, operations, benchmark, research,
+  security, and contribution documentation.
 
 ### Changed
-- **Licensing:** replaced PyMuPDF (AGPL-3.0) with pypdfium2 (BSD) for PDF
-  extraction, and html2text (GPLv3) with markdownify (MIT) for HTML→markdown, so
-  the whole distribution is permissively licensed.
-- Upgraded trafilatura to 2.0.
-- Extraction is native-first for the fast deterministic path and retains
-  page-type-aware Python strategies as a confidence-gated fallback.
-- Cache keys now include source revision and every output-affecting option;
-  concurrent identical misses are coalesced.
-- Browser renders use fresh contexts and validate navigation/subresource
-  destinations while preserving an explicit, sandboxed JS lane.
-- Health and result contracts expose build/backend identity, content scope,
-  truncation, strategy, cache, and render metadata.
+
+- The native filtered-DOM traversal now carries ancestor filter state in a
+  linear preorder stack. It preserved all measured native output fields and
+  improved locked-corpus local extraction rate; see
+  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+- General extraction is native-first with confidence-gated Python fallbacks.
+- Cache keys bind runtime and serving semantics. Policy-aware recursive crawls
+  bypass the flat result cache because its envelope cannot replay the full
+  redirect, robots, and scope chain.
+- Browser rendering uses fresh contexts and validates navigation and
+  subresource destinations while preserving Chromium's sandbox.
+- The default Compose stack binds to loopback and bundles a non-durable Redis
+  cache for local self-hosting.
 
 ### Fixed
-- **SSRF hardening:** redirects are now followed manually and re-validated per
-  hop; all resolved IPs are checked (not just the first); IPv4-mapped IPv6 and
-  additional reserved ranges are blocked; the Playwright renderer no longer
-  disables the same-origin policy.
-- **Decompression-bomb / OOM:** response bodies are size-capped while streaming.
-- **Recursive crawl safety:** robots redirects, peer addresses, gzip expansion,
-  sitemap traversal, off-site navigation, and crawl-trap variants are bounded
-  and validated.
-- **Lifecycle safety:** native extraction, browser work, structured extraction,
-  and shutdown paths use bounded capacity and deterministic cleanup.
-- **Extraction correctness:** the multi-strategy union no longer lets a
-  full-page HTML dump win the base slot when a clean extractor produced usable
-  output (this had collapsed article-body precision on real pages).
-- `pytest` now runs on a fresh checkout (`pythonpath` configured).
+
+- Redirect, DNS, IPv4-mapped IPv6, decompressed-body, browser-subresource,
+  response-budget, cancellation, shutdown, and cache-failure boundaries.
+- Duplicate native source-node emission and discarded fallback DOM work.
+- Static-image dependency leakage: the static target contains no Playwright or
+  Chromium artifacts.
+- Benchmark provenance gaps by binding reports to source, dataset, evaluator,
+  dependency, and prediction identities.
+
+### Research
+
+- Source-backed exact lattice decoding, selection certificates, and the
+  synthetic focused-frontier policy remain default-off or unwired.
+- The filtered-HTML-shape candidate at `415d36c` failed its preregistered
+  performance gates and was rejected.
+- Universal SOTA and an overall Exa/Firecrawl win remain unproven. Their gates
+  are defined in [`docs/RESEARCH.md`](docs/RESEARCH.md).
+
+## Evidence
+
+Current results and claim boundaries are maintained in
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md). Immutable implementation records
+live under [`bench/evidence`](bench/evidence).

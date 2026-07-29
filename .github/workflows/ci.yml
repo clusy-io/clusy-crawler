@@ -41,6 +41,9 @@ jobs:
       - name: Mypy (types)
         run: uv run mypy app
 
+      - name: Documentation
+        run: uv run python scripts/check_docs.py
+
       - name: Rust format
         run: cargo +1.85 fmt --manifest-path native/Cargo.toml --check
 

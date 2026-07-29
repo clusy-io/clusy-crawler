@@ -1,90 +1,143 @@
-# Security Policy
+# Security policy
 
-## Reporting a vulnerability
+Clusy Crawler fetches caller-supplied URLs and processes untrusted HTML, PDFs,
+and browser content. Treat every caller and origin response as hostile.
 
-Please report security issues **privately**. Do not open a public GitHub issue
-for a vulnerability.
+## Report a vulnerability
 
-- Use GitHub's **[Private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)**
-  (the **Security** tab → *Report a vulnerability*), or
-- email **hi@clusy.io**.
+Do not open a public issue or include exploit details in a public pull request.
+Use either:
 
-We aim to acknowledge within 3 business days and to ship a fix or mitigation for
-confirmed high-severity issues within 14 days. We're happy to credit reporters
-in the release notes unless you prefer to stay anonymous.
+- GitHub
+  [private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability);
+  or
+- `hi@clusy.io`.
 
-## Threat model — read this before self-hosting
+Include the affected source revision, deployment mode, reproduction, impact,
+and known mitigation. Do not send credentials, unrelated personal data, or
+unnecessary copies of third-party content.
 
-This service **fetches arbitrary, caller-supplied URLs**. That makes it a
-potential **SSRF (Server-Side Request Forgery)** vector by design: a caller who
-can reach your instance can ask it to make HTTP requests on their behalf.
+We target acknowledgement within three business days. Confirmed high-severity
+issues target a fix or documented mitigation within 14 days; coordinated
+disclosure or an upstream dependency may change the timeline.
 
-The service ships with defenses on by default:
+## Trust boundaries
 
-- **SSRF guard** (`app/services/fetcher.py`) resolves every URL — and every
-  redirect hop — and refuses any that resolve to a non-public address: private
-  RFC1918 ranges, loopback, link-local (including the `169.254.169.254` cloud
-  metadata endpoint), unique-local IPv6, multicast, reserved, and the
-  unspecified address. IPv4-mapped IPv6 is unwrapped before the check.
-- **Redirects are followed manually** with `follow_redirects=False` so each hop
-  is re-validated — a public URL cannot 302-redirect into your private network.
-- **Scheme allow-list**: only `http`/`https`.
-- **Response size cap** on the decompressed body (defends against
-  decompression bombs).
-- The Playwright renderer runs **with Chromium's sandbox and same-origin policy
-  enabled**, creates and destroys a fresh browser context for every render,
-  blocks service workers and WebSockets, and validates document and subresource
-  destinations before allowing a request.
+```text
+untrusted caller
+    │
+    ├─ authentication and admission budgets
+    ├─ URL / DNS / redirect / robots / scope policy
+    ├─ public-network fetch and optional Chromium render
+    ├─ hostile-content parsers under bounded concurrency
+    └─ bounded response with non-secret provenance
+```
 
-Operators should still:
+Application checks are defense in depth, not a replacement for authentication,
+quotas, process isolation, and network egress policy.
 
-1. **Set `CRAWL4AI_API_TOKEN`** so crawl/extraction endpoints require a bearer
-   token. Health diagnostics and OpenAPI discovery remain public; with no token,
-   the data endpoints are unauthenticated and safe only on a trusted network.
-2. **Set an independent `SERVING_FINGERPRINT_KEY`** with at least 32 diverse
-   characters. Production mode requires it, and it must differ from the bearer
-   token. It keys the public serving-configuration fingerprint so
-   secret-bearing state can be bound without exposing the underlying values.
-3. **Do not expose the service directly to the public internet** without an
-   auth token and, ideally, network egress restrictions.
-4. **Leave `CORS_ALLOW_ORIGINS` empty** unless a specific browser origin needs
-   access; `*` is discouraged.
-5. Run it with **least-privilege egress** — the SSRF guard blocks the common
-   cases, but network-level egress policy is defense in depth against novel
-   DNS-rebinding or IPv6 edge cases.
-6. Keep the container **non-root** and use the checked-in
-   `seccomp_profile.json`. The profile is Docker's default policy plus the
-   user-namespace syscalls required for Chromium's sandbox. When Playwright is
-   enabled, do not add `no-new-privileges` or drop every Linux capability:
-   either setting disables Chromium's version-matched SUID sandbox fallback on
-   hosts that restrict unprivileged user namespaces. Do not set
-   `PLAYWRIGHT_DISABLE_SANDBOX=true` for ordinary crawling.
+## Built-in defenses
 
-Application checks are not a complete network sandbox. Chromium request
-destinations are resolved and filtered before they are allowed, but DNS can
-change between that check and the browser's connection. The renderer also caps
-the final DOM/HTML rather than the aggregate bytes of every script or XHR.
-Production deployments should enforce an egress policy that denies private,
-loopback, link-local, and cloud-metadata ranges and should bound container
-network usage.
+The current runtime:
 
-Native HTML extraction and PDFium parsing run in bounded worker threads.
-Cancellation and request deadlines return control without allowing unbounded
-new workers, but Python cannot forcibly terminate a native call that never
-returns. Deploy multiple worker processes with health-based recycling if
-hard-kill isolation for hostile HTML/PDF inputs is required.
+- accepts only absolute HTTP(S) destinations;
+- resolves destinations and rejects loopback, private, link-local, metadata,
+  multicast, reserved, unspecified, and IPv4-mapped unsafe addresses;
+- follows redirects manually and revalidates every hop;
+- bounds URL length, request bodies, retries, deadlines, decompressed bodies,
+  parser work, concurrency, recursive pages, depth, hosts, and output size;
+- validates browser document and subresource destinations;
+- blocks browser service workers and WebSockets;
+- creates a fresh browser context for each render;
+- rejects `PLAYWRIGHT_DISABLE_SANDBOX=true` in production when Playwright is
+  enabled;
+- keeps secrets out of health/version output and configuration fingerprints;
+- fails closed on ambiguous recursive robots policy; and
+- preserves deterministic extraction when Redis or an optional quality
+  backend fails.
 
-## Out of scope
+DNS can still change between validation and connection. Chromium subresource
+validation is not a complete aggregate network-byte quota. Enforce network
+policy outside the application.
 
-- **Bot-wall evasion.** The crawler does not ship residential proxies or TLS
-  impersonation; sites behind Cloudflare/DataDome may block it. That's expected.
-- Denial of service from a caller you have *already* authenticated — apply your
-  own rate limiting / quotas at the edge.
-- Cross-replica rate limiting, persistent crawl queues, and restart recovery.
-  Recursive requests enforce robots policy, but the frontier and limiter remain
-  process-local.
+## Operator requirements
+
+1. Set `ENVIRONMENT=prod`.
+2. Set a non-empty `CRAWL4AI_API_TOKEN`.
+3. Set an independent high-entropy `SERVING_FINGERPRINT_KEY` with at least 32
+   characters. Do not reuse the bearer token.
+4. Keep `CORS_ALLOW_ORIGINS` empty unless specific trusted browser origins
+   need access.
+5. Deny private, loopback, link-local, cloud-metadata, and disallowed IPv6
+   egress at the network layer.
+6. Apply tenant quotas and edge rate limits.
+7. Run as UID/GID `10001`, keep a read-only root filesystem, and provide only
+   the bounded writable mounts required by the selected image.
+8. Pin the source commit and OCI digest; verify both through `/health/version`.
+9. Do not log credentials, provider tokens, authorization headers, or
+   unrestricted third-party page bodies.
+10. Keep a verified rollback image.
+
+Health and OpenAPI routes are public. `/crawl`, `/md`, `/html`, and `/map`
+require bearer authentication in production.
+
+## Chromium sandbox
+
+The static image contains no browser. Prefer it when rendering is unnecessary;
+it can use `no-new-privileges` and a full capability drop.
+
+The browser and quality images include Playwright's version-matched Chromium
+SUID sandbox helper and can use the user-namespace sandbox where the host
+permits it. Exactly one supported sandbox path must be verified:
+
+- when unprivileged user namespaces are available, verify Chromium is using
+  that sandbox before adding stricter container flags; or
+- when the host blocks unprivileged user namespaces, the SUID helper must be
+  executable on a non-`nosuid` mount and container policy must allow its
+  privilege transition.
+
+`no-new-privileges` prevents the SUID fallback from working. Dropping every
+capability can also make that path unavailable. The checked-in browser Compose
+service therefore uses the custom seccomp profile but deliberately does not
+set `no-new-privileges` or a full capability drop.
+
+Do not copy static-container flags onto a browser deployment without testing
+the active sandbox path. Never recover a failed browser launch by setting
+`PLAYWRIGHT_DISABLE_SANDBOX=true`.
+
+The seccomp profile permits namespace syscalls required by Chromium. It is not
+a network boundary.
+
+## Native and document parsers
+
+HTML extraction and PDF parsing run under bounded admission and worker
+concurrency. Cancellation returns control to the request path, but Python
+cannot forcibly terminate a native call that never returns. Use multiple
+worker processes with health-based recycling or per-job process isolation when
+hard-kill containment is required.
+
+## Cache and optional backends
+
+Redis keys bind request semantics, runtime identity, serving configuration, and
+credential identities through non-reversible fingerprints. Policy-aware
+recursive requests bypass the flat result cache because its envelope cannot
+replay the complete redirect, robots, and scope decision chain.
+
+Optional quality output must never remove the deterministic fallback. Do not
+cache successful model output without an immutable backend revision. Provider
+and model credentials belong in a secret store.
+
+## Known boundaries
+
+- Rate limits, frontier state, robots cache, and singleflight are process-local.
+- The built-in frontier is not restart-safe or cross-replica coordinated.
+- Aggregate Chromium subresource bytes are not a complete network quota.
+- Native parsers do not have a per-call hard-kill process boundary.
+- The service does not provide bot-wall evasion, residential proxy rotation,
+  or TLS impersonation.
+- Quota enforcement for an already authorized tenant belongs at the edge.
 
 ## Supported versions
 
-The `main` branch receives security fixes. Pin a release tag for production and
-watch the repository for advisories.
+Security fixes are applied to `main`. Pin a reviewed release identity for
+production and monitor repository security advisories.
