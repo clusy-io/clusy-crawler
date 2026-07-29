@@ -61,7 +61,9 @@ Each request flows through six stages:
    refusing any that resolve to a private/loopback/link-local/metadata address.
 3. **Fetch** — `httpx` over HTTP/2, with a size cap on the decompressed body.
    A Redis v10 cache (optional) short-circuits repeat fetches only when the
-   request and output-affecting runtime semantics match.
+   request and output-affecting runtime semantics match. Policy-aware recursive
+   crawls deliberately bypass the flat result cache until its envelope can bind
+   and revalidate every redirect and robots/scope decision.
 4. **Render?** — *conditional*. Most automatic requests fetch static HTML first
    and escalate on a bot wall, sparse JS shell, or empty extraction; known
    dynamic domains are pre-routed to Chromium.

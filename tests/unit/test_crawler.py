@@ -430,7 +430,11 @@ class TestCrawler:
 
 
 @pytest.mark.anyio
-async def test_recursive_cached_final_url_is_rechecked_before_return(monkeypatch):
+@pytest.mark.parametrize("max_age", [None, 0])
+async def test_recursive_policy_bypasses_flat_cache_for_enabled_and_disabled_modes(
+    monkeypatch,
+    max_age,
+):
     from app.services import crawler as crawler_module
 
     requested = "https://example.com/start"
@@ -440,9 +444,11 @@ async def test_recursive_cached_final_url_is_rechecked_before_return(monkeypatch
         markdown="cached content",
         metadata=ExtractionMetadata(source_url=cached_final),
     )
+    cache_calls: list[str] = []
 
     class FakeCache:
         async def get(self, _key):
+            cache_calls.append("get")
             return orjson.dumps(
                 {
                     "t": 9_999_999_999,
@@ -451,31 +457,94 @@ async def test_recursive_cached_final_url_is_rechecked_before_return(monkeypatch
             )
 
         async def set(self, _key, _value):
-            raise AssertionError("cache hit must not write")
+            cache_calls.append("set")
 
     policy_calls: list[str] = []
 
     async def document_policy(url):
         policy_calls.append(url)
-        return DocumentPolicyDecision(
-            allowed=False,
-            reason=DocumentPolicyBlockReason.OFF_SITE,
-            error="cached final URL leaves recursive scope",
-        )
+        return DocumentPolicyDecision(allowed=True)
 
-    async def must_not_crawl(**_kwargs):
-        raise AssertionError("denied cached result must not start a live crawl")
+    live_calls: list[str] = []
+
+    async def live_crawl(**kwargs):
+        live_calls.append(kwargs["url"])
+        decision = await kwargs["document_policy"](kwargs["url"])
+        assert decision.allowed
+        return CrawlResult(
+            url=kwargs["url"],
+            markdown="live content",
+            metadata=ExtractionMetadata(source_url=kwargs["url"]),
+        )
 
     monkeypatch.setattr(crawler_module, "get_cache", lambda: FakeCache())
-    monkeypatch.setattr(crawler_module, "_crawl_uncached", must_not_crawl)
+    monkeypatch.setattr(crawler_module, "_crawl_uncached", live_crawl)
 
-    with pytest.raises(DocumentPolicyDeniedError, match="cached final"):
-        await crawler_module._crawl_single_url(
-            requested,
+    result = await crawler_module._crawl_single_url(
+        requested,
+        max_age=max_age,
+        document_policy=document_policy,
+    )
+
+    assert result.markdown == "live content"
+    assert result.cached is False
+    assert live_calls == [requested]
+    assert policy_calls == [requested]
+    assert cache_calls == []
+
+
+@pytest.mark.anyio
+async def test_recursive_policy_requests_keep_singleflight_while_bypassing_cache(
+    monkeypatch,
+):
+    from app.services import crawler as crawler_module
+
+    url = "https://recursive-singleflight.example/page"
+    started = asyncio.Event()
+    release = asyncio.Event()
+    uncached_calls = 0
+
+    def cache_must_not_be_resolved():
+        raise AssertionError("policy-aware crawl must not resolve the flat cache")
+
+    async def fake_uncached(**kwargs):
+        nonlocal uncached_calls
+        uncached_calls += 1
+        assert kwargs["document_policy"] is document_policy
+        started.set()
+        await release.wait()
+        return CrawlResult(url=url, markdown="live content")
+
+    async def document_policy(_url):
+        return DocumentPolicyDecision(allowed=True)
+
+    monkeypatch.setattr(crawler_module, "get_cache", cache_must_not_be_resolved)
+    monkeypatch.setattr(crawler_module, "_crawl_uncached", fake_uncached)
+    monkeypatch.setattr(crawler_module, "_singleflight_tasks", {})
+    monkeypatch.setattr(crawler_module, "_singleflight_lock", None)
+    monkeypatch.setattr(crawler_module, "_singleflight_loop", None)
+
+    first = asyncio.create_task(
+        crawler_module._crawl_single_url(
+            url,
             document_policy=document_policy,
         )
+    )
+    await asyncio.wait_for(started.wait(), timeout=1)
+    second = asyncio.create_task(
+        crawler_module._crawl_single_url(
+            url,
+            document_policy=document_policy,
+        )
+    )
+    await asyncio.sleep(0)
+    release.set()
+    first_result, second_result = await asyncio.gather(first, second)
 
-    assert policy_calls == [cached_final]
+    assert uncached_calls == 1
+    assert first_result.markdown == second_result.markdown == "live content"
+    assert first_result is not second_result
+    assert first_result.cached is second_result.cached is False
 
 
 @pytest.mark.anyio

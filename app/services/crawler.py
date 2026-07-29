@@ -324,7 +324,6 @@ async def _crawl_single_url(
     decide_js, auto_render = _resolve_js_policy(url, js_render)
     formats = formats or ["markdown"]
 
-    cache = get_cache()
     cache_key = make_cache_key(
         url,
         decide_js,
@@ -336,7 +335,14 @@ async def _crawl_single_url(
     # V2 caches deterministic adaptive fast paths and accepted temperature-zero
     # quality outputs under a fully versioned key. A fallback caused by a
     # temporary quality failure is filtered before storage below.
-    cache_allowed = True
+    #
+    # A flat cache envelope binds only the terminal CrawlResult. It does not
+    # carry the redirect chain or prove that every hop passed the recursive
+    # scope and robots policy. Fail closed for policy-aware crawls: bypass both
+    # cache reads and writes until a versioned envelope can authenticate that
+    # complete provenance. Flat crawl cache behavior remains unchanged.
+    cache_allowed = document_policy is None
+    cache = get_cache() if cache_allowed else None
     # max_age == 0 bypasses the cache entirely (always re-crawl). "html" output
     # is never cached (too large), so those requests always take the live path.
     if cache_allowed and max_age != 0 and "html" not in formats:

@@ -4,12 +4,13 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import orjson
 import pytest
 from pydantic import ValidationError
 
 from app.config import settings
 from app.models.requests import CrawlRequest
-from app.models.responses import CrawlResult
+from app.models.responses import CrawlResult, ExtractionMetadata
 from app.services import crawler as crawler_module
 from app.services.frontier import CrawlFrontier, TerminalReason
 from app.services.robots import RobotsDecision, RobotsDecisionReason
@@ -854,7 +855,7 @@ async def test_flat_depth_zero_never_constructs_or_checks_robots(monkeypatch):
         ),
     ],
 )
-async def test_recursive_static_redirect_is_denied_before_destination_request(
+async def test_recursive_flat_cached_redirect_is_refetched_and_denied_before_destination_request(
     monkeypatch,
     destination,
     expected_terminal,
@@ -865,6 +866,7 @@ async def test_recursive_static_redirect_is_denied_before_destination_request(
     source = "https://example.com/start"
     page_requests: list[str] = []
     robots_calls: list[str] = []
+    cache_calls: list[str] = []
     frontiers: list[CrawlFrontier] = []
     real_frontier = CrawlFrontier
 
@@ -886,6 +888,25 @@ async def test_recursive_static_redirect_is_denied_before_destination_request(
                 ),
             )
 
+    cached = CrawlResult(
+        url=source,
+        markdown="flat cached content that lacks redirect provenance",
+        metadata=ExtractionMetadata(source_url=source),
+    )
+
+    class FlatCache:
+        async def get(self, _key):
+            cache_calls.append("get")
+            return orjson.dumps(
+                {
+                    "t": 9_999_999_999,
+                    "r": cached.model_dump(),
+                }
+            )
+
+        async def set(self, _key, _value, ttl=None):
+            cache_calls.append("set")
+
     async def fake_validate(_url: str) -> str | None:
         return None
 
@@ -901,6 +922,7 @@ async def test_recursive_static_redirect_is_denied_before_destination_request(
         "app.services.robots.get_robots_policy",
         lambda: policy,
     )
+    monkeypatch.setattr(crawler_module, "get_cache", lambda: FlatCache())
     monkeypatch.setattr(fetcher_module, "validate_public_url", fake_validate)
     monkeypatch.setattr(fetcher_module, "_stream_one", fake_stream)
 
@@ -908,11 +930,12 @@ async def test_recursive_static_redirect_is_denied_before_destination_request(
         [source],
         max_depth=1,
         max_pages=1,
-        max_age=0,
+        max_age=None,
         js_render=False,
     )
 
     assert page_requests == [source]
+    assert cache_calls == []
     assert expected_error in (results[0].error or "")
     assert len(frontiers) == 1
     record = frontiers[0].record(source)

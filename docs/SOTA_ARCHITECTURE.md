@@ -473,11 +473,11 @@ caller cannot join an unguarded fetch.
 The current cache envelope does not yet retain the complete redirect chain and
 per-hop policy provenance. A flat cached result therefore cannot prove that
 every intermediate hop remains valid for a later recursive policy context.
-Production currently leaves Redis disabled, so the deployed platform path
-cannot hit this case. Before shared cache is enabled for recursive crawling,
-policy-aware requests must either bypass flat entries or require a versioned
-redirect-chain/provenance envelope and revalidate every hop; legacy entries
-without that proof must miss.
+Policy-aware recursive requests now fail closed by bypassing flat result-cache
+reads and writes while retaining in-process, policy-partitioned singleflight.
+Production also currently leaves Redis disabled. Restoring cross-request
+recursive caching requires a versioned redirect-chain/provenance envelope and
+per-hop revalidation; legacy entries without that proof must miss.
 
 DNS rebinding/SSRF enforcement, content-policy checks, and redirect validation
 remain fetch-plane responsibilities and are applied on every document hop.
@@ -933,8 +933,8 @@ Use the narrowest statement supported by evidence:
 ## Delivery sequence
 
 1. **Adaptive foundation — implemented, opt-in:** deterministic-first routing,
-   versioned thresholds, quality fallback, and versioned flat-cache semantics;
-   recursive shared-cache provenance remains a closed gate.
+   versioned thresholds, quality fallback, versioned flat-cache semantics, and
+   fail-closed recursive bypass until shared-cache provenance is implemented.
 2. **Ordered block IR — additive API implemented, runtime promotion pending:**
    bounded Rust graph, typed serializers, ID-selected reconstruction, the
    shadow-only deterministic refiner, and the unwired v0 selection certificate.
