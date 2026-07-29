@@ -19,7 +19,7 @@ use super::{
 const CONTRACT_VERSION: &str = "selection-certificate.v0";
 const WIRE_MAGIC: &[u8; 8] = b"CLSYSCV0";
 const WIRE_VERSION: u16 = 0;
-const WIRE_FLAGS: u16 = 0;
+const WIRE_FLAG_LOCAL_ATOMIC: u16 = 1 << 0;
 
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 const HARD_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
@@ -77,6 +77,32 @@ impl SelectionKind {
     }
 }
 
+impl ValidationScope {
+    fn wire_flags(self) -> u16 {
+        match self {
+            Self::FullDocument => 0,
+            Self::LocalAtomic => WIRE_FLAG_LOCAL_ATOMIC,
+        }
+    }
+
+    fn from_wire_flags(value: u16) -> CertificateResult<Self> {
+        match value {
+            0 => Ok(Self::FullDocument),
+            WIRE_FLAG_LOCAL_ATOMIC => Ok(Self::LocalAtomic),
+            _ => Err(CertificateError::new(
+                "unknown or noncanonical certificate scope flags",
+            )),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::FullDocument => "full_document",
+            Self::LocalAtomic => "local_atomic",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SelectionEntry {
     kind: SelectionKind,
@@ -88,6 +114,7 @@ struct SelectionEntry {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct DecodedCertificate {
+    scope: ValidationScope,
     source_digest: [u8; 32],
     graph_digest: [u8; 32],
     output_digest: [u8; 32],
@@ -165,6 +192,8 @@ pub(super) struct NativeSelectionCertificateV0 {
     #[pyo3(get)]
     wire_version: u16,
     #[pyo3(get)]
+    validation_scope: &'static str,
+    #[pyo3(get)]
     source_digest: String,
     #[pyo3(get)]
     graph_digest: String,
@@ -194,6 +223,7 @@ impl NativeSelectionCertificateV0 {
 pub(super) struct NativeSelectionReceiptV0 {
     contract_version: &'static str,
     wire_version: u16,
+    validation_scope: &'static str,
     certificate_digest: String,
     source_digest: String,
     graph_digest: String,
@@ -320,6 +350,7 @@ fn verify_and_replay_selection_certificate_v0_native(
         NativeSelectionReceiptV0 {
             contract_version: CONTRACT_VERSION,
             wire_version: WIRE_VERSION,
+            validation_scope: replay.certificate.scope.name(),
             certificate_digest: hex_digest(&certificate_digest_v0(&replay.encoded)),
             source_digest: hex_digest(&replay.certificate.source_digest),
             graph_digest: hex_digest(&replay.certificate.graph_digest),
@@ -385,6 +416,7 @@ fn verify_and_replay_local_atomic_selection_certificate_v0_native(
         NativeSelectionReceiptV0 {
             contract_version: CONTRACT_VERSION,
             wire_version: WIRE_VERSION,
+            validation_scope: replay.certificate.scope.name(),
             certificate_digest: hex_digest(&certificate_digest_v0(&replay.encoded)),
             source_digest: hex_digest(&replay.certificate.source_digest),
             graph_digest: hex_digest(&replay.certificate.graph_digest),
@@ -488,6 +520,7 @@ fn create_certificate_scoped(
     }
     let markdown = render_selection(document, selected_ids, max_output_bytes)?;
     Ok(DecodedCertificate {
+        scope,
         source_digest: source_digest_v0(document.source.as_bytes()),
         graph_digest: graph_digest(document)?,
         output_digest: output_digest_v0(markdown.as_bytes()),
@@ -529,6 +562,11 @@ fn verify_decoded_and_replay_scoped(
     verifier_output_limit: usize,
     scope: ValidationScope,
 ) -> CertificateResult<VerifiedReplay> {
+    if certificate.scope != scope {
+        return Err(CertificateError::new(
+            "certificate validation scope does not match verifier scope",
+        ));
+    }
     validate_document_scoped(document, scope)?;
     let expected_source_digest = source_digest_v0(document.source.as_bytes());
     if certificate.source_digest != expected_source_digest {
@@ -608,6 +646,11 @@ fn validate_document_scoped(
         validate_exact_text_provenance(document)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn validate_document(document: &CertificateDocument<'_>) -> CertificateResult<()> {
+    validate_document_scoped(document, ValidationScope::FullDocument)
 }
 
 fn validate_graph_topology(graph: &Graph) -> CertificateResult<()> {
@@ -1343,6 +1386,7 @@ fn validate_selection_shape(selected_ids: &[String]) -> CertificateResult<()> {
     Ok(())
 }
 
+#[cfg(test)]
 fn validate_selection(
     document: &CertificateDocument<'_>,
     selected_ids: &[String],
@@ -1664,6 +1708,9 @@ fn validate_local_complete_subtree(
     while let Some(index) = pending.pop() {
         let (element_span, content_start) =
             local_element_span(document, index, root_index, root_span)?;
+        if !graph.elements[index].exposed.implicit {
+            validate_local_start_tag(document, index)?;
+        }
         if element_span.0 < root_span.0 || element_span.1 > root_span.1 {
             return Err(CertificateError::new(
                 "descendant element escapes selected source span",
@@ -1701,6 +1748,179 @@ fn validate_local_complete_subtree(
     Ok(root_span)
 }
 
+fn validate_local_start_tag(
+    document: &CertificateDocument<'_>,
+    index: usize,
+) -> CertificateResult<()> {
+    let element = document
+        .graph
+        .elements
+        .get(index)
+        .ok_or_else(|| CertificateError::new("local start-tag element is out of bounds"))?;
+    if element.exposed.implicit {
+        return Err(CertificateError::new(
+            "implicit elements do not have exact local start tags",
+        ));
+    }
+    let (Some(start), Some(end)) = (
+        element.exposed.source_start,
+        element.exposed.source_start_tag_end,
+    ) else {
+        return Err(CertificateError::new(
+            "local start-tag source span is unavailable",
+        ));
+    };
+    let tag = document
+        .source
+        .get(start..end)
+        .ok_or_else(|| CertificateError::new("local start tag is not UTF-8 aligned"))?;
+    let bytes = tag.as_bytes();
+    if bytes.first() != Some(&b'<') || bytes.last() != Some(&b'>') || bytes.len() < 3 {
+        return Err(CertificateError::new(
+            "local start tag is not source-canonical",
+        ));
+    }
+    if bytes.iter().any(|byte| matches!(*byte, b'\r' | b'\0')) {
+        return Err(CertificateError::new(
+            "local start tag contains a noncanonical control byte",
+        ));
+    }
+    let mut cursor = 1;
+    let name_start = cursor;
+    while cursor < bytes.len() && super::is_tag_name_byte(bytes[cursor]) {
+        cursor += 1;
+    }
+    if cursor == name_start || !tag[name_start..cursor].eq_ignore_ascii_case(&element.exposed.tag) {
+        return Err(CertificateError::new(
+            "local start-tag name disagrees with the DOM",
+        ));
+    }
+
+    let mut seen_names = HashSet::new();
+    let mut retained = HashMap::new();
+    loop {
+        let before_whitespace = cursor;
+        while cursor < bytes.len() && is_html_whitespace_byte(bytes[cursor]) {
+            cursor += 1;
+        }
+        let had_whitespace = cursor > before_whitespace;
+        if cursor + 1 == bytes.len() && bytes[cursor] == b'>' {
+            break;
+        }
+        if cursor + 2 == bytes.len() && bytes[cursor..] == *b"/>" {
+            if !super::is_void_tag(&element.exposed.tag) {
+                return Err(CertificateError::new(
+                    "local non-void element uses self-closing syntax",
+                ));
+            }
+            break;
+        }
+        if !had_whitespace || cursor >= bytes.len().saturating_sub(1) {
+            return Err(CertificateError::new(
+                "local start-tag attributes are not lexically separated",
+            ));
+        }
+
+        let attribute_start = cursor;
+        while cursor < bytes.len()
+            && !is_html_whitespace_byte(bytes[cursor])
+            && !matches!(
+                bytes[cursor],
+                b'/' | b'>' | b'=' | b'\'' | b'"' | b'<' | b'`'
+            )
+        {
+            if !bytes[cursor].is_ascii() || bytes[cursor].is_ascii_control() {
+                return Err(CertificateError::new(
+                    "local start-tag attribute name is not canonical ASCII",
+                ));
+            }
+            cursor += 1;
+        }
+        if cursor == attribute_start {
+            return Err(CertificateError::new(
+                "local start-tag attribute name is invalid",
+            ));
+        }
+        let attribute_name = tag[attribute_start..cursor].to_ascii_lowercase();
+        if !seen_names.insert(attribute_name.clone()) {
+            return Err(CertificateError::new(
+                "local start tag contains a duplicate attribute",
+            ));
+        }
+        while cursor < bytes.len() && is_html_whitespace_byte(bytes[cursor]) {
+            cursor += 1;
+        }
+
+        let mut value = "";
+        if bytes.get(cursor) == Some(&b'=') {
+            cursor += 1;
+            while cursor < bytes.len() && is_html_whitespace_byte(bytes[cursor]) {
+                cursor += 1;
+            }
+            let Some(first) = bytes.get(cursor).copied() else {
+                return Err(CertificateError::new(
+                    "local start-tag attribute value is missing",
+                ));
+            };
+            if matches!(first, b'\'' | b'"') {
+                let quote = first;
+                cursor += 1;
+                let value_start = cursor;
+                while cursor < bytes.len() && bytes[cursor] != quote {
+                    if matches!(bytes[cursor], b'<' | b'\r' | b'\0' | b'&') {
+                        return Err(CertificateError::new(
+                            "local start-tag attribute requires HTML repair or decoding",
+                        ));
+                    }
+                    cursor += 1;
+                }
+                if cursor >= bytes.len() {
+                    return Err(CertificateError::new(
+                        "local start-tag quoted attribute is unterminated",
+                    ));
+                }
+                value = tag.get(value_start..cursor).ok_or_else(|| {
+                    CertificateError::new("local attribute value is not UTF-8 aligned")
+                })?;
+                cursor += 1;
+            } else {
+                let value_start = cursor;
+                while cursor < bytes.len()
+                    && !is_html_whitespace_byte(bytes[cursor])
+                    && bytes[cursor] != b'>'
+                {
+                    if matches!(
+                        bytes[cursor],
+                        b'\'' | b'"' | b'<' | b'=' | b'`' | b'\r' | b'\0' | b'&'
+                    ) {
+                        return Err(CertificateError::new(
+                            "local unquoted attribute requires HTML repair or decoding",
+                        ));
+                    }
+                    cursor += 1;
+                }
+                if cursor == value_start {
+                    return Err(CertificateError::new(
+                        "local start-tag attribute value is empty",
+                    ));
+                }
+                value = tag.get(value_start..cursor).ok_or_else(|| {
+                    CertificateError::new("local attribute value is not UTF-8 aligned")
+                })?;
+            }
+        }
+        if element.attrs.contains_key(&attribute_name) {
+            retained.insert(attribute_name, value.to_owned());
+        }
+    }
+    if retained != element.attrs {
+        return Err(CertificateError::new(
+            "local start-tag retained attributes disagree with the DOM",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_local_text_span(
     document: &CertificateDocument<'_>,
     index: usize,
@@ -1724,6 +1944,10 @@ fn is_ascii_html_whitespace(value: &[u8]) -> bool {
     value
         .iter()
         .all(|byte| matches!(*byte, b' ' | b'\t' | b'\n' | 0x0c))
+}
+
+fn is_html_whitespace_byte(value: u8) -> bool {
+    matches!(value, b' ' | b'\t' | b'\n' | 0x0c | b'\r')
 }
 
 fn local_element_span(
@@ -2243,6 +2467,7 @@ fn native_certificate(
         encoded,
         contract_version: CONTRACT_VERSION,
         wire_version: WIRE_VERSION,
+        validation_scope: certificate.scope.name(),
         source_digest: hex_digest(&certificate.source_digest),
         graph_digest: hex_digest(&certificate.graph_digest),
         output_digest: hex_digest(&certificate.output_digest),
@@ -2291,7 +2516,7 @@ fn encode_certificate(certificate: &DecodedCertificate) -> CertificateResult<Vec
     let mut encoded = Vec::with_capacity(estimated);
     encoded.extend_from_slice(WIRE_MAGIC);
     push_u16(&mut encoded, WIRE_VERSION);
-    push_u16(&mut encoded, WIRE_FLAGS);
+    push_u16(&mut encoded, certificate.scope.wire_flags());
     encoded.extend_from_slice(&certificate.source_digest);
     encoded.extend_from_slice(&certificate.graph_digest);
     encoded.extend_from_slice(&certificate.output_digest);
@@ -2361,9 +2586,7 @@ fn decode_certificate(encoded: &[u8]) -> CertificateResult<DecodedCertificate> {
             "unsupported certificate wire version",
         ));
     }
-    if reader.u16()? != WIRE_FLAGS {
-        return Err(CertificateError::new("non-zero certificate flags"));
-    }
+    let scope = ValidationScope::from_wire_flags(reader.u16()?)?;
     let source_digest = reader.digest()?;
     let graph_digest = reader.digest()?;
     let output_digest = reader.digest()?;
@@ -2442,6 +2665,7 @@ fn decode_certificate(encoded: &[u8]) -> CertificateResult<DecodedCertificate> {
         return Err(CertificateError::new("trailing certificate bytes"));
     }
     let certificate = DecodedCertificate {
+        scope,
         source_digest,
         graph_digest,
         output_digest,
@@ -3070,6 +3294,7 @@ mod tests {
         .unwrap();
         entries[1].source_start = entries[0].source_end - 1;
         let malformed = DecodedCertificate {
+            scope: ValidationScope::FullDocument,
             source_digest: [0; 32],
             graph_digest: [0; 32],
             output_digest: [0; 32],
@@ -3261,6 +3486,7 @@ mod tests {
         );
         assert!(create_certificate(&view(&result), &[], 1_024).is_err());
         let malformed = DecodedCertificate {
+            scope: ValidationScope::FullDocument,
             source_digest: source_digest_v0(result.source.as_bytes()),
             graph_digest: graph_digest(&view(&result)).unwrap(),
             output_digest: output_digest_v0(b""),

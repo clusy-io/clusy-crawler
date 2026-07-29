@@ -291,6 +291,14 @@ class _TokenSpan:
 
 
 @dataclass(frozen=True, slots=True)
+class _TextIdentity:
+    materialized: bytes | None
+    byte_length: int
+    valid_utf8: bool
+    encoding_errors: Literal["strict", "surrogatepass"]
+
+
+@dataclass(frozen=True, slots=True)
 class _CandidateSpan:
     char_start: int
     char_end: int
@@ -353,7 +361,27 @@ def propose_atomic_structure_overlay_v0(
     config: AtomicStructureOverlayV0Config = DEFAULT_ATOMIC_STRUCTURE_OVERLAY_V0_CONFIG,
     timing_hook: AtomicOverlayTimingHookV0 | None = None,
 ) -> AtomicStructureOverlayDecisionV0:
-    """Propose exact local structure overlays or return the candidate unchanged."""
+    """Propose overlays and publish timing only after the decision is immutable."""
+
+    timings: list[tuple[str, int]] = []
+    decision = _propose_atomic_structure_overlay_v0(
+        html,
+        candidate_markdown,
+        config=config,
+        timing_hook=lambda stage, elapsed: timings.append((stage, elapsed)),
+    )
+    _publish_timings(timing_hook, timings)
+    return decision
+
+
+def _propose_atomic_structure_overlay_v0(
+    html: str,
+    candidate_markdown: str,
+    *,
+    config: AtomicStructureOverlayV0Config,
+    timing_hook: AtomicOverlayTimingHookV0 | None,
+) -> AtomicStructureOverlayDecisionV0:
+    """Compute an exact decision without invoking caller-controlled code."""
 
     if type(html) is not str:
         raise TypeError("html must be a string")
@@ -362,10 +390,21 @@ def propose_atomic_structure_overlay_v0(
     if type(config) is not AtomicStructureOverlayV0Config:
         raise TypeError("config must be AtomicStructureOverlayV0Config")
 
-    source_bytes = html.encode("utf-8")
-    candidate_bytes = candidate_markdown.encode("utf-8")
-    source_digest = _framed_digest("clusy-atomic-overlay-source-v0", source_bytes)
-    input_digest = _framed_digest("clusy-atomic-overlay-input-v0", candidate_bytes)
+    source_identity = _text_identity(html, config.max_source_bytes)
+    candidate_identity = _text_identity(
+        candidate_markdown,
+        config.max_candidate_bytes,
+    )
+    source_digest = _framed_text_digest(
+        "clusy-atomic-overlay-source-v0",
+        html,
+        source_identity,
+    )
+    input_digest = _framed_text_digest(
+        "clusy-atomic-overlay-input-v0",
+        candidate_markdown,
+        candidate_identity,
+    )
     config_digest = _config_digest(config)
 
     if not config.enabled:
@@ -381,23 +420,38 @@ def propose_atomic_structure_overlay_v0(
             accepted=False,
             reason="disabled",
             visible_tokens_identical=True,
+            candidate_identity=candidate_identity,
+            output_identity=candidate_identity,
         )
-    if len(source_bytes) > config.max_source_bytes:
+    if not source_identity.valid_utf8 or not candidate_identity.valid_utf8:
+        return _fallback(
+            candidate_markdown,
+            source_digest,
+            input_digest,
+            config_digest,
+            "invalid_unicode",
+            candidate_identity=candidate_identity,
+        )
+    if source_identity.materialized is None:
         return _fallback(
             candidate_markdown,
             source_digest,
             input_digest,
             config_digest,
             "source_byte_budget",
+            candidate_identity=candidate_identity,
         )
-    if len(candidate_bytes) > config.max_candidate_bytes:
+    if candidate_identity.materialized is None:
         return _fallback(
             candidate_markdown,
             source_digest,
             input_digest,
             config_digest,
             "candidate_byte_budget",
+            candidate_identity=candidate_identity,
         )
+    source_bytes = source_identity.materialized
+    candidate_bytes = candidate_identity.materialized
 
     try:
         candidate_tokens = _timed(
@@ -684,6 +738,28 @@ def verify_atomic_structure_overlay_v0(
     config: AtomicStructureOverlayV0Config,
     timing_hook: AtomicOverlayTimingHookV0 | None = None,
 ) -> AtomicStructureOverlayReplayV0:
+    """Verify a decision and publish timing only after the receipt is immutable."""
+
+    timings: list[tuple[str, int]] = []
+    replay = _verify_atomic_structure_overlay_v0(
+        html,
+        candidate_markdown,
+        decision,
+        config=config,
+        timing_hook=lambda stage, elapsed: timings.append((stage, elapsed)),
+    )
+    _publish_timings(timing_hook, timings)
+    return replay
+
+
+def _verify_atomic_structure_overlay_v0(
+    html: str,
+    candidate_markdown: str,
+    decision: object,
+    *,
+    config: AtomicStructureOverlayV0Config,
+    timing_hook: AtomicOverlayTimingHookV0 | None,
+) -> AtomicStructureOverlayReplayV0:
     """Recompute and verify a decision; failure returns *candidate_markdown*.
 
     Exact type and size checks happen before equality or certificate replay so
@@ -696,9 +772,14 @@ def verify_atomic_structure_overlay_v0(
         raise TypeError("candidate_markdown must be a string")
     if type(config) is not AtomicStructureOverlayV0Config:
         raise TypeError("config must be AtomicStructureOverlayV0Config")
-    fallback_digest = _framed_digest(
+    candidate_identity = _text_identity(
+        candidate_markdown,
+        config.max_candidate_bytes,
+    )
+    fallback_digest = _framed_text_digest(
         "clusy-atomic-overlay-output-v0",
-        candidate_markdown.encode("utf-8"),
+        candidate_markdown,
+        candidate_identity,
     )
     if type(decision) is not AtomicStructureOverlayDecisionV0:
         return AtomicStructureOverlayReplayV0(
@@ -2104,6 +2185,93 @@ def _timed[T](
                 hook(stage, max(0, time.perf_counter_ns() - started))
 
 
+def _publish_timings(
+    hook: AtomicOverlayTimingHookV0 | None,
+    timings: list[tuple[str, int]],
+) -> None:
+    if hook is None:
+        return
+    for stage, elapsed in timings:
+        with suppress(Exception):
+            hook(stage, elapsed)
+
+
+def _text_identity(value: str, materialize_limit: int) -> _TextIdentity:
+    def scan(
+        errors: Literal["strict", "surrogatepass"],
+    ) -> tuple[bytes | None, int]:
+        materialized: bytearray | None = bytearray()
+        byte_length = 0
+        for offset in range(0, len(value), 16_384):
+            encoded = value[offset : offset + 16_384].encode(
+                "utf-8",
+                errors=errors,
+            )
+            byte_length += len(encoded)
+            if materialized is not None:
+                if byte_length <= materialize_limit:
+                    materialized.extend(encoded)
+                else:
+                    materialized = None
+        return (
+            bytes(materialized) if materialized is not None else None,
+            byte_length,
+        )
+
+    try:
+        materialized, byte_length = scan("strict")
+    except UnicodeEncodeError:
+        materialized, byte_length = scan("surrogatepass")
+        return _TextIdentity(
+            materialized=materialized,
+            byte_length=byte_length,
+            valid_utf8=False,
+            encoding_errors="surrogatepass",
+        )
+    return _TextIdentity(
+        materialized=materialized,
+        byte_length=byte_length,
+        valid_utf8=True,
+        encoding_errors="strict",
+    )
+
+
+def _framed_text_digest(
+    domain: str,
+    value: str,
+    identity: _TextIdentity,
+) -> str:
+    if identity.materialized is not None:
+        return _framed_digest(domain, identity.materialized)
+    digest = hashlib.sha256()
+    domain_bytes = domain.encode("ascii")
+    digest.update(len(domain_bytes).to_bytes(8, "big"))
+    digest.update(domain_bytes)
+    digest.update(identity.byte_length.to_bytes(8, "big"))
+    for offset in range(0, len(value), 16_384):
+        digest.update(
+            value[offset : offset + 16_384].encode(
+                "utf-8",
+                errors=identity.encoding_errors,
+            )
+        )
+    return digest.hexdigest()
+
+
+def _strict_utf8_within_budget(value: str, maximum_bytes: int) -> bool:
+    if len(value) > maximum_bytes:
+        return False
+    byte_length = 0
+    try:
+        for offset in range(0, len(value), 16_384):
+            byte_length += len(value[offset : offset + 16_384].encode("utf-8"))
+            if byte_length > maximum_bytes:
+                return False
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _framed_digest(domain: str, *parts: bytes) -> str:
     digest = hashlib.sha256()
     domain_bytes = domain.encode("ascii")
@@ -2152,23 +2320,38 @@ def _finish_decision(
     accepted: bool,
     reason: str,
     visible_tokens_identical: bool,
+    candidate_identity: _TextIdentity | None = None,
+    output_identity: _TextIdentity | None = None,
 ) -> AtomicStructureOverlayDecisionV0:
-    candidate_bytes = candidate_markdown.encode("utf-8")
-    output_bytes = output_markdown.encode("utf-8")
-    output_digest = _framed_digest("clusy-atomic-overlay-output-v0", output_bytes)
+    if candidate_identity is None:
+        candidate_identity = _text_identity(
+            candidate_markdown,
+            _HARD_MAX_CANDIDATE_BYTES,
+        )
+    if output_identity is None:
+        output_identity = (
+            candidate_identity
+            if output_markdown == candidate_markdown
+            else _text_identity(output_markdown, _HARD_MAX_OUTPUT_BYTES)
+        )
+    output_digest = _framed_text_digest(
+        "clusy-atomic-overlay-output-v0",
+        output_markdown,
+        output_identity,
+    )
     try:
         visible_token_digest = _token_digest(_visible_tokens(output_markdown, _HARD_MAX_TOKENS))
-    except _BudgetExceededError:
+    except (_BudgetExceededError, UnicodeEncodeError):
         visible_token_digest = ""
     canonical = {
         "accepted": accepted,
         "applied_proposal_ids": applied_proposal_ids,
         "config_digest": config_digest,
         "enabled": enabled,
-        "growth_bytes": len(output_bytes) - len(candidate_bytes),
-        "input_bytes": len(candidate_bytes),
+        "growth_bytes": output_identity.byte_length - candidate_identity.byte_length,
+        "input_bytes": candidate_identity.byte_length,
         "input_digest": input_digest,
-        "output_bytes": len(output_bytes),
+        "output_bytes": output_identity.byte_length,
         "output_digest": output_digest,
         "proposal_ids": tuple(proposal.proposal_id for proposal in proposals),
         "reason": reason,
@@ -2196,9 +2379,9 @@ def _finish_decision(
         visible_token_digest=visible_token_digest,
         decision_digest=decision_digest,
         visible_tokens_identical=visible_tokens_identical,
-        input_bytes=len(candidate_bytes),
-        output_bytes=len(output_bytes),
-        growth_bytes=len(output_bytes) - len(candidate_bytes),
+        input_bytes=candidate_identity.byte_length,
+        output_bytes=output_identity.byte_length,
+        growth_bytes=output_identity.byte_length - candidate_identity.byte_length,
     )
 
 
@@ -2208,6 +2391,8 @@ def _fallback(
     input_digest: str,
     config_digest: str,
     reason: str,
+    *,
+    candidate_identity: _TextIdentity | None = None,
 ) -> AtomicStructureOverlayDecisionV0:
     return _finish_decision(
         candidate_markdown=candidate_markdown,
@@ -2221,6 +2406,8 @@ def _fallback(
         accepted=False,
         reason=reason,
         visible_tokens_identical=True,
+        candidate_identity=candidate_identity,
+        output_identity=candidate_identity,
     )
 
 
@@ -2285,8 +2472,14 @@ def _bounded_record(
         or not _bounded_int(decision.output_bytes, config.max_output_bytes)
         or not _bounded_signed_int(decision.growth_bytes, config.max_output_bytes)
         or type(decision.digest_is_authentication) is not bool
-        or len(decision.candidate_markdown.encode("utf-8")) > config.max_candidate_bytes
-        or len(decision.output_markdown.encode("utf-8")) > config.max_output_bytes
+        or not _strict_utf8_within_budget(
+            decision.candidate_markdown,
+            config.max_candidate_bytes,
+        )
+        or not _strict_utf8_within_budget(
+            decision.output_markdown,
+            config.max_output_bytes,
+        )
     ):
         return False
     total_certificate_bytes = 0

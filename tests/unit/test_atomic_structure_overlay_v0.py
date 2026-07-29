@@ -468,6 +468,46 @@ def test_resource_caps_and_malformed_html_fall_back_byte_for_byte() -> None:
     assert malformed.proposals[0].reason == "certificate_provenance_rejected"
 
 
+def test_multibyte_budgets_and_lone_surrogates_fail_closed_without_encoding_crash() -> None:
+    multibyte = "😀"
+    byte_limited = propose_atomic_structure_overlay_v0(
+        _document("<pre><code>safe</code></pre>"),
+        multibyte,
+        config=_enabled(max_candidate_bytes=3),
+    )
+    assert byte_limited.reason == "candidate_byte_budget"
+    assert byte_limited.output_markdown == multibyte
+    assert byte_limited.input_bytes == 4
+
+    invalid_candidate = "prefix\ud800suffix"
+    invalid = propose_atomic_structure_overlay_v0(
+        _document("<pre><code>safe</code></pre>"),
+        invalid_candidate,
+        config=_enabled(),
+    )
+    assert invalid.reason == "invalid_unicode"
+    assert invalid.output_markdown == invalid_candidate
+    assert invalid.input_bytes == len(invalid_candidate.encode("utf-8", "surrogatepass"))
+
+    invalid_source = propose_atomic_structure_overlay_v0(
+        _document("<pre><code>safe\udfff</code></pre>"),
+        "safe",
+        config=_enabled(),
+    )
+    assert invalid_source.reason == "invalid_unicode"
+    assert invalid_source.output_markdown == "safe"
+
+    replay = verify_atomic_structure_overlay_v0(
+        _document("<pre><code>safe</code></pre>"),
+        invalid_candidate,
+        invalid,
+        config=_enabled(),
+    )
+    assert not replay.verified
+    assert replay.reason == "decision_record_budget"
+    assert replay.output_markdown == invalid_candidate
+
+
 def test_hostile_hook_record_and_tamper_cannot_change_fallback() -> None:
     html = _document("<pre><code>safe replay</code></pre>")
     candidate = "safe replay"
@@ -485,6 +525,23 @@ def test_hostile_hook_record_and_tamper_cannot_change_fallback() -> None:
         timing_hook=hostile_hook,
     )
     assert observed == expected
+
+    original_visible_tokens = overlay_module._visible_tokens  # noqa: SLF001
+
+    def mutating_hook(stage: str, elapsed: int) -> None:
+        del stage, elapsed
+        overlay_module._visible_tokens = lambda *_args, **_kwargs: ()  # noqa: SLF001
+
+    try:
+        mutation_observed = propose_atomic_structure_overlay_v0(
+            html,
+            candidate,
+            config=config,
+            timing_hook=mutating_hook,
+        )
+    finally:
+        overlay_module._visible_tokens = original_visible_tokens  # noqa: SLF001
+    assert mutation_observed == expected
 
     class Hostile:
         def __getattribute__(self, name: str) -> object:
@@ -510,9 +567,9 @@ def test_hostile_hook_record_and_tamper_cannot_change_fallback() -> None:
     assert not hostile_field_replay.verified
     assert hostile_field_replay.reason == "decision_record_budget"
 
-    hostile_proposal = replace(  # type: ignore[arg-type]
+    hostile_proposal = replace(
         expected.proposals[0],
-        atom_kind=Hostile(),
+        atom_kind=Hostile(),  # type: ignore[arg-type]
     )
     hostile_proposal_replay = verify_atomic_structure_overlay_v0(
         html,

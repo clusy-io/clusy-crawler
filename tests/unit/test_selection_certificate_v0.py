@@ -62,6 +62,7 @@ def test_certificate_round_trip_binds_utf8_source_graph_and_atomic_output() -> N
 
     assert certificate.contract_version == "selection-certificate.v0"
     assert certificate.wire_version == 0
+    assert certificate.validation_scope == "full_document"
     assert certificate.source_digest == _framed_digest(
         b"clusy-selection-certificate-source-v0",
         html.encode(),
@@ -72,6 +73,7 @@ def test_certificate_round_trip_binds_utf8_source_graph_and_atomic_output() -> N
     assert replay.markdown == existing_serializer.markdown
     assert replay.receipt.verified
     assert replay.receipt.deterministic
+    assert replay.receipt.validation_scope == "full_document"
     assert replay.receipt.output_digest == certificate.output_digest
     assert replay.receipt.output_bytes == len(replay.markdown.encode())
 
@@ -228,8 +230,10 @@ def test_local_atomic_certificate_ignores_unrelated_parse_error_only() -> None:
     )
 
     assert replay.receipt.verified
+    assert certificate.validation_scope == "local_atomic"
+    assert replay.receipt.validation_scope == "local_atomic"
     assert replay.markdown == "```python\ndef safe():\n  return 1\n```"
-    with pytest.raises(ValueError, match="HTML parse errors"):
+    with pytest.raises(ValueError, match="scope"):
         verify_and_replay_selection_certificate_v0(document, certificate)
 
 
@@ -257,6 +261,63 @@ def test_local_atomic_certificate_allows_only_standard_implicit_tbody() -> None:
     assert replay.receipt.verified
     assert "A" in replay.markdown
     assert "1" in replay.markdown
+
+
+def test_certificate_validation_scope_is_wire_bound_and_cross_scope_fails() -> None:
+    document = extract_document_ir_v2(
+        _document("<pre><code>scope safe</code></pre>")
+    )
+    pre_id = _tag_id(document, "pre")
+    full = create_selection_certificate_v0(document, [pre_id])
+    local = create_local_atomic_selection_certificate_v0(document, [pre_id])
+
+    assert full.encoded != local.encoded
+    assert full.certificate_digest != local.certificate_digest
+    with pytest.raises(ValueError, match="scope"):
+        verify_and_replay_local_atomic_selection_certificate_v0(document, full)
+    with pytest.raises(ValueError, match="scope"):
+        verify_and_replay_selection_certificate_v0(document, local)
+
+    unknown_scope = bytearray(full.encoded)
+    unknown_scope[10:12] = (2).to_bytes(2, "big")
+    with pytest.raises(ValueError, match="scope flags"):
+        decode_selection_certificate_v0(bytes(unknown_scope))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '<pre class="language-python" CLASS="language-python"><code>x</code></pre>',
+        '<pre class="language&#45;python"><code>x</code></pre>',
+        '<pre class=language=python><code>x</code></pre>',
+        '<pre data-note="bad\rvalue"><code>x</code></pre>',
+    ],
+)
+def test_local_atomic_certificate_rejects_ambiguous_start_tag_attributes(
+    body: str,
+) -> None:
+    document = extract_document_ir_v2(_document(body))
+
+    with pytest.raises(ValueError, match="start[ -]tag|attribute|repair|source"):
+        create_local_atomic_selection_certificate_v0(
+            document,
+            [_tag_id(document, "pre")],
+        )
+
+
+def test_local_atomic_certificate_accepts_quote_aware_canonical_attributes() -> None:
+    document = extract_document_ir_v2(
+        _document(
+            '<pre class="language-python" data-note="a > b">'
+            "<code>x</code></pre>"
+        )
+    )
+    certificate = create_local_atomic_selection_certificate_v0(
+        document,
+        [_tag_id(document, "pre")],
+    )
+
+    assert certificate.validation_scope == "local_atomic"
 
 
 @pytest.mark.parametrize(

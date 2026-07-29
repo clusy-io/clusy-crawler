@@ -1,4 +1,4 @@
-from typing import Final
+from typing import Final, Literal
 
 class NativeExtraction:
     text: Final[str]
@@ -178,6 +178,7 @@ class NativeSelectionCertificateV0:
     encoded: Final[bytes]
     contract_version: Final[str]
     wire_version: Final[int]
+    validation_scope: Final[Literal["full_document", "local_atomic"]]
     source_digest: Final[str]
     graph_digest: Final[str]
     output_digest: Final[str]
@@ -190,6 +191,7 @@ class NativeSelectionCertificateV0:
 class NativeSelectionReceiptV0:
     contract_version: Final[str]
     wire_version: Final[int]
+    validation_scope: Final[Literal["full_document", "local_atomic"]]
     certificate_digest: Final[str]
     source_digest: Final[str]
     graph_digest: Final[str]
