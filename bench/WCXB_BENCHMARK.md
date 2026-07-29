@@ -124,51 +124,62 @@ WCXB pages, labels, and predictions are benchmark-only inputs and outputs; they
 are not used for training, distillation, label generation, or production
 routing calibration.
 
-## Retained clean private-source validation
+## Current direct OSS validation
 
-The full 2026-07-29 `balanced` run used clean private source revision
-`10ff0c1a7c9a2083958b674d64e15bb5a8a1b90e`, two workers, and three warmups per
-split. It was not executed from public OSS revision
-`837dddababc612bfa1ce438307b1e2fb29b4c2f5` or from the current public commit:
+The full 2026-07-29 runs came directly from clean public source revision
+`9c7cc0a84f240910ff764baae75824e269d08350`, with eight requested workers and
+three warmups per split:
 
-| Split | Pages | Precision | Recall | F1 | pages/s | p50 | p95 |
+| Profile / split | Pages | Precision | Recall | F1 | pages/s | p50 | p95 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| development | 1,497 | 0.852732 | 0.898934 | 0.848433 | 90.65 | 13.61 ms | 59.42 ms |
-| public test | 511 | 0.894822 | 0.928969 | 0.891727 | 139.86 | 11.08 ms | 33.04 ms |
-| combined | 2,008 | 0.863443 | 0.906577 | 0.859450 | 99.5618 | 12.74 ms | 50.93 ms |
+| `balanced` development | 1,497 | 0.852732 | 0.898934 | 0.848433 | 56.58 | 110.345 ms | 341.527 ms |
+| `balanced` public test | 511 | 0.894822 | 0.928969 | 0.891727 | 106.96 | 68.243 ms | 124.028 ms |
+| `balanced` combined | 2,008 | 0.863443 | 0.906577 | 0.859450 | 64.28 | 97.125 ms | 295.621 ms |
+| `adaptive` development | 1,497 | 0.844912 | 0.912670 | 0.852667 | 48.54 | 121.006 ms | 424.284 ms |
+| `adaptive` public test | 511 | 0.895244 | 0.942960 | 0.901714 | 78.62 | 82.501 ms | 227.714 ms |
+| `adaptive` combined | 2,008 | 0.857721 | 0.920378 | 0.865149 | 53.78 | 110.542 ms | 376.669 ms |
 
-All 2,008 pages produced predictions with zero extraction errors. Peak process
-RSS was 486,506,496 bytes; that is a process-lifetime high-water mark including
-imports, corpus processing, retained predictions, and evaluation structures.
-The retained private artifact identifier is
-`bench/results/wcxb/20260729T000227Z`; its `manifest.json` SHA-256 is
-`a051965f480fd3a1cae780d7ccdd289b237163f7e644ba2dde9a9acc53e4b8d0`.
-The source was clean before and after the run and stable throughout at
-`10ff0c1`. The historical harness marked the complete result claimable within
-the WCXB extraction scope, but that flag predated the embedded-classifier
-provenance audit and is superseded by the limitation above.
+Both runs produced all 2,008 predictions with zero extraction errors and
+verified clean, stable public source throughout. Their ignored artifacts are:
+
+| Profile | Artifact directory | Manifest SHA-256 | Summary SHA-256 |
+|---|---|---|---|
+| `balanced` | `bench/results/wcxb/20260729T-oss-balanced-9c7cc0a` | `627995ebc1c9e2005a88b8b007a3e56e2eb04ab9994f6ed3a78834a1958407a8` | `32be7cb53622a3caff574a3fae490238e66df35969442630d3f9b6824bea4d42` |
+| `adaptive` | `bench/results/wcxb/20260729T-oss-adaptive-9c7cc0a` | `c02cccf91d77540de9e52a795285abcfe9baae244edf236a5e28b70b056908ba` | `5137537fdd02c9f622aa6bae2531c98a79029199f0ea36c220a7c9ffcee8006a` |
+
+The `adaptive` prediction SHA-256 values are
+`0520fcf3bf2dffe578dfe53e9cbff08ef874be2b521ad86b8dc2eca36fc3de00`
+for development and
+`e3e670a76d55f2b34172d915be41c8b2f69a2cc0060a52a96f88403c6d4852b8`
+for public test. They are byte-identical to the separately captured private
+deployment-path predictions.
+
+Against this direct OSS `balanced` artifact, `adaptive` changed 66 development
+and 17 test outputs. Under official per-page F1 it had 41 wins, 34 losses, and
+1,933 ties overall. A 10,000-replicate paired page bootstrap with replacement
+used fixed seeds 20260729, 20260730, and 20260731:
+
+| Split | ΔF1 (`adaptive - balanced`) | 95% CI | P(Δ > 0) |
+|---|---:|---:|---:|
+| development | +0.004235 | [-0.000459, +0.009298] | 0.9604 |
+| public test | +0.009987 | [+0.003424, +0.017720] | 0.9995 |
+| combined | +0.005699 | [+0.001795, +0.009833] | 0.9983 |
+
+The two profiles were run sequentially rather than as a randomized performance
+experiment. Their throughput and latency rows are honest run observations, not
+a portable speed comparison. In these runs `adaptive` traded about 16.3%
+combined throughput for the quality gain.
 
 The pinned WCXB commit reports `rs-trafilatura` at 0.859 on development and
-0.893 on public test. Clusy is below both in this `balanced` run. The combined
-0.859450 row above must not be compared with the development-only 0.859
-headline.
+0.893 on public test. `adaptive` is 0.008714 above that public-test point
+result, but the upstream predictions are unavailable for a paired comparison,
+and the systems share backend/model provenance. Combined rows must not be
+compared with a development-only headline.
 
-A post-run SHA-256 audit compared the artifact's 49 recorded source files with
-public `837ddda`: 44 matched and none was missing. The WCXB runner, core
-extraction implementation, native algorithm sources, Cargo files, and
-`uv.lock` matched byte-for-byte. The five differences were `app/config.py`,
-`app/main.py`, `app/services/renderer.py`, `native/pyproject.toml`, and
-`pyproject.toml`; they comprise OSS configuration, comments, and package
-metadata, and the only executable delta is an adaptive-profile page-type
-validator that this `balanced` run did not exercise. The full snapshots are not
-byte-identical, and the recorded native binary was not reproduced from
-`837ddda`.
-
-Describe this as clean, source-audited WCXB extraction evidence from the
-private revision, not as a run of the OSS commit, a blind result, or universal
-SOTA. The labels are public, annotation drafting was LLM-assisted and
-human-reviewed, the benchmark shares author overlap with the leading baseline,
-and the embedded classifier's training items are unresolved.
+Describe this as reproducible direct-OSS WCXB extraction evidence rather than a
+blind or universal SOTA result. The labels are public, annotation drafting was
+LLM-assisted and human-reviewed, the benchmark shares author overlap with the
+leading baseline, and the embedded classifier's training items are unresolved.
 
 [wcxb]: https://github.com/Murrough-Foley/web-content-extraction-benchmark
 [classifier]: https://github.com/Murrough-Foley/web-page-classifier

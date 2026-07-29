@@ -83,8 +83,14 @@ Each request flows through six stages:
 The checked-in harnesses call the production extraction entry points and pin
 the corpus, evaluator, dependencies, source tree, native module, raw
 predictions, and artifact hashes. Article-body and general main-content
-Markdown remain separate contracts; no benchmark labels enter runtime routing
-and no scoring-only cleanup is applied.
+Markdown remain separate contracts. Harnesses do not pass references,
+page-type labels, or snippets to the extractor, and no scoring-only cleanup is
+applied. Runtime isolation is not a training-provenance guarantee: the broad
+native path embeds `web-page-classifier` 0.1.0, whose publisher reports 1,497
+training pages across seven types but publishes no item/split manifest. WCXB
+development contains exactly 1,497 pages across the same seven types. This is
+strong overlap risk, not proof of overlap, so broad-profile public-benchmark
+results remain diagnostics rather than unseen-performance claims.
 
 ### Current public AEB validation
 
@@ -122,30 +128,33 @@ was `8.230 / 16.408 ms`. Their ignored artifacts and hashes are:
 | `article_body` | `bench/results/aeb/20260729T110311Z` | `2f7b61af148387c93ff6381fee5fad663a1a4e731d79d653568da4a656784fc1` | `532f4ccabb6588e258323b6e6865630e3350f9dfe12cd535e4241535cf944f65` |
 | `balanced` | `bench/results/aeb/20260729T110342Z` | `4f58b2ff7e55ba017c3fdfae1bb4da3bffab48b67a55f8a458b68de04d81aa70` | `0f12f1438fcfdbf1fe44b17c4fbcffa5b0c78ad37870c046f40b77adf3bbcd97` |
 
-The harness marked both claimable only within the explicitly limited AEB
-article-extraction scope. Throughput is an in-memory extractor measurement on
-an Apple M4 Pro, not a live-network crawl result or portable hardware
-guarantee. Generic source-root identity guards prevent nested serialization
-from repeating the same source subtree while retaining equal text from
-disjoint nodes; there is no page, hostname, or benchmark-specific condition.
+The `article_body` row is scoped public-benchmark evidence. The general
+`balanced` row remains a public diagnostic because its broad path includes the
+classifier with unresolved training provenance. Throughput is an in-memory
+extractor measurement on an Apple M4 Pro, not a live-network crawl result or
+portable hardware guarantee. Generic source-root identity guards prevent
+nested serialization from repeating the same source subtree while retaining
+equal text from disjoint nodes; there is no page, hostname, or
+benchmark-specific condition.
 
 ### Release-wide fixed-corpus context
 
-Only the two AEB rows below are direct runs of the public executable commit.
-WCXB, Webis, and WebMainBench were rerun from clean private executable revision
-`a19ae17` after the same source-root release change. They are included to
-disclose the wider release evidence, but they are not represented as runs of
-OSS commit `4dd1755` and do not substitute for direct public reruns. None of
-these fixed-corpus results proves universal, live-crawler, Exa-comparative, or
-Firecrawl-comparative SOTA.
+The two AEB rows are direct runs of public commit `4dd1755`. Both WCXB profiles
+were rerun directly from clean public commit `9c7cc0a`; Webis and WebMainBench
+remain clean private-revision `a19ae17` diagnostics and are not represented as
+OSS runs. None of these fixed-corpus results proves universal, live-crawler,
+Exa-comparative, or Firecrawl-comparative SOTA.
 
 | Suite / profile | Pages | Quality | Extraction throughput | Honest comparison |
 |---|---:|---:|---:|---|
 | AEB `article_body` | 181 | P/R/F1 `0.955147 / 0.989721 / 0.972127` | `142.306` pages/s | Direct clean OSS run; `+0.014624` versus Trafilatura 2.0, CI `[+0.005346, +0.025342]` |
 | AEB `balanced` | 181 | P/R/F1 `0.928435 / 0.989588 / 0.958037` | `215.265` pages/s | Direct clean OSS run; below pinned `rs-trafilatura` |
-| WCXB `balanced`, development | 1,497 | P/R/F1 `0.852732 / 0.898934 / 0.848433` | `77.05` pages/s | Private `a19ae17`; public-label development evidence, not a blind test |
-| WCXB `balanced`, public test | 511 | P/R/F1 `0.894822 / 0.928969 / 0.891727` | `113.76` pages/s | Private `a19ae17`; below published `rs-trafilatura` public-test F1 `0.903` |
-| WCXB `balanced`, combined | 2,008 | P/R/F1 `0.863443 / 0.906577 / 0.859450` | `83.95` pages/s | Private `a19ae17`; sequential split aggregate |
+| WCXB `balanced`, development | 1,497 | P/R/F1 `0.852732 / 0.898934 / 0.848433` | `56.58` pages/s | Direct clean OSS `9c7cc0a`; public-label diagnostic |
+| WCXB `balanced`, public test | 511 | P/R/F1 `0.894822 / 0.928969 / 0.891727` | `106.96` pages/s | Direct clean OSS `9c7cc0a`; `0.001273` below pinned upstream point result `0.893` |
+| WCXB `balanced`, combined | 2,008 | P/R/F1 `0.863443 / 0.906577 / 0.859450` | `64.28` pages/s | Direct clean OSS `9c7cc0a`; sequential split aggregate |
+| WCXB `adaptive`, development | 1,497 | P/R/F1 `0.844912 / 0.912670 / 0.852667` | `48.54` pages/s | Direct clean OSS `9c7cc0a`; ΔF1 `+0.004235`, paired 95% CI `[-0.000459, +0.009298]` |
+| WCXB `adaptive`, public test | 511 | P/R/F1 `0.895244 / 0.942960 / 0.901714` | `78.62` pages/s | Direct clean OSS `9c7cc0a`; ΔF1 `+0.009987`, CI `[+0.003424, +0.017720]` |
+| WCXB `adaptive`, combined | 2,008 | P/R/F1 `0.857721 / 0.920378 / 0.865149` | `53.78` pages/s | Direct clean OSS `9c7cc0a`; ΔF1 `+0.005699`, CI `[+0.001795, +0.009833]` |
 | Webis `balanced` | 3,985 | macro ROUGE-LSum P/R/F1 `0.867650 / 0.908477 / 0.855327`; macro Levenshtein `0.850216` | `306.09` pages/s | Private `a19ae17`; below Trafilatura `0.883461` and weighted ensemble `0.898844` |
 | WebMainBench `balanced`, raw Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615569 / 0.677841 / 0.606672` | `113.02` pages/s | Private `a19ae17`; below published Trafilatura `0.6402` and model-assisted leaders |
 | WebMainBench `balanced`, scrubbed Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615698 / 0.676570 / 0.605703` | `55.05` pages/s | Private `a19ae17`; paired delta versus raw `-0.000969` |
@@ -154,18 +163,30 @@ Firecrawl-comparative SOTA.
 |---|---|---|---|
 | AEB `article_body` | public `4dd1755` | `bench/results/aeb/20260729T110311Z` | `2f7b61af148387c93ff6381fee5fad663a1a4e731d79d653568da4a656784fc1` |
 | AEB `balanced` | public `4dd1755` | `bench/results/aeb/20260729T110342Z` | `4f58b2ff7e55ba017c3fdfae1bb4da3bffab48b67a55f8a458b68de04d81aa70` |
-| WCXB | private `a19ae17` | `bench/results/wcxb/20260729T101737Z` | `4e7010abd013adfbc71186742a350063986dd242851f95afdee269efb01ea0ea` |
+| WCXB `balanced` | public `9c7cc0a` | `bench/results/wcxb/20260729T-oss-balanced-9c7cc0a` | `627995ebc1c9e2005a88b8b007a3e56e2eb04ab9994f6ed3a78834a1958407a8` |
+| WCXB `adaptive` | public `9c7cc0a` | `bench/results/wcxb/20260729T-oss-adaptive-9c7cc0a` | `c02cccf91d77540de9e52a795285abcfe9baae244edf236a5e28b70b056908ba` |
 | Webis | private `a19ae17` | `bench/results/webis-v3-a19ae17-20260729T1028Z` | `4fae36a0d91b369f1858f029b04e005d8ba4372d67001060a1e3b8106c5e626f` |
 | WebMainBench | private `a19ae17` | `bench/results/webmainbench/20260729T101852Z` | `08530d7bc3e15cabdc94a2b405a996e6d277880cee8b9b3913d0c19c5ef04991` |
 
 All fixed-corpus runs completed with zero extraction errors; Webis also had
-zero empty predictions. WCXB's combined score must not be compared with a
-development-only leaderboard headline. WebMainBench covers 7,809 pages from
-5,434 domains, but Clusy's Direct-MD output differs from the leaderboard's
-main `HTML+MD` conversion contract. Webis and WebMainBench expose material
-quality gaps and are not SOTA results. Throughput is local, closed-loop
-extraction on artifact-recorded hardware, not HTTP-service or live-web crawl
-throughput.
+zero empty predictions. Direct OSS WCXB `adaptive` changed 83 outputs versus
+`balanced`, with 41 wins, 34 losses, and 1,933 ties under official per-page F1.
+The paired bootstrap used 10,000 replicates and fixed split/combined seeds
+20260729/20260730/20260731. Its public-test point result is `0.008714` above
+the pinned upstream `rs-trafilatura` result `0.893`, but upstream predictions
+are unavailable for a paired comparison and the systems share backend/model
+provenance. This is promising direct-OSS extraction evidence, not an
+independent leaderboard or unseen SOTA claim.
+
+The two WCXB profiles ran sequentially with eight requested workers, so their
+throughput rows are observations rather than a randomized performance study;
+in these runs `adaptive` traded about 16.3% combined throughput for the quality
+gain. WCXB combined scores must not be compared with a development-only
+headline. WebMainBench covers 7,809 pages from 5,434 domains, but Clusy's
+Direct-MD output differs from the leaderboard's main `HTML+MD` conversion
+contract. Webis and WebMainBench expose material quality gaps and are not SOTA
+results. Throughput is local, closed-loop extraction on artifact-recorded
+hardware, not HTTP-service or live-web crawl throughput.
 
 The source-backed v2 refiner has also been evaluated in a 545-page,
 reference-isolated shadow run:
@@ -174,7 +195,7 @@ reference-isolated shadow run:
 |---|---:|---:|---:|---:|---:|---:|
 | Baseline | `0.215484` | `0.758002` | `0.019236` | `0.300180` | `0` | `0` |
 | Default refiner | `0.280215` | `0.749641` | `0.084351` | `0.290650` | `0.110996` | `0.165437` |
-| Exact visible sequence | `0.227423` | `0.755028` | `0.054644` | `0.293024` | `0.011982` | `0.022439` |
+| Normalized lexical token sequence | `0.227423` | `0.755028` | `0.054644` | `0.293024` | `0.011982` | `0.022439` |
 
 The refiner improved aggregate, code, and table scores but regressed text and
 formula scores under both policies. It therefore failed the monotonic
@@ -182,7 +203,7 @@ promotion gate and remains **shadow-only and unwired**. This diagnostic is not
 a production or leaderboard result. It combines two dirty development
 artifacts and remains non-claimable: the default/current manifest SHA-256 is
 `c97ef0be89740dbc419534eff12089e25793e0a287eb2faf0d6101225bbf951f`,
-and the exact-visible-sequence manifest SHA-256 is
+and the normalized-lexical-sequence manifest SHA-256 is
 `bc9fc7b71e1a7e3bb6ba02cf6b2c7e216019e12e636157a42b687369af271e80`.
 
 See [`bench/NEUTRAL_BENCHMARK.md`](bench/NEUTRAL_BENCHMARK.md),

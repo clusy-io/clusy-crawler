@@ -45,15 +45,15 @@ Implemented foundations in the current worktree:
   or production extraction.
 
 The completed 545-page shadow diagnostic tested both the refiner's default
-acceptance rule and a stricter exact-visible-token-sequence rule. Both improved
-code and table structure metrics and aggregate score, but both regressed text
-and formula scores:
+acceptance rule and a stricter normalized-lexical-token-sequence rule. Both
+improved code and table structure metrics and aggregate score, but both
+regressed text and formula scores:
 
 | Shadow policy | Overall | Text | Code | Formula | Table edit | Table TEDS |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Baseline | `0.215484` | `0.758002` | `0.019236` | `0.300180` | `0` | `0` |
 | Default refiner | `0.280215` | `0.749641` | `0.084351` | `0.290650` | `0.110996` | `0.165437` |
-| Exact visible sequence | `0.227423` | `0.755028` | `0.054644` | `0.293024` | `0.011982` | `0.022439` |
+| Normalized lexical token sequence | `0.227423` | `0.755028` | `0.054644` | `0.293024` | `0.011982` | `0.022439` |
 
 This was a development-only, non-claimable shadow run. Its acceptance decisions
 used only source HTML and the deterministic candidate; public references were
@@ -145,59 +145,54 @@ model latency from weakening crawl politeness or host fairness.
 ## Evidence behind the decision
 
 The current AEB result ran directly from clean public source revision
-`4252a0b71a0a2157194d3466445b70bb373d73b6`. The other complete fixed-corpus
-runs on 2026-07-29 came from clean private revision
-`10ff0c1a7c9a2083958b674d64e15bb5a8a1b90e`, with the primary WebMainBench
-repeat from documentation-only child
-`7f202f43cdf21d076415fa3a1f7cfd005533de56`. Those private artifacts were not
-produced from public OSS revision
-`837dddababc612bfa1ce438307b1e2fb29b4c2f5`. Together they establish scoped
-fixed-corpus extraction evidence, not universal or vendor-comparative SOTA:
+`4dd1755e9b425c80193982bc6609c06444cf30d5`; both WCXB profiles ran directly
+from clean public revision `9c7cc0a84f240910ff764baae75824e269d08350`.
+Webis and WebMainBench remain clean private-revision `a19ae17` diagnostics and
+are not represented as OSS runs. The broad native path embeds
+`web-page-classifier` 0.1.0. Its publisher reports 1,497 training pages across
+seven page types but publishes no item/split manifest; WCXB development has
+exactly 1,497 pages across the same types. This is strong overlap risk, not
+proof of overlap. Together the rows establish reproducible public-benchmark
+evidence, not blind, universal, or vendor-comparative SOTA:
 
 | Benchmark | Scope | Current result | Interpretation |
 | --- | --- | ---: | --- |
-| AEB | 181-page article body | P/R/F1 `0.955147 / 0.989721 / 0.972127`; `137.844` pages/s; p50/p95 `12.933 / 26.488 ms` | Direct clean OSS run; `+0.002172` F1 above the embedded pinned baseline point estimate, with paired CI including equality and no observed loss |
-| WCXB development | 1,497 pages, seven page types | P/R/F1 `0.852732 / 0.898934 / 0.848433`; `90.65` pages/s; p50/p95 `13.61 / 59.42 ms` | Claimable public-label extraction evidence, not blind validation |
-| WCXB public test | 511 pages, seven page types | P/R/F1 `0.894822 / 0.928969 / 0.891727`; `139.86` pages/s; p50/p95 `11.08 / 33.04 ms` | Below the published leading test result |
-| WCXB combined | 2,008 pages | P/R/F1 `0.863443 / 0.906577 / 0.859450`; `99.5618` pages/s | Sequential split aggregate; not comparable with a development-only headline |
-| Webis | 3,985-page main-content extraction | macro ROUGE-LSum P/R/F1 `0.867148 / 0.908456 / 0.854920`; macro Levenshtein `0.849806`; `274.8155` pages/s; p50/p95 `7.551 / 26.242 ms` | `ARCHIVAL_REPRODUCIBLE`; below Trafilatura and the published ensemble |
-| WebMainBench v1.1 raw | 7,809-page broad Direct-MD | P/R/F1 `0.615569 / 0.677841 / 0.606672`; `127.4899` pages/s; original clean run `131.2818` | Protocol-valid and claimable on the fixed public scope; below modern semantic-model systems |
-| WebMainBench v1.1 scrubbed | 7,809-page broad Direct-MD | P/R/F1 `0.615698 / 0.676570 / 0.605703`; `57.8572` pages/s; original clean run `57.3376` | Required annotation-contamination diagnostic; zero extraction errors |
+| AEB `article_body` | 181-page article body | P/R/F1 `0.955147 / 0.989721 / 0.972127`; `142.306` pages/s; p50/p95 `12.820 / 25.564 ms` | Direct clean OSS run; ΔF1 `+0.014624` versus Trafilatura 2.0, CI `[+0.005346, +0.025342]` |
+| AEB `balanced` | Same 181 pages, general-main-content profile | P/R/F1 `0.928435 / 0.989588 / 0.958037`; `215.265` pages/s; p50/p95 `8.230 / 16.408 ms` | Direct clean OSS run; below pinned `rs-trafilatura` |
+| WCXB `balanced`, development | 1,497 pages, seven page types | P/R/F1 `0.852732 / 0.898934 / 0.848433`; `56.58` pages/s; p50/p95 `110.345 / 341.527 ms` | Direct clean OSS public-label diagnostic |
+| WCXB `balanced`, public test | 511 pages, seven page types | P/R/F1 `0.894822 / 0.928969 / 0.891727`; `106.96` pages/s; p50/p95 `68.243 / 124.028 ms` | `0.001273` below the pinned upstream point result `0.893` |
+| WCXB `balanced`, combined | 2,008 pages | P/R/F1 `0.863443 / 0.906577 / 0.859450`; `64.28` pages/s | Sequential split aggregate; not comparable with a development-only headline |
+| WCXB `adaptive`, development | 1,497 pages, seven page types | P/R/F1 `0.844912 / 0.912670 / 0.852667`; `48.54` pages/s; p50/p95 `121.006 / 424.284 ms` | ΔF1 `+0.004235` versus `balanced`; paired 95% CI `[-0.000459, +0.009298]` |
+| WCXB `adaptive`, public test | 511 pages, seven page types | P/R/F1 `0.895244 / 0.942960 / 0.901714`; `78.62` pages/s; p50/p95 `82.501 / 227.714 ms` | ΔF1 `+0.009987`, CI `[+0.003424, +0.017720]`; `+0.008714` versus upstream is unpaired |
+| WCXB `adaptive`, combined | 2,008 pages | P/R/F1 `0.857721 / 0.920378 / 0.865149`; `53.78` pages/s | ΔF1 `+0.005699`, CI `[+0.001795, +0.009833]`; sequential split aggregate only |
+| Webis | 3,985-page main-content extraction | macro ROUGE-LSum P/R/F1 `0.867650 / 0.908477 / 0.855327`; macro Levenshtein `0.850216`; `306.09` pages/s | Private `a19ae17`; `ARCHIVAL_REPRODUCIBLE`; below Trafilatura and the published ensemble |
+| WebMainBench v1.1 raw | 7,809-page broad Direct-MD | P/R/F1 `0.615569 / 0.677841 / 0.606672`; `113.02` pages/s | Private `a19ae17` fixed-public diagnostic; below modern semantic-model systems |
+| WebMainBench v1.1 scrubbed | 7,809-page broad Direct-MD | P/R/F1 `0.615698 / 0.676570 / 0.605703`; `55.05` pages/s | Private `a19ae17` annotation-contamination diagnostic; zero extraction errors |
 | WebMainBench fine-grained | Text/code/formula/table | Overall `0.214089` | Dirty, non-claimable diagnostic; text `0.752301`, code `0.017775`, formula `0.300369`, table/TEDS `0` |
 
 | Suite | Artifact identifier | `manifest.json` SHA-256 |
 | --- | --- | --- |
-| AEB, public `4252a0b` | `bench/results/aeb/20260729T090959Z` | `7b014b56cd8d99dc8280bb2ac7b5f86e3c55972fb4c380289b9025fe13be29b0` |
-| WCXB | `bench/results/wcxb/20260729T000227Z` | `a051965f480fd3a1cae780d7ccdd289b237163f7e644ba2dde9a9acc53e4b8d0` |
-| Webis | `bench/results/webis-v2-10ff0c1-20260729T0004Z` | `b43a79097a1a04ae3b2254cf25a7ecda9fe2b05be42304e9f79b25638f5ab51e` |
-| WebMainBench primary repeat | `bench/results/webmainbench/v2-isolated2-7f202f4-20260729T0728Z` | `df0deb7b3a2565b164cd0fff8f6687fd5d10173d402156425f9d3e07c6bb35d3` |
-| WebMainBench original clean run | `bench/results/webmainbench/v2-10ff0c1-20260729T0033Z` | `10350d98d93498b2f00217f4ebea3716a2a101f20c851b695ede30c55fdc505e` |
+| AEB `article_body`, public `4dd1755` | `bench/results/aeb/20260729T110311Z` | `2f7b61af148387c93ff6381fee5fad663a1a4e731d79d653568da4a656784fc1` |
+| AEB `balanced`, public `4dd1755` | `bench/results/aeb/20260729T110342Z` | `4f58b2ff7e55ba017c3fdfae1bb4da3bffab48b67a55f8a458b68de04d81aa70` |
+| WCXB `balanced`, public `9c7cc0a` | `bench/results/wcxb/20260729T-oss-balanced-9c7cc0a` | `627995ebc1c9e2005a88b8b007a3e56e2eb04ab9994f6ed3a78834a1958407a8` |
+| WCXB `adaptive`, public `9c7cc0a` | `bench/results/wcxb/20260729T-oss-adaptive-9c7cc0a` | `c02cccf91d77540de9e52a795285abcfe9baae244edf236a5e28b70b056908ba` |
+| Webis, private `a19ae17` | `bench/results/webis-v3-a19ae17-20260729T1028Z` | `4fae36a0d91b369f1858f029b04e005d8ba4372d67001060a1e3b8106c5e626f` |
+| WebMainBench, private `a19ae17` | `bench/results/webmainbench/20260729T101852Z` | `08530d7bc3e15cabdc94a2b405a996e6d277880cee8b9b3913d0c19c5ef04991` |
 
-A post-run SHA-256 audit compared each retained private artifact's sealed
-source map with public `837ddda`. The pre-fix private AEB run, WCXB, and both
-WebMainBench runs matched 44 of 49 recorded files, with none missing. The five
-differences were `app/config.py`,
-`app/main.py`, `app/services/renderer.py`, `native/pyproject.toml`, and
-`pyproject.toml`; they are OSS configuration, comments, and package metadata,
-and the only executable delta is an adaptive-profile page-type validator not
-exercised by these `article_body` or `balanced` runs. Webis matched 102 of 147
-recorded paths, with the same five differences and 40 ignored generated
-`native/target` paths absent from public Git. Across the suites, the benchmark
-runners, core extractor, native algorithm/vendor sources, Cargo files, and
-`uv.lock` matched byte-for-byte.
+The WCXB artifacts directly bind public source `9c7cc0a`, and both reproduced
+the separately captured private deployment-path predictions byte for byte.
+The `adaptive` artifact changed 83 outputs versus `balanced`, with 41 wins, 34
+losses, and 1,933 ties under official per-page F1. Its 10,000-replicate paired
+bootstrap used fixed seeds 20260729/20260730/20260731. The two profiles ran
+sequentially rather than as a randomized performance experiment; in these runs
+`adaptive` traded about 16.3% combined throughput for its quality gain.
 
-The private snapshots are therefore not byte-identical, and their executed
-native binaries were not reproduced from a public `837ddda` build. Describe
-those rows as clean, source-audited private-revision results for the exercised
-paths, not as benchmark runs of the OSS commit. The current AEB row is
-different: it was executed directly from clean public `4252a0b`, including a
-fresh native rebuild. The earlier clean public `c3ae00d` run remains historical
-evidence at F1 `0.969955` and `133.33` pages/s.
-
-AEB and WCXB are claimable only within their stated extraction scopes; Webis
-is archival-reproducible; WebMainBench is claimable only on its fixed public
-protocol. All throughput values are local closed-loop measurements on the
-artifact-recorded hardware with in-memory or local-corpus inputs, not HTTP
+The WCXB harness correctly closes the unseen claim gate because the embedded
+classifier lacks an auditable training-item manifest. AEB `article_body` is
+scoped public-benchmark evidence; broad-profile rows are public diagnostics.
+Webis is archival-reproducible, and the private Webis/WebMainBench rows must not
+be attributed to an OSS commit. All throughput values are local closed-loop
+measurements on artifact-recorded hardware with local-corpus inputs, not HTTP
 service or live-web throughput. WebMainBench's Direct-MD contract also differs
 from the leaderboard's `HTML+MD` conversion path.
 
@@ -662,7 +657,7 @@ the strongest results currently recorded by the project:
 | Suite | Promotion objective |
 | --- | ---: |
 | AEB article body | Retain F1 `0.972127` without changing its contract |
-| WCXB public test | Exceed `0.903`, with page-type and paired uncertainty reported |
+| WCXB public test | Reach F1 `>=0.910`, with page-type slices and paired uncertainty versus the frozen Clusy baseline |
 | Webis | Exceed macro ROUGE-LSum `0.898844` |
 | WebMainBench full | Exceed ROUGE-5 F1 `0.9098` |
 | WebMainBench fine-grained subset | Exceed overall `0.8256`, including table/code/formula metrics |
@@ -720,15 +715,19 @@ from their current official documentation when the comparison is executed:
 
 Use the narrowest statement supported by evidence:
 
-- “The clean public AEB run at `4252a0b` scored F1 `0.972127`, `+0.002172`
+- “The clean public AEB run at `4dd1755` scored F1 `0.972127`, `+0.002172`
   above the embedded pinned `rs-trafilatura` prediction” is acceptable within
   the article-body extraction scope when accompanied by the paired 95% CI
   `[0, +0.006589]`. It is a generic bug fix to a patched embedded backend, not
   an independent algorithmic win or evidence for V2 `balanced`.
-- The clean private V2 rows may be described as source-audited fixed-corpus
-  evidence only when their private `10ff0c1` / `7f202f4` execution provenance
-  and the five-file OSS mismatch are stated. They must not be attributed to
-  public `837ddda` or called complete byte-identical OSS reproductions.
+- “The clean public WCXB `adaptive` run at `9c7cc0a` scored public-test F1
+  `0.901714`, ΔF1 `+0.009987` versus the direct OSS `balanced` artifact, paired
+  95% CI `[+0.003424, +0.017720]`” is acceptable as public-benchmark diagnostic
+  evidence. It is not an unseen or independent SOTA claim because labels are
+  public and the embedded classifier's training-item manifest is unavailable.
+- The clean private Webis/WebMainBench rows may be described as source-audited
+  fixed-corpus diagnostics only when their private `a19ae17` execution
+  provenance is stated. They must not be attributed to an OSS commit.
 - “Better than Exa/Firecrawl” cannot be supported by the current hash-only v3
   artifacts. It requires a redesigned independently rescorable or attested,
   matched-scope protocol plus favorable paired confidence and operational
@@ -748,9 +747,9 @@ Use the narrowest statement supported by evidence:
 4. **Serving scale — partial/planned:** backend-neutral render lifecycle is
    implemented; split fetch/render/model worker pools, tenant budgets,
    backpressure, distributed cache, tracing, and per-route SLOs remain.
-5. **Evidence — in progress:** the current AEB run is reproduced directly from
-   clean public `4252a0b`; clean private WCXB, Webis, and WebMainBench artifacts
-   remain at `10ff0c1`, with the WebMainBench repeat at `7f202f4`.
+5. **Evidence — in progress:** AEB is reproduced directly from clean public
+   `4dd1755`; both WCXB profiles are reproduced directly from clean public
+   `9c7cc0a`; Webis and WebMainBench remain private `a19ae17` diagnostics.
    Operator-owned calibration and a preregistered live vendor study remain
    separate gates before any broad claim.
 
