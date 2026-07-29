@@ -3,17 +3,20 @@
 Status: architecture decision record, 2026-07-29.
 
 This document defines the architecture and release gates for making Clusy a
-best-in-class crawler for self-hosted use and downstream platforms. It does not
-claim that the current implementation is universally state of the art.
+best-in-class crawler for the Clusy platform. It does not claim that the current
+implementation is universally state of the art.
 
 ## Delivery status
 
-Runtime foundations are mirrored through public source revision `f5647e1`.
-The Clusy-hosted platform currently deploys the equivalent private source
-revision `0fb00ee` as OCI digest
-`sha256:fa54e92290f3f6670840c827337fac101c073a08ef212a87cf6f7d0dcda678ff`.
-Later public commits add only research/docs until another runtime revision
-passes the same promotion gates:
+Implemented runtime foundations through deployed source revision `bdbfd7c`
+(OCI digest
+`sha256:638378e7bdf5b00c75b2aa3f56b057a645dd900d3114d9336d0e507d95a7afb8`).
+The four baseline fixed-corpus artifacts are bound to clean revision
+`a19ae17`; the newer WCXB `adaptive` artifact is bound to clean revision
+`70ec76d`, whose application/native runtime is byte-identical to historical
+runtime revision `86684ca`. The deployed revision adds the independently
+audited fallback dead-work removal, parsed-DOM clone, and linear filtered
+traversal changes measured below:
 
 - deterministic `balanced`/`article_body` fast paths plus opt-in
   `adaptive`/`quality` profiles, bounded model runtime, a deterministic
@@ -39,15 +42,30 @@ passes the same promotion gates:
   temporary JSON-LD/Discourse DOMs, preventing one source subtree from being
   emitted through both an ancestor and a descendant while retaining legitimate
   equal text from disjoint source nodes;
+- the broad backend now deep-clones its parsed DOM directly instead of
+  serializing and reparsing it. This keeps all ten returned fields exact on the
+  frozen WCXB, WebMainBench, and malformed-HTML A/B corpora while removing
+  serializer-inserted closing-tag contamination from a constructed
+  `<form><plaintext>` fallback;
+- filtered serialization now propagates exclusion and `article`/`main`
+  ancestry through an O(N)-time preorder state stack instead of repeatedly
+  walking each text node's ancestors. Formal retain-all A/Bs keep all ten
+  fields byte-identical on WebMainBench, WCXB, and a deterministic stress set;
+- additive selection-certificate v0 and focused-frontier v0 research surfaces
+  are implemented but unwired. The certificate is a bounded replay/integrity
+  record rather than a signature, and the frontier fixture is explicitly
+  synthetic-only/nonclaimable;
 - a backend-neutral render manager now owns lifecycle, readiness, and dispatch
   for the existing isolated local Playwright backend. Defaults are unchanged;
   the contract creates a safe seam for a separately sandboxed render plane
   without adding an unsafe browser launch mode;
+- Clusy-first platform extraction, governed Exa fallback, provider-reported Exa
+  cost propagation, and a sealed fixed-URL Exa/Firecrawl comparison runner;
 - AEB, WCXB, Webis, and WebMainBench regression/evidence harnesses;
-- a sealed fixed-URL Exa/Firecrawl comparison runner whose artifact-integrity
-  gate is separate from its deliberately closed vendor-win gate. Vendor output
-  is benchmark-only and never enters training, distillation, labels, routing,
-  or production extraction.
+- provider-qualified top-level extraction billing carried from the agent stream
+  into run-budget enforcement and durable metering; and
+- an Exa/Firecrawl runner whose artifact-integrity gate is separate from its
+  deliberately closed vendor-win gate.
 
 The completed 545-page shadow diagnostic tested both the refiner's default
 acceptance rule and a stricter normalized-lexical-token-sequence rule. Both
@@ -74,9 +92,9 @@ Still required before a broad SOTA or vendor-win claim:
   quality, latency, cost, and circuit-breaker gates;
 - replace the process-local frontier with a transactional durable queue for
   resumable, multi-worker crawls beyond the bounded request API;
-- create a separately consented, operator-owned domain/time corpus, calibrate
-  the utility router, and pass multilingual/structure/latency/cost holdouts;
-- reproduce the fixed-corpus evidence directly from a recorded OSS commit and
+- create the consented private domain/time corpus, calibrate the utility router,
+  and pass multilingual/structure/latency/cost holdouts;
+- reproduce the clean fixed-corpus evidence on target deployment hardware and
   run an authorized, preregistered live Exa/Firecrawl study.
 
 No selector checkpoint, semantic model, deterministic v2 refiner policy, or
@@ -101,12 +119,12 @@ Clusy will use a cascaded, uncertainty-routed extraction system:
 7. Verify the selection and fall back to the deterministic result on errors,
    resource-limit rejection, or implausible output.
 8. Return completeness, provenance, cache, render, and routing metadata so the
-   caller can make a safe fallback decision.
+   platform can make a safe fallback decision.
 
-This preserves the current fast path while adding model capacity where
-deterministic heuristics are weakest. A model-first pipeline would impose model
-cost and latency on every page. A rules-only pipeline is unlikely to close the
-large quality gap on heterogeneous pages.
+This is the best fit for Clusy because it preserves the current fast path while
+adding model capacity where deterministic heuristics are weakest. A model-first
+pipeline would impose model cost and latency on every page. A rules-only
+pipeline is unlikely to close the large quality gap on heterogeneous pages.
 
 ```text
 request
@@ -157,80 +175,117 @@ model latency from weakening crawl politeness or host fairness.
 
 ## Evidence behind the decision
 
-The current AEB result ran directly from clean public source revision
-`4dd1755e9b425c80193982bc6609c06444cf30d5`; both WCXB profiles ran directly
-from clean public revision `9c7cc0a84f240910ff764baae75824e269d08350`.
-Webis and WebMainBench remain clean private-revision `a19ae17` diagnostics and
-are not represented as OSS runs. The broad native path embeds
-`web-page-classifier` 0.1.0. Its publisher reports 1,497 training pages across
-seven page types but publishes no item/split manifest; WCXB development has
-exactly 1,497 pages across the same types. This is strong overlap risk, not
-proof of overlap. Together the rows establish reproducible public-benchmark
-evidence, not blind, universal, or vendor-comparative SOTA:
+The four baseline fixed-corpus validations dated 2026-07-29 were executed from
+clean source revision `a19ae17`; the newer WCXB `adaptive` validation used clean
+revision `70ec76d`. Every harness recorded its source before and after execution
+and verified stable relevant source and loaded native bytes. The broad native
+path embeds `web-page-classifier` 0.1.0. Its publisher reports 1,497 training
+pages across seven page types but publishes no item/split manifest; WCXB
+development has exactly 1,497 pages across the same seven types. This is strong
+overlap risk, not proof of overlap. The runs are reproducible public-benchmark
+measurements, not blind estimates; they do not establish universal or
+vendor-comparative SOTA or an Exa/Firecrawl win:
 
 | Benchmark | Scope | Current result | Interpretation |
 | --- | --- | ---: | --- |
-| AEB `article_body` | 181-page article body | P/R/F1 `0.955147 / 0.989721 / 0.972127`; `142.306` pages/s; p50/p95 `12.820 / 25.564 ms` | Direct clean OSS run; ΔF1 `+0.014624` versus Trafilatura 2.0, CI `[+0.005346, +0.025342]` |
-| AEB `balanced` | Same 181 pages, general-main-content profile | P/R/F1 `0.928435 / 0.989588 / 0.958037`; `215.265` pages/s; p50/p95 `8.230 / 16.408 ms` | Direct clean OSS run; below pinned `rs-trafilatura` |
-| WCXB `balanced`, development | 1,497 pages, seven page types | P/R/F1 `0.852732 / 0.898934 / 0.848433`; `56.58` pages/s; p50/p95 `110.345 / 341.527 ms` | Direct clean OSS public-label diagnostic |
-| WCXB `balanced`, public test | 511 pages, seven page types | P/R/F1 `0.894822 / 0.928969 / 0.891727`; `106.96` pages/s; p50/p95 `68.243 / 124.028 ms` | `0.001273` below the pinned upstream point result `0.893` |
-| WCXB `balanced`, combined | 2,008 pages | P/R/F1 `0.863443 / 0.906577 / 0.859450`; `64.28` pages/s | Sequential split aggregate; not comparable with a development-only headline |
-| WCXB `adaptive`, development | 1,497 pages, seven page types | P/R/F1 `0.844912 / 0.912670 / 0.852667`; `48.54` pages/s; p50/p95 `121.006 / 424.284 ms` | ΔF1 `+0.004235` versus `balanced`; paired 95% CI `[-0.000459, +0.009298]` |
-| WCXB `adaptive`, public test | 511 pages, seven page types | P/R/F1 `0.895244 / 0.942960 / 0.901714`; `78.62` pages/s; p50/p95 `82.501 / 227.714 ms` | ΔF1 `+0.009987`, CI `[+0.003424, +0.017720]`; `+0.008714` versus upstream is unpaired |
-| WCXB `adaptive`, combined | 2,008 pages | P/R/F1 `0.857721 / 0.920378 / 0.865149`; `53.78` pages/s | ΔF1 `+0.005699`, CI `[+0.001795, +0.009833]`; sequential split aggregate only |
-| Webis | 3,985-page main-content extraction | macro ROUGE-LSum P/R/F1 `0.867650 / 0.908477 / 0.855327`; macro Levenshtein `0.850216`; `306.09` pages/s | Private `a19ae17`; `ARCHIVAL_REPRODUCIBLE`; below Trafilatura and the published ensemble |
-| WebMainBench v1.1 raw | 7,809-page broad Direct-MD | P/R/F1 `0.615569 / 0.677841 / 0.606672`; `113.02` pages/s | Private `a19ae17` fixed-public diagnostic; below modern semantic-model systems |
-| WebMainBench v1.1 scrubbed | 7,809-page broad Direct-MD | P/R/F1 `0.615698 / 0.676570 / 0.605703`; `55.05` pages/s | Private `a19ae17` annotation-contamination diagnostic; zero extraction errors |
-| WebMainBench fine-grained | Text/code/formula/table | Overall `0.214089` | Dirty, non-claimable diagnostic; text `0.752301`, code `0.017775`, formula `0.300369`, table/TEDS `0` |
+| AEB `article_body` | 181-page article body | P/R/F1 `0.955147 / 0.989721 / 0.972127`; `144.49` pages/s; p50/p95 `12.466 / 25.254 ms` | Scoped public-benchmark evidence; versus Trafilatura 2.0, ΔF1 `+0.014624`, CI `[+0.005346, +0.025342]`; versus embedded pinned `rs-trafilatura`, `+0.002172`, CI `[0, +0.006589]` |
+| AEB `balanced` | Same 181 pages, general-main-content profile | P/R/F1 `0.928435 / 0.989588 / 0.958037`; `222.43` pages/s; p50/p95 `8.092 / 15.998 ms` | One CBS page improved versus the prior clean run, but F1 remains below pinned `rs-trafilatura` |
+| WCXB `balanced`, development | 1,497 pages, seven page types | P/R/F1 `0.852732 / 0.898934 / 0.848433`; `77.05` pages/s; p50/p95 `16.574 / 72.861 ms` | Public-label diagnostic; unresolved classifier provenance |
+| WCXB `balanced`, public test | 511 pages, seven page types | P/R/F1 `0.894822 / 0.928969 / 0.891727`; `113.76` pages/s; p50/p95 `13.245 / 39.916 ms` | `0.001273` below the pinned upstream `rs-trafilatura` point result `0.893` |
+| WCXB `balanced`, combined | 2,008 pages | P/R/F1 `0.863443 / 0.906577 / 0.859450`; `83.95` pages/s | Sequential split aggregate; not comparable with a development-only headline |
+| WCXB `adaptive`, development | 1,497 pages, seven page types | P/R/F1 `0.844912 / 0.912670 / 0.852667`; `48.57` pages/s; p50/p95 `121.515 / 421.842 ms` | ΔF1 `+0.004235` versus `balanced`; paired 95% CI `[-0.000396, +0.009200]` |
+| WCXB `adaptive`, public test | 511 pages, seven page types | P/R/F1 `0.895244 / 0.942960 / 0.901714`; `79.37` pages/s; p50/p95 `82.038 / 222.515 ms` | ΔF1 `+0.009987` versus `balanced`, CI `[+0.003446, +0.018017]`; `+0.008714` versus upstream is an unpaired point comparison |
+| WCXB `adaptive`, combined | 2,008 pages | P/R/F1 `0.857721 / 0.920378 / 0.865149`; `53.89` pages/s; p50/p95 `110.772 / 377.823 ms` | ΔF1 `+0.005699` versus `balanced`, CI `[+0.001810, +0.009920]`; sequential split aggregate only |
+| Webis | 3,985-page main-content extraction | macro ROUGE-LSum P/R/F1 `0.867650 / 0.908477 / 0.855327`; macro Levenshtein `0.850216`; `306.09` pages/s; p50/p95 `7.895 / 25.141 ms` | One CBS page improved; `ARCHIVAL_REPRODUCIBLE`; still below Trafilatura and the published ensemble |
+| WebMainBench v1.1 raw | 7,809-page broad Direct-MD | P/R/F1 `0.615569 / 0.677841 / 0.606672`; `113.02` pages/s; p50/p95 `10.799 / 47.439 ms` | Fixed-public-protocol diagnostic; below modern semantic-model systems |
+| WebMainBench v1.1 scrubbed | 7,809-page broad Direct-MD | P/R/F1 `0.615698 / 0.676570 / 0.605703`; `55.05` pages/s; p50/p95 `11.965 / 41.613 ms` | Required annotation-contamination diagnostic; zero extraction errors |
+| WebMainBench fine-grained | Text/code/formula/table | Overall `0.214089` | Text `0.752301`; code `0.017775`, formula `0.300369`, table/TEDS `0` |
 
-| Suite | Artifact identifier | `manifest.json` SHA-256 |
-| --- | --- | --- |
-| AEB `article_body`, public `4dd1755` | `bench/results/aeb/20260729T110311Z` | `2f7b61af148387c93ff6381fee5fad663a1a4e731d79d653568da4a656784fc1` |
-| AEB `balanced`, public `4dd1755` | `bench/results/aeb/20260729T110342Z` | `4f58b2ff7e55ba017c3fdfae1bb4da3bffab48b67a55f8a458b68de04d81aa70` |
-| WCXB `balanced`, public `9c7cc0a` | `bench/results/wcxb/20260729T-oss-balanced-9c7cc0a` | `627995ebc1c9e2005a88b8b007a3e56e2eb04ab9994f6ed3a78834a1958407a8` |
-| WCXB `adaptive`, public `9c7cc0a` | `bench/results/wcxb/20260729T-oss-adaptive-9c7cc0a` | `c02cccf91d77540de9e52a795285abcfe9baae244edf236a5e28b70b056908ba` |
-| Webis, private `a19ae17` | `bench/results/webis-v3-a19ae17-20260729T1028Z` | `4fae36a0d91b369f1858f029b04e005d8ba4372d67001060a1e3b8106c5e626f` |
-| WebMainBench, private `a19ae17` | `bench/results/webmainbench/20260729T101852Z` | `08530d7bc3e15cabdc94a2b405a996e6d277880cee8b9b3913d0c19c5ef04991` |
+| Suite | Artifact directory | Manifest SHA-256 | Result SHA-256 |
+| --- | --- | --- | --- |
+| AEB `article_body` | `bench/results/aeb/20260729T101552Z` | `800d66c2f2558137281eb97e218125d11c2a8ea8843a281b6de5c161253b8d9e` | `report.json`: `c8cbaf5be3ae40ade25c871da1ad8848ff1cb6898f1fb762cca73bfaf198705f` |
+| AEB `balanced` | `bench/results/aeb/20260729T101450Z` | `38127a68bacc845c38bef2b8c6303cd957b8f3fd4473a3552ea59d94d7caa379` | `report.json`: `eb9094a7e3088cdfa0612e80c547920d4cf796b0c7a99a1d17a680c7b82dc6e2` |
+| WCXB `balanced` | `bench/results/wcxb/20260729T101737Z` | `4e7010abd013adfbc71186742a350063986dd242851f95afdee269efb01ea0ea` | `summary.json`: `4070d93e055ce2c44eb99687c073bfb24b04dbad10ae3d53eea287857a2980ab` |
+| WCXB `adaptive` | `bench/results/wcxb/20260729T132557Z-adaptive-70ec76d` | `50eb7a46bb49ddc8d4b31d0bb027690167966d6f6aa058067716373976c158bf` | `summary.json`: `5a403e9fd10cb30dbc4ffd52a638319da9513f020802b358b30b3ca964fdae71` |
+| Webis | `bench/results/webis-v3-a19ae17-20260729T1028Z` | `4fae36a0d91b369f1858f029b04e005d8ba4372d67001060a1e3b8106c5e626f` | `summary.json`: `683ab2aac6937bc231be03d3b63c76eeef717446dbeb4220ff7a29427f18aa4b` |
+| WebMainBench | `bench/results/webmainbench/20260729T101852Z` | `08530d7bc3e15cabdc94a2b405a996e6d277880cee8b9b3913d0c19c5ef04991` | `summary.json`: `e27c137b3edc675f7def70b5f78bb5f8212670e9e09fcceedfb96fee3551a3da` |
+| Native DOM clone A/B | `bench/evidence/native-dom-clone-a51212c` | `PROTOCOL.md`: `3a1e2734770ae1fb0c1251181ad0c72bc8d1e212928665e26529ff144832e437` | `report.json`: `9cb75a3fc485c0cd5ff8d006f0cc33a8c37ee49c980ca2842a250e80f606839e` |
+| Native filtered-traversal A/B | `bench/evidence/native-filter-stack-bdbfd7c` | `PROTOCOL.md`: `a7d74d63348f42071251ab6867399ece835c41e58478946ec5f55dd1466501be` | `report.json`: `b2c3e2ced89f6840aeaea8332d52fc423ce7a585d45b604c2e9af54a17f3e71c` |
 
-The WCXB artifacts directly bind public source `9c7cc0a`, and both reproduced
-the separately captured private deployment-path predictions byte for byte.
-The `adaptive` artifact changed 83 outputs versus `balanced`, with 41 wins, 34
-losses, and 1,933 ties under official per-page F1. Its 10,000-replicate paired
-bootstrap used fixed seeds 20260729/20260730/20260731. The two profiles ran
-sequentially rather than as a randomized performance experiment; in these runs
-`adaptive` traded about 16.3% combined throughput for its quality gain.
+AEB `article_body` is scoped public-benchmark evidence; broad-profile artifacts
+remain public diagnostics because the embedded classifier lacks an auditable
+training-item manifest. Webis is archival-reproducible. All throughput values
+are local closed-loop measurements on the artifact-recorded hardware with
+in-memory or local-corpus inputs, not HTTP-service or live-web throughput.
+WebMainBench's Direct-MD contract also differs from the leaderboard's `HTML+MD`
+conversion path.
 
-The WCXB harness correctly closes the unseen claim gate because the embedded
-classifier lacks an auditable training-item manifest. AEB `article_body` is
-scoped public-benchmark evidence; broad-profile rows are public diagnostics.
-Webis is archival-reproducible, and the private Webis/WebMainBench rows must not
-be attributed to an OSS commit. All throughput values are local closed-loop
-measurements on artifact-recorded hardware with local-corpus inputs, not HTTP
-service or live-web throughput. WebMainBench's Direct-MD contract also differs
-from the leaderboard's `HTML+MD` conversion path.
+The current AEB `article_body` artifact reproduces all 181 predictions from the
+prior strong run exactly. The `balanced` AEB and Webis artifacts each improve
+one CBS page relative to their prior clean runs. The WCXB `balanced` artifact
+reproduces all 2,008 prior predictions; `adaptive` changes 83 outputs, with 41
+wins, 34 losses, and 1,933 ties under official per-page F1. All 7,809
+predictions in each WebMainBench track reproduce their corresponding prior
+clean outputs exactly. Current local throughput is reported as an
+artifact-specific observation, never as universal service throughput.
 
-The two clean WebMainBench runs reproduced every page's prediction, strategy,
-score, error, and metadata exactly after excluding only measured latency.
-Their local throughput ranges (`127.4899`–`131.2818` pages/s raw and
-`57.3376`–`57.8572` pages/s scrubbed) are reported rather than selecting the
-fastest observation as a universal rate.
+The clean WCXB `adaptive` run used eight workers, unlike the older two-worker
+`balanced` run, so their observed throughput is not a controlled speed
+comparison. A separate identical-output before/after replay of the
+disabled-quality-backend fast path improved combined throughput from `39.73`
+to `51.54` pages/s (`+29.7%`), p50 from `158.627` to `116.394` ms, and p95
+from `469.247` to `387.325` ms. That is a local implementation A/B, not HTTP or
+Internet latency.
 
-The mirrored native fallback optimization at public revision `f5647e1`
-(private deployment revision `0fb00ee`) also passed an output-equivalence gate.
-Two alternating WCXB replays preserved the development and public-test
-prediction bytes and `0.859450` combined F1 while raising mean throughput by
-`2.95%` and `2.30%`, respectively. A direct cross-order replay over all 7,809
-WebMainBench inputs preserved all ten native return fields (canonical SHA-256
+The native fallback dead-work removal at source revision `0fb00ee` passed a
+second output-equivalence gate. Two alternating WCXB replays preserved the
+development and public-test prediction bytes and `0.859450` combined F1 while
+raising mean throughput by `2.95%` and `2.30%`, respectively. A direct
+cross-order replay over all 7,809 WebMainBench inputs preserved all ten native
+return fields (canonical SHA-256
 `9777864cc79bca218125fea1e5dcc74726d30019fc05532a07414908dc0e5b95`)
 and raised the two-run mean from `129.4730` to `142.0023` pages/s (`+9.68%`).
 That direct measurement includes local file reads and JSON parsing with two
 threads; it is not the official WebMainBench harness or a service-throughput
 claim.
 
+The next independent cross-order A/B replaced broad-backend
+serialize-and-reparse DOM clones with `Document::clone()`. The timed candidate
+was runtime baseline `0fb00ee` plus only that one-line runtime change; promoted
+private commit `a51212c` adds focused tests. All ten returned fields were exact
+on 2,008 WCXB pages while the two-run mean rose from `93.2901` to `104.3447`
+pages/s (`+11.85%`), and exact on 7,809 WebMainBench pages while rising from
+`152.2089` to `174.9288` pages/s (`+14.93%`). A 20,000-page deterministic
+malformed-HTML set was exact and rose by `5.82%`. These are two-worker local
+implementation measurements with only two samples per main variant, no
+confidence interval, and no service or vendor comparison. The constructed
+`<form><plaintext>` correction intentionally differs because the old clone
+path had reparsed serializer-inserted closing tags as source plaintext.
+
+The next formal, retain-all implementation A/B replaced per-node ancestor
+walks during filtered serialization with preorder propagation of exclusion and
+`article`/`main` state. All ten returned fields were byte-identical on 7,809
+WebMainBench pages, 2,008 WCXB pages, and 248 deterministic stress pages.
+Across four counterbalanced samples per variant, pooled throughput improved by
+`13.99%`, `26.94%`, and `35.38%`, respectively. A separate fixed WebMain
+A/B/B/A sensitivity run remained positive at `12.27%`. Two WCXB
+base/candidate/candidate/base resource runs reduced mean wall time by `21.57%`,
+retired instructions by `22.33%`, cycles by `21.77%`, and peak footprint by
+`0.51%`. No sample was excluded. These results bind local extraction-loop
+behavior only; they are not HTTP, live-web, vendor, quality-score, or SOTA
+evidence.
+
+A clean direct-OSS replay at public commit `9c7cc0a` reproduced the private
+`adaptive` dev/test prediction files byte for byte. Its `balanced` and
+`adaptive` artifact manifest hashes are
+`627995ebc1c9e2005a88b8b007a3e56e2eb04ab9994f6ed3a78834a1958407a8`
+and
+`c02cccf91d77540de9e52a795285abcfe9baae244edf236a5e28b70b056908ba`.
+This closes the public/private prediction-path gap on WCXB while leaving the
+embedded classifier's unseen-data gate closed.
+
 The separate fine-grained row remains a development/architecture diagnostic,
-not part of the clean four-suite evidence. Its dirty artifact matched only 24
-of 44 recorded source files against public `837ddda`, including differences in
-the harness and production runtime. It had zero extraction errors, but its
+not part of the four clean artifacts. It had zero extraction errors, but its
 structure scores make the current ceiling unambiguous: flattened prose cannot
 be repaired into reliable code, equations, and tables after extraction. The
 v2 refiner likewise remains shadow-only and unwired because it failed its
@@ -266,7 +321,7 @@ With the initial adaptive defaults, a label-free replay over WebMainBench marks
 78.7% of pages below F1 `0.4`. The separation is useful, but the escalation rate
 is too high to call the router production-calibrated. Public labels are used
 only for this retrospective diagnostic; thresholds must be selected on a
-separate, operator-owned calibration set and governed by a production budget.
+private calibration set and governed by a production budget.
 
 Routing alone cannot create an absolute WebMainBench win: even a hypothetical
 perfect result on every currently risky page, combined with the unchanged safe
@@ -287,7 +342,7 @@ for a 210M encoder at 13.7 pages/s on an L4, using 8,192-token block chunks and
 source reconstruction. Those are author-reported subset results, not a Clusy
 reproduction or a full-corpus leaderboard comparison. The released Pulpie
 weights are also CC BY-NC 4.0, so they are a useful architectural reference but
-cannot be the project's commercially usable default.
+cannot be Clusy's commercial default.
 
 IndexLM supplies complementary evidence for predicting addresses instead of
 regenerating content. Its authors report that a Qwen3-based interval predictor
@@ -324,10 +379,12 @@ Primary references:
 - [Dripper paper](https://arxiv.org/abs/2511.23119)
 - [WebMainBench dataset](https://huggingface.co/datasets/opendatalab/WebMainBench)
 - [WCXB paper](https://arxiv.org/abs/2605.21097)
-- [Beyond a Single Extractor](https://arxiv.org/abs/2602.19548)
+- [Beyond a Single Extractor](https://aclanthology.org/2026.findings-eacl.307/)
 - [Pulpie Orange Small model card](https://huggingface.co/feyninc/pulpie-orange-small)
 - [Index-based web content extraction](https://arxiv.org/abs/2512.06641)
 - [news-crawler-LM](https://arxiv.org/abs/2607.21284)
+- [Efficient Crawling for Scalable Web Data Acquisition](https://arxiv.org/abs/2602.11874)
+- [LiveWeb-IE](https://arxiv.org/abs/2603.13773)
 - [mmBERT model card](https://huggingface.co/jhu-clsp/mmBERT-base)
 - [mmBERT paper](https://arxiv.org/abs/2509.06888)
 - [Qwen3.5-0.8B-Base model card](https://huggingface.co/Qwen/Qwen3.5-0.8B-Base)
@@ -370,6 +427,26 @@ The frontier provides:
 - terminal reasons and immutable snapshots suitable for a transactional
   Postgres/Redis queue.
 
+Discovery quality needs a separate learned policy from content extraction.
+Recent focused-crawling work frames link choice as a sleeping-bandit problem
+and learns from the DOM paths enclosing available links, retrieving high target
+fractions while visiting only a small part of very large sites. Clusy's target
+frontier therefore adds a bounded contextual priority head over source-backed
+link features, but keeps admission, robots, scope, fairness, retry, and trap
+rules deterministic. The model may reorder already-admissible links; it may
+never make a denied URL admissible or consume an unbounded exploration budget.
+
+The checked-in focused-frontier v0 protocol is only a deterministic synthetic
+canary. On its 28-page graph, the frozen heuristic reached all four targets in
+8 requests and 5,200 non-target bytes; constant/BFS needed 28 requests and
+2,435,200 non-target bytes, and seeded random needed 20 requests and 1,505,200
+bytes. These values are `SYNTHETIC_ONLY / NOT_CLAIMABLE`: they validate
+accounting and replay semantics, not a learned policy or real-site advantage.
+The next evidence gate requires permission-granted sites, time-separated
+replays, target recall versus requests and downloaded bytes, propensity logs,
+host/page-type slices, and comparison with BFS, random, sitemap, heuristic, and
+contextual-bandit policies under identical budgets.
+
 The current opt-in recursive owner performs a robots preflight for every leased
 seed and discovered URL before its page fetch. It selects exact configured
 product-token groups with `*` fallback, merges duplicate groups, and applies
@@ -392,6 +469,15 @@ the already-fetched root HTML/PDF; a denial on the root document or redirect
 remains terminal. Cached effective URLs are re-checked before return, while
 policy-aware singleflight work is partitioned from flat work so a recursive
 caller cannot join an unguarded fetch.
+
+The current cache envelope does not yet retain the complete redirect chain and
+per-hop policy provenance. A flat cached result therefore cannot prove that
+every intermediate hop remains valid for a later recursive policy context.
+Production currently leaves Redis disabled, so the deployed platform path
+cannot hit this case. Before shared cache is enabled for recursive crawling,
+policy-aware requests must either bypass flat entries or require a versioned
+redirect-chain/provenance envelope and revalidate every hop; legacy entries
+without that proof must miss.
 
 DNS rebinding/SSRF enforcement, content-policy checks, and redirect validation
 remain fetch-plane responsibilities and are applied on every document hop.
@@ -546,8 +632,8 @@ whether to escalate. Initial label-free signals should include:
 - source-adapter completeness.
 
 Thresholds are configuration, versioned into cache keys, and calibrated on a
-separately consented, operator-owned development corpus. Public benchmark
-labels must never enter production routing or post-processing.
+private development corpus. Public benchmark labels must never enter production
+routing or post-processing.
 
 The production router should predict *incremental utility*, not merely whether
 a page looks unusual. A small calibrated structural model consumes the signals
@@ -594,6 +680,16 @@ The target execution shape is a **dual-source-pointer cascade**:
    figures; it neither heuristically reparents fragments nor appends recovered
    payloads out of position.
 
+Selection-certificate v0 implements the bounded integrity/replay substrate for
+step 4 without wiring it into extraction. It domain-separates and length-frames
+source, ordered-graph, output, and wire commitments; validates exact
+tokenizer-level source spans; digests parent/child/root and typed table/list/
+math topology; and rejects oversized or parser-repaired aliases before heavy
+work. It does not yet carry model/config/objective metadata, and a digest is not
+a signature or authorization token. Production promotion requires the expanded
+certificate schema, compatibility fixtures, independent verification, and a
+signed deployment provenance envelope where authenticity is required.
+
 This unifies three products without three extractors: `balanced` remains the
 deterministic fast lane, `quality` invokes the query-free semantic head, and a
 future `relevant` mode invokes the query-conditioned head over the same source
@@ -619,12 +715,11 @@ Architecture and weights are separate decisions. MinerU-HTML's code is
 Apache-2.0, while its official v1.1 compact weights are Hunyuan-derived and the
 model license excludes use in the EU, UK, and South Korea and restricts using
 outputs to improve another model. Those weights are useful as a reference
-implementation only where licensed; they are not suitable as a broadly
-deployable default. Production promotion requires a broadly deployable
-checkpoint and documented base-model, training-data, synthetic-data, and
-output rights.
+implementation only where licensed; they are not suitable as Clusy's global
+default. Production promotion requires a globally deployable checkpoint and
+documented base-model, training-data, synthetic-data, and output rights.
 
-For a future project-trained checkpoint, the leading serving candidate is
+For the first Clusy-owned checkpoint, the leading serving candidate is
 `jhu-clsp/mmBERT-base`: its official model card reports an MIT license, 307M
 parameters, 8,192-token context, and pretraining across more than 1,800
 languages. An encoder is a better default fit for bounded per-block labels than
@@ -646,7 +741,7 @@ mmBERT-small distilled variant, and the constrained Qwen candidate. Select by
 the Pareto frontier of held-out quality, GPU-seconds/page, peak memory, p95
 latency, and multilingual worst-stratum quality—not aggregate quality alone.
 Pulpie's non-commercial weights may be used only as a published reference
-point unless the operator obtains separate commercial rights.
+point unless Clusy obtains separate commercial rights.
 
 The model is fine-tuned as a constrained selector:
 
@@ -670,11 +765,11 @@ incremental held-out quality justifies its GPU-seconds, memory, and tail latency
 within a separately budgeted quality lane.
 
 Public benchmark pages and labels remain evaluation-only. Training and routing
-calibration use a separately consented, operator-owned workload sample with
-node-level human labels, hard negatives, and licensed teacher assistance.
-Splits are by registrable domain and time, not random page, so templates cannot
-leak between train and validation. A sealed domain/time holdout, near-duplicate
-audit, canaries, label provenance, and model/data hashes are release artifacts.
+calibration use a separately consented Clusy workload sample with node-level
+human labels, hard negatives, and licensed teacher assistance. Splits are by
+registrable domain and time, not random page, so templates cannot leak between
+train and validation. A sealed domain/time holdout, near-duplicate audit,
+canaries, label provenance, and model/data hashes are release artifacts.
 Active learning prioritizes pages with deterministic/model disagreement,
 uncertain boundaries, rare languages, tables/code/formulas, rendering, and
 production fallbacks.
@@ -687,21 +782,23 @@ of salient structures. Timeout, overload, invalid labels, or implausible output
 returns the already-computed deterministic result. Adaptive extraction therefore
 must not reduce availability.
 
-### 9. Integration contract
+### 9. Platform contract
 
-Downstream applications should expose one stable extraction capability:
+The platform should expose one stable `web_extract` capability:
 
-- Clusy handles configured, supported full-text extraction.
-- Search, discovery, and external fallbacks are separate host-application
-  concerns.
-- A host may fall back only on retryable transport/service failures,
-  blocked/empty/incomplete content, or an explicit provider-only mode.
-- Missing endpoints or tokens and non-retryable authentication or contract
-  errors must fail closed instead of silently creating external traffic.
+- Clusy is primary for configured, supported full-text extraction.
+- Exa remains the discovery/search path and a temporary extraction fallback.
+- Automatic Exa extraction fallback occurs only for retryable Clusy
+  transport/service failures, blocked/empty/incomplete content, or an explicit
+  Exa-only mode.
+- A missing Clusy endpoint/token or a non-retryable authentication/contract
+  response fails closed and alerts the operator instead of silently creating
+  paid Exa traffic. This is an availability-affecting configuration error, not
+  a per-page extraction decision.
 
 The response must expose `content_scope`, `truncated`, `strategy`, `rendered`,
 `cached`, `word_count`, and a machine-readable incompleteness reason. Without
-this contract the caller cannot distinguish a successful landing-page summary
+this contract the agent cannot distinguish a successful landing-page summary
 from a complete extraction.
 
 ### 10. Serving and observability
@@ -736,6 +833,27 @@ failures are retained.
 A WebMainBench score alone cannot validate live fetching, rendering, freshness,
 anti-bot behavior, or search.
 
+### Permissioned live-web gate
+
+Static snapshots cannot establish robustness as pages and templates evolve.
+LiveWeb-IE provides a useful benchmark pattern: trusted, permission-granted
+sites; natural-language extraction requests over text, images, and links; and
+explicit complexity strata. Clusy's live gate must preserve those consent and
+time dimensions while separating three state machines that a single score
+would confound:
+
+- discovery recall under requests, bytes, and host-politeness budgets;
+- fetch/render success, redirects, freshness, and policy compliance; and
+- source-grounded extraction correctness and structural fidelity.
+
+The protocol stores consent scope, site/time snapshot identity, query and
+answer provenance, every failure, cache state, network/render/extraction
+timings, bytes, and cost. It reports paired per-site and per-query uncertainty,
+template-age and language slices, and repeatability across at least two time
+windows. Benchmark answers and vendor outputs remain evaluation-only and never
+become training, synthetic labels, or routing calibration. No unpermitted live
+site enters this gate.
+
 The dated stretch objectives for the semantic pipeline are deliberately above
 the strongest results currently recorded by the project:
 
@@ -748,17 +866,16 @@ the strongest results currently recorded by the project:
 | WebMainBench fine-grained subset | Exceed overall `0.8256`, including table/code/formula metrics |
 
 These are engineering objectives, not claims. Public-label results must be
-replicated on a sealed, operator-owned time/domain holdout before the adaptive
-profile becomes the default.
+replicated on a private time/domain holdout before the adaptive profile becomes
+the platform default.
 
 ### Live Exa/Firecrawl comparison
 
 The existing small hand-picked vendor scripts are smoke tests, not credible
 SOTA evidence. A claimable comparison requires:
 
-1. A preregistered, time-stamped URL sample drawn from an authorized,
-   representative workload and stratified by page type, language, geography,
-   rendering need, and difficulty.
+1. A preregistered, time-stamped URL sample drawn from Clusy's real workload,
+   stratified by page type, language, geography, rendering need, and difficulty.
 2. Frozen URLs and task definitions before any system output is inspected.
 3. Identical requested scope and freshness semantics for every provider.
 4. Blinded human judgments or source-derived references for completeness,
@@ -800,19 +917,12 @@ from their current official documentation when the comparison is executed:
 
 Use the narrowest statement supported by evidence:
 
-- “The clean public AEB run at `4dd1755` scored F1 `0.972127`, `+0.002172`
-  above the embedded pinned `rs-trafilatura` prediction” is acceptable within
-  the article-body extraction scope when accompanied by the paired 95% CI
-  `[0, +0.006589]`. It is a generic bug fix to a patched embedded backend, not
-  an independent algorithmic win or evidence for V2 `balanced`.
-- “The clean public WCXB `adaptive` run at `9c7cc0a` scored public-test F1
-  `0.901714`, ΔF1 `+0.009987` versus the direct OSS `balanced` artifact, paired
-  95% CI `[+0.003424, +0.017720]`” is acceptable as public-benchmark diagnostic
-  evidence. It is not an unseen or independent SOTA claim because labels are
-  public and the embedded classifier's training-item manifest is unavailable.
-- The clean private Webis/WebMainBench rows may be described as source-audited
-  fixed-corpus diagnostics only when their private `a19ae17` execution
-  provenance is stated. They must not be attributed to an OSS commit.
+- “The clean commit-pinned AEB run at `a19ae17` scored F1 `0.972127`,
+  `+0.002172` above the embedded pinned `rs-trafilatura` prediction” is
+  acceptable within AEB's 181-page article-body scope when accompanied by the
+  paired 95% CI `[0, +0.006589]`. It is a generic bug fix to a patched embedded
+  backend, not an independent algorithmic win, and it does not support
+  universal SOTA wording.
 - “Better than Exa/Firecrawl” cannot be supported by the current hash-only v3
   artifacts. It requires a redesigned independently rescorable or attested,
   matched-scope protocol plus favorable paired confidence and operational
@@ -823,21 +933,26 @@ Use the narrowest statement supported by evidence:
 ## Delivery sequence
 
 1. **Adaptive foundation — implemented, opt-in:** deterministic-first routing,
-   versioned thresholds, quality fallback, and cache correctness.
+   versioned thresholds, quality fallback, and versioned flat-cache semantics;
+   recursive shared-cache provenance remains a closed gate.
 2. **Ordered block IR — additive API implemented, runtime promotion pending:**
-   bounded Rust graph, typed serializers, ID-selected reconstruction, and the
-   shadow-only deterministic refiner.
+   bounded Rust graph, typed serializers, ID-selected reconstruction, the
+   shadow-only deterministic refiner, and the unwired v0 selection certificate.
 3. **Compact model — planned:** local block classifier, batching, constrained
    labels, verifier, and circuit breaker.
 4. **Serving scale — partial/planned:** backend-neutral render lifecycle is
    implemented; split fetch/render/model worker pools, tenant budgets,
    backpressure, distributed cache, tracing, and per-route SLOs remain.
-5. **Evidence — in progress:** AEB is reproduced directly from clean public
-   `4dd1755`; both WCXB profiles are reproduced directly from clean public
-   `9c7cc0a`; Webis and WebMainBench remain private `a19ae17` diagnostics.
-   Operator-owned calibration and a preregistered live vendor study remain
-   separate gates before any broad claim.
+5. **Focused discovery — protocol seed implemented:** deterministic bounded
+   frontier plus a synthetic-only replay harness; a contextual-bandit priority
+   head and permissioned real-site evidence remain.
+6. **Evidence — in progress:** baseline AEB, WCXB, Webis, and WebMainBench
+   artifacts are captured against clean revision `a19ae17`; the adaptive WCXB
+   artifact is captured against clean revision `70ec76d`, and two promoted
+   native hot-path changes have compact exact-output A/B records. Private
+   calibration, deployment-hardware replication, a permissioned live-web gate,
+   and a preregistered live vendor study remain separate gates.
 
 The adaptive foundation can ship behind an opt-in profile. It becomes the
-default only after the quality, latency, cost, and escalation-budget gates pass
-in shadow traffic.
+platform default only after the quality, latency, cost, and escalation-budget
+gates pass in shadow traffic.

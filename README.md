@@ -17,7 +17,8 @@ docker run --rm -d --name clusy-crawler -p 11235:11235 \
   --user 10001:10001 --init --read-only --shm-size=1g \
   --tmpfs /tmp:size=512m,mode=1777 \
   --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
-  --security-opt seccomp="$(pwd)/seccomp_profile.json" \
+  --security-opt no-new-privileges \
+  --security-opt seccomp="$(pwd)/seccomp_profile.json" --cap-drop ALL \
   --pids-limit=256 --memory=4g --cpus=2 \
   -e ENVIRONMENT=prod \
   -e SERVING_FINGERPRINT_KEY=your-independent-32-plus-char-secret \
@@ -83,155 +84,179 @@ Each request flows through six stages:
 The checked-in harnesses call the production extraction entry points and pin
 the corpus, evaluator, dependencies, source tree, native module, raw
 predictions, and artifact hashes. Article-body and general main-content
-Markdown remain separate contracts. Harnesses do not pass references,
+Markdown remain separate contracts. The harnesses do not pass references,
 page-type labels, or snippets to the extractor, and no scoring-only cleanup is
-applied. Runtime isolation is not a training-provenance guarantee: the broad
-native path embeds `web-page-classifier` 0.1.0, whose publisher reports 1,497
-training pages across seven types but publishes no item/split manifest. WCXB
-development contains exactly 1,497 pages across the same seven types. This is
-strong overlap risk, not proof of overlap, so broad-profile public-benchmark
-results remain diagnostics rather than unseen-performance claims.
+applied. That runtime isolation is not a training-provenance guarantee: the
+broad native path embeds
+[`web-page-classifier` 0.1.0](https://github.com/Murrough-Foley/web-page-classifier),
+whose publisher reports 1,497 training pages across seven types but publishes
+no item- or split-level manifest. WCXB development also contains exactly 1,497
+pages across the same seven types. This is strong overlap risk, not proof of
+overlap, so WCXB development/combined results are diagnostics rather than
+unseen-performance claims.
 
-### Current public AEB validation
-
-The full AEB corpus was run from clean public executable commit
-[`4dd1755`](https://github.com/clusy-io/clusy-crawler/commit/4dd1755e9b425c80193982bc6609c06444cf30d5)
-through the production asynchronous entry point. This README update is
-documentation-only and does not change the executable revision under test.
-
-| Suite / profile | Pages | Precision | Recall | F1 | Extraction throughput |
-|---|---:|---:|---:|---:|---:|
-| AEB `article_body` | 181 | `0.955147` | `0.989721` | **`0.972127`** | **`142.306` pages/s** |
-| AEB `balanced` | 181 | `0.928435` | `0.989588` | `0.958037` | **`215.265` pages/s** |
-
-For `article_body`, ΔF1 versus Trafilatura 2.0 was `+0.014624`, with a
-paired-bootstrap 95% CI of `[+0.005346, +0.025342]` and
-`P(Clusy > Trafilatura) = 0.9995`. Versus the embedded pinned
-`rs-trafilatura` prediction, ΔF1 was `+0.002172`, CI `[0, +0.006589]`, with no
-observed loss and `P(Clusy > rs-trafilatura) = 0.6349`. The latter is not an
-independent algorithmic win because Clusy intentionally embeds and patches
-that backend.
-
-The `balanced` profile is reported separately because it has a different
-general-main-content contract. Its point estimate was `+0.000534` F1 versus
-Trafilatura, but the CI `[-0.011854, +0.012519]` includes equality. It remained
-`0.011918` below the pinned `rs-trafilatura` prediction, CI
-`[-0.022661, -0.002607]`; this row is not a baseline win.
-
-Both clean runs used all 181 pages, two workers, five warmup pages, 10,000
-paired-bootstrap replicates, exact production output, and zero extraction
-errors. `article_body` p50/p95 latency was `12.820 / 25.564 ms`; `balanced`
-was `8.230 / 16.408 ms`. Their ignored artifacts and hashes are:
-
-| Profile | Artifact directory | Manifest SHA-256 | Report SHA-256 |
-|---|---|---|---|
-| `article_body` | `bench/results/aeb/20260729T110311Z` | `2f7b61af148387c93ff6381fee5fad663a1a4e731d79d653568da4a656784fc1` | `532f4ccabb6588e258323b6e6865630e3350f9dfe12cd535e4241535cf944f65` |
-| `balanced` | `bench/results/aeb/20260729T110342Z` | `4f58b2ff7e55ba017c3fdfae1bb4da3bffab48b67a55f8a458b68de04d81aa70` | `0f12f1438fcfdbf1fe44b17c4fbcffa5b0c78ad37870c046f40b77adf3bbcd97` |
-
-The `article_body` row is scoped public-benchmark evidence. The general
-`balanced` row remains a public diagnostic because its broad path includes the
-classifier with unresolved training provenance. Throughput is an in-memory
-extractor measurement on an Apple M4 Pro, not a live-network crawl result or
-portable hardware guarantee. Generic source-root identity guards prevent
-nested serialization from repeating the same source subtree while retaining
-equal text from disjoint nodes; there is no page, hostname, or
-benchmark-specific condition.
-
-### Release-wide fixed-corpus context
-
-The two AEB rows are direct runs of public commit `4dd1755`. Both WCXB profiles
-were rerun directly from clean public commit `9c7cc0a`; Webis and WebMainBench
-remain clean private-revision `a19ae17` diagnostics and are not represented as
-OSS runs. None of these fixed-corpus results proves universal, live-crawler,
-Exa-comparative, or Firecrawl-comparative SOTA.
-
-The Clusy-hosted platform currently deploys private source revision `a51212c`
-as OCI digest
-`sha256:86b3e6e4003dff15fdd8096d4d04a30df1068fea9cdf0cbb501ff509ee397b79`.
-Its fallback dead-work removal is mirrored here at public revision `f5647e1`;
-the direct parsed-DOM clone is mirrored at `ffd61db`. Differing private/public
-commit IDs reflect the two repository histories.
+The four baseline validations below were captured on 2026-07-29 from clean
+executable source revision `a19ae17`. The newer WCXB `adaptive` validation was
+captured from clean revision `70ec76d`; its application/native runtime is
+identical to historical runtime revision `86684ca`. Production currently runs
+source revision `bdbfd7c` as
+`sha256:638378e7bdf5b00c75b2aa3f56b057a645dd900d3114d9336d0e507d95a7afb8`.
+The intervening runtime changes are the fallback dead-work removal, direct
+parsed-DOM clone, and linear filtered-DOM traversal measured below. Every
+referenced harness verified stable relevant source and loaded native bytes.
+These are reproducible public-benchmark measurements or explicitly scoped
+implementation A/Bs, not blind estimates. The unresolved classifier provenance
+supersedes older WCXB artifacts that labelled themselves `claimable`. Webis
+remains `ARCHIVAL_REPRODUCIBLE`, and WebMainBench remains a
+fixed-public-protocol diagnostic. None of these statuses establishes universal
+or vendor-comparative SOTA or a current Exa/Firecrawl win.
 
 | Suite / profile | Pages | Quality | Extraction throughput | Honest comparison |
 |---|---:|---:|---:|---|
-| AEB `article_body` | 181 | P/R/F1 `0.955147 / 0.989721 / 0.972127` | `142.306` pages/s | Direct clean OSS run; `+0.014624` versus Trafilatura 2.0, CI `[+0.005346, +0.025342]` |
-| AEB `balanced` | 181 | P/R/F1 `0.928435 / 0.989588 / 0.958037` | `215.265` pages/s | Direct clean OSS run; below pinned `rs-trafilatura` |
-| WCXB `balanced`, development | 1,497 | P/R/F1 `0.852732 / 0.898934 / 0.848433` | `56.58` pages/s | Direct clean OSS `9c7cc0a`; public-label diagnostic |
-| WCXB `balanced`, public test | 511 | P/R/F1 `0.894822 / 0.928969 / 0.891727` | `106.96` pages/s | Direct clean OSS `9c7cc0a`; `0.001273` below pinned upstream point result `0.893` |
-| WCXB `balanced`, combined | 2,008 | P/R/F1 `0.863443 / 0.906577 / 0.859450` | `64.28` pages/s | Direct clean OSS `9c7cc0a`; sequential split aggregate |
-| WCXB `adaptive`, development | 1,497 | P/R/F1 `0.844912 / 0.912670 / 0.852667` | `48.54` pages/s | Direct clean OSS `9c7cc0a`; ΔF1 `+0.004235`, paired 95% CI `[-0.000459, +0.009298]` |
-| WCXB `adaptive`, public test | 511 | P/R/F1 `0.895244 / 0.942960 / 0.901714` | `78.62` pages/s | Direct clean OSS `9c7cc0a`; ΔF1 `+0.009987`, CI `[+0.003424, +0.017720]` |
-| WCXB `adaptive`, combined | 2,008 | P/R/F1 `0.857721 / 0.920378 / 0.865149` | `53.78` pages/s | Direct clean OSS `9c7cc0a`; ΔF1 `+0.005699`, CI `[+0.001795, +0.009833]` |
-| Webis `balanced` | 3,985 | macro ROUGE-LSum P/R/F1 `0.867650 / 0.908477 / 0.855327`; macro Levenshtein `0.850216` | `306.09` pages/s | Private `a19ae17`; below Trafilatura `0.883461` and weighted ensemble `0.898844` |
-| WebMainBench `balanced`, raw Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615569 / 0.677841 / 0.606672` | `113.02` pages/s | Private `a19ae17`; below published Trafilatura `0.6402` and model-assisted leaders |
-| WebMainBench `balanced`, scrubbed Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615698 / 0.676570 / 0.605703` | `55.05` pages/s | Private `a19ae17`; paired delta versus raw `-0.000969` |
+| AEB `article_body` | 181 | P/R/F1 `0.955147 / 0.989721 / 0.972127` | `144.49` pages/s | `+0.014624` F1 versus Trafilatura 2.0, paired 95% CI `[+0.005346, +0.025342]`; `+0.002172` versus the embedded pinned `rs-trafilatura`, CI `[0, +0.006589]` |
+| AEB `balanced` | 181 | P/R/F1 `0.928435 / 0.989588 / 0.958037` | `222.43` pages/s | One CBS page improved versus the prior clean run, but F1 remains `0.011918` below the pinned `rs-trafilatura`, CI `[-0.022661, -0.002607]` |
+| WCXB `balanced`, development | 1,497 | P/R/F1 `0.852732 / 0.898934 / 0.848433` | `77.05` pages/s | Public-label development evidence, not a blind test |
+| WCXB `balanced`, public test | 511 | P/R/F1 `0.894822 / 0.928969 / 0.891727` | `113.76` pages/s | `0.001273` below the pinned WCXB commit's `rs-trafilatura` public-test F1 `0.893` |
+| WCXB `balanced`, combined | 2,008 | P/R/F1 `0.863443 / 0.906577 / 0.859450` | `83.95` pages/s | Sequential split aggregate; not comparable with a development-only headline |
+| WCXB `adaptive`, development | 1,497 | P/R/F1 `0.844912 / 0.912670 / 0.852667` | `48.57` pages/s | ΔF1 `+0.004235` versus `balanced`; paired-page 95% CI `[-0.000396, +0.009200]` |
+| WCXB `adaptive`, public test | 511 | P/R/F1 `0.895244 / 0.942960 / 0.901714` | `79.37` pages/s | ΔF1 `+0.009987` versus `balanced`, CI `[+0.003446, +0.018017]`; `+0.008714` versus pinned `rs-trafilatura` is an unpaired point comparison |
+| WCXB `adaptive`, combined | 2,008 | P/R/F1 `0.857721 / 0.920378 / 0.865149` | `53.89` pages/s | ΔF1 `+0.005699` versus `balanced`, CI `[+0.001810, +0.009920]`; sequential split aggregate only |
+| Webis `balanced` | 3,985 | macro ROUGE-LSum P/R/F1 `0.867650 / 0.908477 / 0.855327`; macro Levenshtein `0.850216` | `306.09` pages/s | Below pinned Trafilatura `0.883461` and weighted ensemble `0.898844` ROUGE-LSum F1 |
+| WebMainBench `balanced`, raw Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615569 / 0.677841 / 0.606672` | `113.02` pages/s | Below published Trafilatura `0.6402` and leading model-assisted `0.9098`; output contracts also differ |
+| WebMainBench `balanced`, scrubbed Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615698 / 0.676570 / 0.605703` | `55.05` pages/s | Annotation markers removed before extraction; paired delta versus raw was `-0.000969` |
 
-| Suite | Executable source | Artifact directory | Manifest SHA-256 |
-|---|---|---|---|
-| AEB `article_body` | public `4dd1755` | `bench/results/aeb/20260729T110311Z` | `2f7b61af148387c93ff6381fee5fad663a1a4e731d79d653568da4a656784fc1` |
-| AEB `balanced` | public `4dd1755` | `bench/results/aeb/20260729T110342Z` | `4f58b2ff7e55ba017c3fdfae1bb4da3bffab48b67a55f8a458b68de04d81aa70` |
-| WCXB `balanced` | public `9c7cc0a` | `bench/results/wcxb/20260729T-oss-balanced-9c7cc0a` | `627995ebc1c9e2005a88b8b007a3e56e2eb04ab9994f6ed3a78834a1958407a8` |
-| WCXB `adaptive` | public `9c7cc0a` | `bench/results/wcxb/20260729T-oss-adaptive-9c7cc0a` | `c02cccf91d77540de9e52a795285abcfe9baae244edf236a5e28b70b056908ba` |
-| Webis | private `a19ae17` | `bench/results/webis-v3-a19ae17-20260729T1028Z` | `4fae36a0d91b369f1858f029b04e005d8ba4372d67001060a1e3b8106c5e626f` |
-| WebMainBench | private `a19ae17` | `bench/results/webmainbench/20260729T101852Z` | `08530d7bc3e15cabdc94a2b405a996e6d277880cee8b9b3913d0c19c5ef04991` |
-| Native DOM clone A/B | public `ffd61db` / private `a51212c` | `bench/evidence/native-dom-clone-a51212c` | `report.json`: `9cb75a3fc485c0cd5ff8d006f0cc33a8c37ee49c980ca2842a250e80f606839e` |
+Observed extraction p50/p95 latency was `12.466 / 25.254 ms` on AEB
+`article_body`, `8.092 / 15.998 ms` on AEB `balanced`,
+`16.574 / 72.861 ms` on WCXB development, `13.245 / 39.916 ms` on WCXB
+public test, and `7.895 / 25.141 ms` on Webis. These are local, closed-loop
+measurements on the artifact-recorded hardware, not HTTP-service or live-web
+throughput. WebMainBench raw p50/p95 was `10.799 / 47.439 ms`; scrubbed
+p50/p95 was `11.965 / 41.613 ms`.
 
-All fixed-corpus runs completed with zero extraction errors; Webis also had
-zero empty predictions. Direct OSS WCXB `adaptive` changed 83 outputs versus
-`balanced`, with 41 wins, 34 losses, and 1,933 ties under official per-page F1.
-The paired bootstrap used 10,000 replicates and fixed split/combined seeds
-20260729/20260730/20260731. Its public-test point result is `0.008714` above
-the pinned upstream `rs-trafilatura` result `0.893`, but upstream predictions
-are unavailable for a paired comparison and the systems share backend/model
-provenance. This is promising direct-OSS extraction evidence, not an
-independent leaderboard or unseen SOTA claim.
+The clean WCXB `adaptive` run used eight workers and observed combined
+p50/p95 `110.772 / 377.823 ms`; its queueing/load shape differs from the
+older `balanced` artifact, so the table's throughput values are not a
+cross-profile speed experiment. The controlled before/after replay for the
+disabled-quality-backend fast path used identical 2,008 predictions (dev SHA
+`0520fcf3...de00`, test SHA `e3e670a7...852b8`) and improved combined
+throughput from `39.73` to `51.54` pages/s (`+29.7%`), p50 from `158.627` to
+`116.394` ms, and p95 from `469.247` to `387.325` ms. This is a local
+closed-loop implementation A/B, not service or Internet latency. The WCXB
+quality intervals above use a deterministic 10,000-replicate paired page
+bootstrap over official per-page F1; public labels and unresolved model
+provenance keep them diagnostic.
 
-The two WCXB profiles ran sequentially with eight requested workers, so their
-throughput rows are observations rather than a randomized performance study;
-in these runs `adaptive` traded about 16.3% combined throughput for the quality
-gain. WCXB combined scores must not be compared with a development-only
-headline. WebMainBench covers 7,809 pages from 5,434 domains, but Clusy's
-Direct-MD output differs from the leaderboard's main `HTML+MD` conversion
-contract. Webis and WebMainBench expose material quality gaps and are not SOTA
-results. Throughput is local, closed-loop extraction on artifact-recorded
-hardware, not HTTP-service or live-web crawl throughput.
-
-A controlled A/B for the mirrored fallback optimization removed DOM clones and
-pruning whose result was discarded. Two alternating WCXB replays kept all
-development and public-test predictions byte-identical (SHA-256
+A second controlled A/B removed fallback DOM clones and pruning whose result
+was discarded. Two alternating WCXB replays kept all development and public
+test predictions byte-identical (SHA-256
 `b2a427a3a8234351172173083eba60bdd6e7823bf0bb7591d62d14fa43c8ddd5`
 and
 `166128979118a9f375c35be5e5296d46b0a06f8a3d583c19a3b282ab83f2b0bb`)
-and kept combined F1 at `0.859450`; mean throughput rose by `2.95%` on
-development and `2.30%` on public test. A separate cross-order direct native
-replay on all 7,809 WebMainBench pages kept all ten returned fields identical
-(canonical SHA-256
+and kept combined F1 at `0.859450`; mean development throughput rose from
+`73.4045` to `75.5715` pages/s (`+2.95%`) and public-test throughput from
+`108.4845` to `110.9842` pages/s (`+2.30%`). A separate cross-order direct
+native replay on all 7,809 WebMainBench pages kept all ten returned fields
+identical (canonical SHA-256
 `9777864cc79bca218125fea1e5dcc74726d30019fc05532a07414908dc0e5b95`)
 while the two-run mean rose from `129.4730` to `142.0023` pages/s (`+9.68%`).
-That direct measurement includes local file reads and JSON parsing with two
-threads; neither result is an HTTP-service, live-web, or universal throughput
-claim.
+The latter includes local file reads and JSON parsing with two threads; neither
+measurement is an HTTP-service, live-web, or universal throughput claim.
 
 The next independent cross-order A/B replaced serialize-and-reparse DOM clones
 with `Document::clone()`. Against runtime baseline `0fb00ee`, the timed
-candidate contained exactly that one-line runtime change; private `a51212c`
-and public `ffd61db` add only focused tests around it. Across WCXB's 2,008
-pages, all ten returned extraction fields stayed exact (aggregate SHA-256
+candidate contained exactly that one-line runtime change; the promoted
+`a51212c` commit adds only focused tests. Across WCXB's 2,008 pages, all ten
+returned extraction fields stayed exact (aggregate SHA-256
 `ddb0ff4f7a1d209a5baf3658e9da1afb42ed83317d140dbffe0efac68916aec2`)
 while the two-run mean rose from `93.2901` to `104.3447` pages/s
-(`+11.85%`). Across all 7,809 WebMainBench pages, those fields stayed exact
-(SHA-256
+(`+11.85%`). Across all 7,809 WebMainBench pages, the same ten fields stayed
+exact (SHA-256
 `cf85a7510cb3ecca15d38abbe920a73cfc7780ad705ad3b540b403b3f8339175`)
 while throughput rose from `152.2089` to `174.9288` pages/s (`+14.93%`).
 A deterministic 20,000-page malformed-HTML set was also exact and improved
 from `7,712.19` to `8,161.16` pages/s (`+5.82%`). A constructed
 `<form><plaintext>` fallback intentionally changed: direct cloning removed
 serializer-inserted closing-tag contamination while preserving source text.
-Only two timing samples per main variant were collected, so these remain local
-implementation results without a confidence interval, service claim, or
-vendor comparison. See the checked-in
-[`native-dom-clone-a51212c` evidence record](bench/evidence/native-dom-clone-a51212c/PROTOCOL.md)
-for exact lineage, samples, hashes, gates, and limitations.
+Only two timing samples per main variant were collected, so these are local
+closed-loop implementation results without a confidence interval, service
+claim, or vendor comparison. The exact lineage, samples, corpus and output
+hashes, promotion gates, and limitations are in the
+[`native-dom-clone-a51212c` evidence record](bench/evidence/native-dom-clone-a51212c/PROTOCOL.md).
+
+A subsequent formal, retain-all A/B replaced per-text-node ancestor walks in
+the broad filtered serializer with an O(N)-time preorder state stack. Against
+runtime baseline `a51212c`, all ten returned fields remained byte-identical on
+7,809 WebMainBench, 2,008 WCXB, and 248 deterministic stress pages. Four
+counterbalanced samples per variant raised pooled throughput from `100.7616`
+to `114.8586` pages/s on WebMain (`+13.99%`), `60.2121` to `76.4305` on WCXB
+(`+26.94%`), and `165.4527` to `223.9929` on stress (`+35.38%`). Two
+base/candidate/candidate/base WCXB resource runs reduced mean retired
+instructions by `22.33%`, cycles by `21.77%`, wall time by `21.57%`, and peak
+memory footprint by `0.51%`. All samples were retained; a separate fixed
+WebMain sensitivity run remained positive at `+12.27%`. This is local
+extraction-loop evidence, not HTTP, live-web, vendor, or SOTA evidence. Exact
+samples, dumps, binary/corpus hashes, contention annotations, deployment gates,
+and integrity roots are in the
+[`native-filter-stack-bdbfd7c` evidence record](bench/evidence/native-filter-stack-bdbfd7c/PROTOCOL.md).
+
+A separate clean run from public OSS commit `9c7cc0a` reproduced both
+`adaptive` prediction files byte for byte (the same dev/test SHA-256 values
+above), with zero extraction errors. Its manifest SHA-256 is
+`c02cccf91d77540de9e52a795285abcfe9baae244edf236a5e28b70b056908ba`.
+The direct OSS `balanced` artifact manifest is
+`627995ebc1c9e2005a88b8b007a3e56e2eb04ab9994f6ed3a78834a1958407a8`.
+This closes the public/private executable-path reproduction gap for these
+predictions; it does not resolve the classifier's training-item provenance.
+
+| Suite | Artifact status | Artifact directory | Manifest SHA-256 | Result SHA-256 |
+|---|---|---|---|---|
+| AEB `article_body` | scoped public-benchmark artifact; not blind | `bench/results/aeb/20260729T101552Z` | `800d66c2f2558137281eb97e218125d11c2a8ea8843a281b6de5c161253b8d9e` | `report.json`: `c8cbaf5be3ae40ade25c871da1ad8848ff1cb6898f1fb762cca73bfaf198705f` |
+| AEB `balanced` | reproducible public diagnostic; broad-model provenance unresolved | `bench/results/aeb/20260729T101450Z` | `38127a68bacc845c38bef2b8c6303cd957b8f3fd4473a3552ea59d94d7caa379` | `report.json`: `eb9094a7e3088cdfa0612e80c547920d4cf796b0c7a99a1d17a680c7b82dc6e2` |
+| WCXB `balanced` | reproducible diagnostic; historical claim flag superseded | `bench/results/wcxb/20260729T101737Z` | `4e7010abd013adfbc71186742a350063986dd242851f95afdee269efb01ea0ea` | `summary.json`: `4070d93e055ce2c44eb99687c073bfb24b04dbad10ae3d53eea287857a2980ab` |
+| WCXB `adaptive` | clean reproducible diagnostic; unseen claim gate closed | `bench/results/wcxb/20260729T132557Z-adaptive-70ec76d` | `50eb7a46bb49ddc8d4b31d0bb027690167966d6f6aa058067716373976c158bf` | `summary.json`: `5a403e9fd10cb30dbc4ffd52a638319da9513f020802b358b30b3ca964fdae71` |
+| Webis | `ARCHIVAL_REPRODUCIBLE`; broad-model provenance unresolved | `bench/results/webis-v3-a19ae17-20260729T1028Z` | `4fae36a0d91b369f1858f029b04e005d8ba4372d67001060a1e3b8106c5e626f` | `summary.json`: `683ab2aac6937bc231be03d3b63c76eeef717446dbeb4220ff7a29427f18aa4b` |
+| WebMainBench | fixed-public-protocol diagnostic; broad-model provenance unresolved | `bench/results/webmainbench/20260729T101852Z` | `08530d7bc3e15cabdc94a2b405a996e6d277880cee8b9b3913d0c19c5ef04991` | `summary.json`: `e27c137b3edc675f7def70b5f78bb5f8212670e9e09fcceedfb96fee3551a3da` |
+| Native DOM clone A/B | local closed-loop implementation evidence; not a quality or SOTA claim | `bench/evidence/native-dom-clone-a51212c` | `PROTOCOL.md`: `3a1e2734770ae1fb0c1251181ad0c72bc8d1e212928665e26529ff144832e437` | `report.json`: `9cb75a3fc485c0cd5ff8d006f0cc33a8c37ee49c980ca2842a250e80f606839e` |
+| Native filtered-traversal A/B | formal local implementation evidence; exact outputs, not a service/vendor/SOTA claim | `bench/evidence/native-filter-stack-bdbfd7c` | `PROTOCOL.md`: `a7d74d63348f42071251ab6867399ece835c41e58478946ec5f55dd1466501be` | `report.json`: `b2c3e2ced89f6840aeaea8332d52fc423ce7a585d45b604c2e9af54a17f3e71c` |
+
+On AEB `article_body`, all 181 current predictions are byte-identical to the
+prior strong run. A generic outermost-source-root guard had removed repeated
+serialization of one nested JSON-LD source subtree; equal text from disjoint
+source roots is still retained. Versus the pinned `rs-trafilatura` prediction,
+ΔF1 is `+0.002172`, paired-bootstrap 95% CI `[0, +0.006589]`, with no observed
+loss and `P(Clusy > rs-trafilatura) = 0.6349`. Versus Trafilatura 2.0, ΔF1 is
+`+0.014624`, 95% CI `[+0.005346, +0.025342]`, with
+`P(Clusy > Trafilatura) = 0.9995`. The first comparison is not an independent
+algorithmic win: Clusy intentionally embeds and patches that Rust article
+backend. The separate `balanced` AEB run improves one CBS page but remains
+below the pinned `rs-trafilatura` baseline.
+
+WCXB covers seven page types but has public labels. The `balanced` artifact
+produced all 2,008 predictions with zero extraction errors and reproduced its
+prior clean output. The clean `adaptive` artifact also had zero errors. Versus
+`balanced`, it changed 83 page outputs, with 41 wins, 34 losses, and 1,933
+ties under official per-page F1; eight changed outputs tied on F1, and the
+aggregate paired interval is positive.
+Its public-test F1 `0.901714` is above the pinned WCXB commit's
+`rs-trafilatura` point result `0.893`, but the upstream prediction artifact is
+unavailable for a paired comparison, Clusy embeds and extends that backend,
+and the shared opaque classifier has no training-item manifest. This is a
+promising scoped result, not an independent leaderboard or unseen SOTA claim.
+The combined score must not be compared with a development-only headline.
+
+Webis completed all eight datasets with zero errors and zero empty
+predictions. Exactly one CBS page improved relative to the previous clean
+Webis run, raising macro ROUGE-LSum F1 from `0.854920` to `0.855327` and macro
+Levenshtein from `0.849806` to `0.850216`; the official scorer took
+`1236.620` seconds and dominated wall time.
+WebMainBench covers 7,809 pages from 5,434 domains and exposes the present
+broad-Markdown gap clearly. Both required tracks completed all 7,809 pages
+with zero extraction errors. All 7,809 predictions in each track are identical
+to the corresponding prior clean run. Current measured throughput is `113.02`
+pages/s raw and `55.05` pages/s scrubbed; neither local rate is a universal
+service-throughput claim. Clusy's Direct-MD output also differs from the
+leaderboard's main `HTML+MD` conversion contract, so this is same-data evidence
+instead of an unconditional leaderboard placement.
 
 The source-backed v2 refiner has also been evaluated in a 545-page,
 reference-isolated shadow run:
@@ -245,11 +270,19 @@ reference-isolated shadow run:
 The refiner improved aggregate, code, and table scores but regressed text and
 formula scores under both policies. It therefore failed the monotonic
 promotion gate and remains **shadow-only and unwired**. This diagnostic is not
-a production or leaderboard result. It combines two dirty development
-artifacts and remains non-claimable: the default/current manifest SHA-256 is
-`c97ef0be89740dbc419534eff12089e25793e0a287eb2faf0d6101225bbf951f`,
-and the normalized-lexical-sequence manifest SHA-256 is
-`bc9fc7b71e1a7e3bb6ba02cf6b2c7e216019e12e636157a42b687369af271e80`.
+a production or leaderboard result. Its currently ignored local artifact must
+be preserved and hashed before these values are cited as external evidence.
+
+Two additional v2 research components are also deliberately unwired. The
+selection-certificate v0 API binds bounded source bytes, ordered graph
+topology, selected IDs/spans, output, and wire encoding with domain-separated
+digests, then fails closed on parser-repair aliases and hostile resource
+shapes; it is a replay/integrity record, not a signature or authorization
+token. The focused-frontier v0 harness freezes a 28-page synthetic graph and
+compares constant, BFS, random, and a link-context heuristic under request and
+non-target-byte budgets. Its results are marked `SYNTHETIC_ONLY /
+NOT_CLAIMABLE`; the harness is a protocol seed for later permitted live-site
+evaluation, not evidence that the current production frontier is optimal.
 
 See [`bench/NEUTRAL_BENCHMARK.md`](bench/NEUTRAL_BENCHMARK.md),
 [`bench/WCXB_BENCHMARK.md`](bench/WCXB_BENCHMARK.md),
@@ -257,8 +290,8 @@ See [`bench/NEUTRAL_BENCHMARK.md`](bench/NEUTRAL_BENCHMARK.md),
 [`bench/WEBMAINBENCH_BENCHMARK.md`](bench/WEBMAINBENCH_BENCHMARK.md), plus the
 separate
 [`bench/WEBMAINBENCH_FINEGRAINED_BENCHMARK.md`](bench/WEBMAINBENCH_FINEGRAINED_BENCHMARK.md),
-for protocol and reproduction rules. The architecture and promotion gates are
-in [`docs/SOTA_ARCHITECTURE.md`](docs/SOTA_ARCHITECTURE.md).
+for exact reproduction and publication rules. The architecture and promotion
+gates are in [`docs/SOTA_ARCHITECTURE.md`](docs/SOTA_ARCHITECTURE.md).
 
 ### Exa and Firecrawl comparison policy
 
@@ -863,7 +896,7 @@ run through the checked-in Clusy harness is evidence for this service.
 The MinerU-HTML *code* is Apache-2.0, but the official v1.1 compact weights are
 derived from Tencent Hunyuan and carry a separate community license that
 excludes use in the EU, UK, and South Korea and restricts model-improvement
-uses. Clusy does not bundle those weights. A globally deployed service must
+uses. Clusy does not bundle those weights. A globally deployed platform must
 serve a checkpoint whose model, training-data, and output licenses have passed
 legal review; `mineru_compact` describes a protocol, not approval of a
 particular checkpoint.
@@ -970,6 +1003,7 @@ crawler/
 │   ├── src/lib.rs                     # Rust/PyO3 extraction entry points
 │   ├── src/document_ir.rs             # Benchmark-pinned ordered IR v1
 │   ├── src/document_ir_v2.rs          # Source-backed ordered structural IR v2
+│   ├── src/document_ir_v2/             # Unwired certificate/decoder research
 │   ├── python/clusy_native/            # Typed Python façades
 │   ├── vendor/                         # Audited source-vendored Rust dependencies
 │   └── Cargo.lock                     # Exact Rust dependency graph
@@ -979,12 +1013,14 @@ crawler/
 │   ├── webis_benchmark.py              # Pinned Webis/SIGIR evaluation
 │   ├── webmainbench_benchmark.py       # Raw + annotation-scrubbed WebMainBench
 │   ├── document_ir_v2_refiner_shadow.py # Reference-isolated shadow diagnostic
+│   ├── focused_frontier_benchmark.py   # Synthetic-only discovery protocol
+│   ├── evidence/                       # Compact implementation A/B records
 │   ├── live_vendor_benchmark.py        # Sealed Exa/Firecrawl protocol
 │   └── *_BENCHMARK.md                  # Reproduction and claim boundaries
 ├── docs/SOTA_ARCHITECTURE.md            # Architecture record and promotion gates
 ├── tests/                               # Unit, integration, load, and contract tests
-├── Dockerfile                           # Static, browser, quality, and compatibility runtimes
-├── docker-compose.yml                   # Self-contained crawler + Redis stack
+├── Dockerfile                           # Static, browser, and quality image targets
+├── docker-compose.yml                   # Internal crawler service on clusy-net
 ├── pyproject.toml / uv.lock             # Locked Python project and tooling
 ├── .env.example                         # Environment configuration template
 └── README.md
@@ -992,8 +1028,8 @@ crawler/
 
 ## Development
 
-Source builds require Python 3.12, a Rust 1.85+ toolchain, and a linker
-supported by Cargo. Docker users do not need Rust installed on the host.
+Source builds require Python 3.12, a Rust 1.85+ toolchain, and the platform
+linker used by Cargo. Docker users do not need Rust installed on the host.
 
 ### uv workflow (recommended)
 
@@ -1046,26 +1082,28 @@ Use `".[dev,llm]"` in the pip command if structured extraction is required.
 
 ## Deploy
 
-### Docker Compose
+### Docker Compose on the Clusy network
 
-The checked-in Compose stack is self-contained: it builds the browser runtime
-from the locked application graph, starts a bounded Redis cache, and publishes
-the crawler on `localhost:11235`. Compose selects `browser-runtime` explicitly;
-`runtime` remains the browser-capable compatibility alias for existing Docker
-users.
+The checked-in Compose file intentionally uses the external `clusy-net` network
+and only `expose`s port 11235 to peer containers. It does not publish the
+service on the host or create a Redis service. Docker Compose **2.30.0 or
+newer** is required because `env_file.format: raw` preserves secret values
+without interpolation.
 
 ```bash
+docker network inspect clusy-net >/dev/null 2>&1 \
+  || docker network create clusy-net
 cp .env.example .env
+# Configure CRAWL4AI_API_TOKEN and an independent SERVING_FINGERPRINT_KEY.
 GIT_SHA="$(git rev-parse HEAD)" docker compose up -d --build
 
-curl -sf http://localhost:11235/health/ready
+# Health check from inside the service container:
+docker compose exec crawler python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://localhost:11235/health').read().decode())"
 ```
 
-Local Compose defaults to `ENVIRONMENT=local`, which permits empty
-authentication and fingerprint keys for development. Before exposing a shared
-deployment, set `ENVIRONMENT=prod`, an exact `GIT_SHA`, a non-empty
-`CRAWL4AI_API_TOKEN`, and a different high-entropy
-`SERVING_FINGERPRINT_KEY` in `.env`.
+Other containers on `clusy-net` use `http://crawler:11235`. Set `REDIS_URL` to
+an independently managed Redis instance if caching is wanted.
 
 ### Bare Docker
 
@@ -1076,8 +1114,9 @@ docker run --rm -d --name clusy-crawler -p 11235:11235 --shm-size=1g \
   --user 10001:10001 --init --read-only \
   --tmpfs /tmp:size=512m,mode=1777 \
   --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
+  --security-opt no-new-privileges \
   --security-opt seccomp="$(pwd)/seccomp_profile.json" \
-  --pids-limit=256 --memory=4g --cpus=2 \
+  --cap-drop ALL --pids-limit=256 --memory=4g --cpus=2 \
   -e ENVIRONMENT=prod \
   -e SERVING_FINGERPRINT_KEY=your-independent-32-plus-char-secret \
   -e CRAWL4AI_API_TOKEN=your-token clusy-crawler
@@ -1088,58 +1127,45 @@ curl -sf -X POST http://localhost:11235/crawl \
   -d '{"urls":["https://example.com"]}'
 ```
 
-The Dockerfile is an ordered multi-stage DAG. Digest-pinned Rust and Python
-builder stages compile the `clusy-native` wheel using `native/Cargo.lock` and
-export hash-locked Python requirements from `uv.lock`. `runtime-core` installs
-the native wheel, application, Apache-2.0 notices under `/licenses`, OCI
-source/revision/license labels, non-root user, health check, and shared command.
-The Rust compiler and Cargo caches never enter a service image. The application
-dependency graph and base-image references are locked or digest-pinned; this is
-not a byte-for-byte reproducibility promise because Debian package repositories
-and Playwright browser archives are not snapshot-pinned in this Dockerfile.
+The Dockerfile is a multi-stage build: digest-pinned `rust:1.85-slim` supplies
+the toolchain, a digest-pinned Python 3.12/maturin stage builds a wheel using
+`native/Cargo.lock` and exports hash-locked Python requirements from `uv.lock`.
+All service targets share the same verified native wheel, application, license
+notices, non-root `crawler` user (UID 10001), healthcheck, and command.
 
-Four service targets are available:
+Choose the target explicitly:
 
-- `static-runtime` is declared before every browser and quality stage. It
-  prunes Playwright and its otherwise-unused `greenlet` and `pyee`
-  dependencies, contains no Chromium, and bakes
-  `PLAYWRIGHT_ENABLED=false` plus
-  `PLAYWRIGHT_JAVA_SCRIPT_ENABLED=false`.
-- `browser-runtime` adds the complete locked Playwright graph, its matching
-  Chromium build, and the version-matched SUID sandbox helper. This is the
-  explicit Compose and documented Docker default.
-- `quality-runtime` extends `browser-runtime` with the revision-pinned,
-  wheel-hash-verified MinerU-HTML package. CI builds the target and import-smokes
-  both MinerU-HTML and the application; it does not call an external model.
-- `runtime` is a compatibility alias for `browser-runtime`, preserving
-  historical unqualified `docker build .` behavior.
+- `static-runtime` installs the hash-locked graph with Playwright pruned, omits
+  Chromium and its system packages, and bakes both Playwright feature flags
+  off. It is declared before every browser/quality stage so sequential builders
+  stop without executing those optional layers.
+- `browser-runtime` adds the matching Playwright package, Chromium build, and
+  secure SUID sandbox helper. This is the checked-in Compose and host-release
+  target.
+- `quality-runtime` extends `browser-runtime` with the revision-pinned
+  MinerU-HTML client path.
+- `runtime` remains a final compatibility alias of `browser-runtime`, so an
+  unqualified modern Docker build retains the historical browser-capable
+  behavior. Release automation uses explicit targets.
 
-Build the smaller static image when JavaScript rendering is not needed. Its
-baked Playwright flags must not be overridden to `true`, because the
-corresponding dependency and browser are intentionally absent. The checked-in
-`.env.example` deliberately leaves both profile-selecting flags unset so it is
-safe to reuse with either image target:
+The Rust compiler and Cargo caches are absent from every service target.
+`seccomp_profile.json` is the Playwright 1.60 profile derived from Docker's
+default policy with `clone`, `setns`, and `unshare` permitted so Chromium can
+create its user namespace sandbox. The checked-in Compose service applies it
+to the browser target automatically.
+
+Build a static-only image for a deployment that intentionally disables browser
+rendering:
 
 ```bash
 docker build --target static-runtime \
   --build-arg GIT_SHA="$(git rev-parse HEAD)" -t clusy-crawler:static .
-# Or with Compose:
-GIT_SHA="$(git rev-parse HEAD)" \
-  CRAWLER_DOCKER_TARGET=static-runtime docker compose build crawler
 ```
 
-`seccomp_profile.json` is the Playwright 1.60 profile derived from Docker's
-default policy with `clone`, `setns`, and `unshare` permitted so Chromium can
-create its user namespace sandbox. The checked-in Compose service applies it
-automatically. It intentionally does not set `no-new-privileges` or drop every
-Linux capability: on hosts that disable unprivileged user namespaces, either
-setting would prevent Chromium's version-matched SUID sandbox helper from
-providing the secure fallback. The application process still runs as the
-non-root `crawler` user (UID 10001), and Chromium's sandbox remains explicitly
-enabled.
-
-Build the opt-in, revision-pinned quality image only when an operator endpoint
-is available:
+Do not override `PLAYWRIGHT_ENABLED=false` or
+`PLAYWRIGHT_JAVA_SCRIPT_ENABLED=false` when running that target. Build the
+opt-in, revision-pinned quality image only when an operator endpoint is
+available:
 
 ```bash
 docker build --target quality-runtime \
@@ -1151,18 +1177,16 @@ GIT_SHA="$(git rev-parse HEAD)" \
 
 ### Operational notes
 
-- **Memory**: Chromium is the heaviest component in `browser-runtime`,
-  `quality-runtime`, and `runtime`. Observe real workload RSS and lower
-  `MAX_CONCURRENT_TASKS` / `MAX_CONCURRENT_PAGES` if the container approaches
-  its limit. `static-runtime` avoids the browser processes and binaries. The
-  Compose example sets a 4 GiB hard limit for either profile.
+- **Memory**: Chromium is the heaviest browser-target component. Observe real
+  workload RSS and lower `MAX_CONCURRENT_TASKS` / `MAX_CONCURRENT_PAGES` if the
+  container approaches its limit. The Compose example sets a 4 GiB hard limit.
 - **`/dev/shm`**: the browser examples allocate 1 GiB for Chromium. Increase it
-  if browser processes crash under parallel rendering; static-only deployments
-  do not need browser shared memory.
-- **Browser installation**: Chromium is included only in `browser-runtime`,
-  `quality-runtime`, and the compatibility `runtime` alias. Use
-  `static-runtime` for a genuinely browser-free image; merely disabling
-  Playwright at runtime does not remove browser packages from a browser image.
+  if browser processes crash under parallel rendering.
+- **Browser installation**: `browser-runtime`, `quality-runtime`, and the
+  compatibility `runtime` alias include Chromium.
+  `static-runtime` omits the Playwright package, browser binaries, sandbox
+  helper, and browser system dependencies rather than merely disabling them at
+  runtime.
 - **Browser isolation**: URL validation reduces SSRF risk but cannot close every
   DNS/proxy time-of-check-to-time-of-use gap. Chromium's sandbox is explicitly
   enabled by default, the image runs non-root, and Compose applies the pinned
