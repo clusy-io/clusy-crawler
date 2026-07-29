@@ -2328,6 +2328,12 @@ fn excluded_tag_names() -> &'static [&'static str] {
     &["script", "style", "noscript", "nav", "aside", "iframe", "svg", "ins"]
 }
 
+#[derive(Clone, Copy)]
+struct FilterTraversalState {
+    excluded: bool,
+    inside_article_or_main: bool,
+}
+
 #[allow(clippy::too_many_lines)]
 fn extract_filtered_text_inner(
     root: &Selection,
@@ -2345,6 +2351,15 @@ fn extract_filtered_text_inner(
 
     // EPIC-06: Pre-build excluded tag set for fast lookup
     let excluded_tags = excluded_tag_names();
+    let root_depth = root_node.ancestors_it(None).count();
+    let root_inside_article_or_main = root_node.node_name().is_some_and(|name| {
+        name.eq_ignore_ascii_case("article") || name.eq_ignore_ascii_case("main")
+    });
+    let root_state = FilterTraversalState {
+        excluded: false,
+        inside_article_or_main: root_inside_article_or_main,
+    };
+    let mut traversal_stack = vec![(root_node.id, root_state)];
 
     for node in root_node.descendants() {
         if node.is_text() {
@@ -2363,13 +2378,88 @@ fn extract_filtered_text_inner(
             }
         }
 
-        // Count ancestors manually since dom_query's ancestors() API is different
-        let mut depth = 0;
-        let mut current = node.parent();
-        while let Some(parent) = current {
-            depth += 1;
-            current = parent.parent();
+        let parent_id = node.parent().map(|parent| parent.id);
+        while traversal_stack
+            .last()
+            .is_some_and(|(id, _)| Some(*id) != parent_id)
+        {
+            traversal_stack.pop();
         }
+        let parent_state = traversal_stack
+            .last()
+            .map_or(root_state, |(_, state)| *state);
+        let depth = root_depth.saturating_add(traversal_stack.len());
+
+        let mut excluded = parent_state.excluded;
+        let mut inside_article_or_main = parent_state.inside_article_or_main;
+        if node.is_element() && !excluded {
+            if let Some(tag_name) = node.node_name() {
+                if tag_name.eq_ignore_ascii_case("header")
+                    && !parent_state.inside_article_or_main
+                {
+                    excluded = true;
+                }
+
+                if !excluded && tag_name.eq_ignore_ascii_case("footer") {
+                    let sel = Selection::from(node);
+                    let has_boilerplate_class =
+                        sel.attr("class").is_some_and(|class| is_boilerplate(&class));
+                    if has_boilerplate_class || !parent_state.inside_article_or_main {
+                        excluded = true;
+                    }
+                }
+
+                if !excluded && tendril_tag_matches(&tag_name, excluded_tags) {
+                    excluded = true;
+                }
+
+                if tag_name.eq_ignore_ascii_case("article")
+                    || tag_name.eq_ignore_ascii_case("main")
+                {
+                    inside_article_or_main = true;
+                }
+            }
+
+            if !excluded {
+                let sel = Selection::from(node);
+                if let Some(class) = sel.attr("class") {
+                    if is_always_excluded_name(&class)
+                        || (filter_named_boilerplate && is_boilerplate(&class))
+                    {
+                        excluded = true;
+                    }
+                }
+                if !excluded {
+                    if let Some(id) = sel.attr("id") {
+                        if is_always_excluded_name(&id)
+                            || (filter_named_boilerplate && is_boilerplate(&id))
+                        {
+                            excluded = true;
+                        }
+                    }
+                }
+                if !excluded {
+                    if let Some(itemtype) = sel.attr("itemtype") {
+                        if itemtype
+                            .to_ascii_lowercase()
+                            .contains("breadcrumblist")
+                        {
+                            excluded = true;
+                        }
+                    }
+                }
+            }
+        }
+        if node.first_child().is_some() {
+            traversal_stack.push((
+                node.id,
+                FilterTraversalState {
+                    excluded,
+                    inside_article_or_main,
+                },
+            ));
+        }
+
         while let Some(top) = skip_depths.last() {
             if depth <= *top {
                 skip_depths.pop();
@@ -2381,132 +2471,6 @@ fn extract_filtered_text_inner(
             if depth > *top {
                 continue;
             }
-        }
-
-        let mut excluded = false;
-        let mut anc_opt = Some(node);
-        while let Some(anc) = anc_opt {
-            // Stop ancestor checking at the content root element.
-            // This prevents false positives where a wrapper element inside the content area
-            // has a boilerplate-looking class (e.g., "share-container" wrapping main content).
-            // We only want to check for boilerplate WITHIN the selected content subtree,
-            // not the ancestors that were used to find the content.
-            if anc.id == root_node.id {
-                break;
-            }
-
-            if anc.is_element() {
-                // EPIC-06: Zero-allocation tag name check using eq_ignore_ascii_case
-                if let Some(tag_name) = anc.node_name() {
-                    // Check for header tag - must look UP from header to find article/main
-                    // NOTE: Cannot use single-pass optimization here because we need to check
-                    // if header is INSIDE article/main, but we traverse bottom-up
-                    if tag_name.eq_ignore_ascii_case("header") {
-                        // Look UP from header to find article/main
-                        let mut found_article_or_main = false;
-                        let mut cur = anc.parent();
-                        while let Some(parent) = cur {
-                            // Check if this ancestor (including root_node) is article/main
-                            if let Some(pname) = parent.node_name() {
-                                if pname.eq_ignore_ascii_case("article") || pname.eq_ignore_ascii_case("main") {
-                                    found_article_or_main = true;
-                                    break;
-                                }
-                            }
-                            if parent.id == root_node.id {
-                                break;
-                            }
-                            cur = parent.parent();
-                        }
-                        if !found_article_or_main {
-                            excluded = true;
-                            break;
-                        }
-                    }
-
-                    // Check for footer tag
-                    // Must also look UP from footer to find article/main
-                    if tag_name.eq_ignore_ascii_case("footer") {
-                        // Always exclude footer if it has boilerplate classes
-                        let sel = Selection::from(anc);
-                        let has_boilerplate_class = sel
-                            .attr("class")
-                            .is_some_and(|c| is_boilerplate(&c));
-
-                        if has_boilerplate_class {
-                            excluded = true;
-                            break;
-                        }
-
-                        // For footers without boilerplate classes, look UP to find article/main
-                        let mut found_article_or_main = false;
-                        let mut cur = anc.parent();
-                        while let Some(parent) = cur {
-                            // Check if this ancestor (including root_node) is article/main
-                            if let Some(pname) = parent.node_name() {
-                                if pname.eq_ignore_ascii_case("article") || pname.eq_ignore_ascii_case("main") {
-                                    found_article_or_main = true;
-                                    break;
-                                }
-                            }
-                            if parent.id == root_node.id {
-                                break;
-                            }
-                            cur = parent.parent();
-                        }
-                        if !found_article_or_main {
-                            excluded = true;
-                            break;
-                        }
-                    }
-
-                    // Check for other excluded tags using linear search over small slice
-                    // EPIC-06: Linear search over 8 items is faster than HashSet for Tendril
-                    if tendril_tag_matches(&tag_name, excluded_tags) {
-                        excluded = true;
-                        break;
-                    }
-                }
-
-                let sel = Selection::from(anc);
-                if let Some(class) = sel.attr("class") {
-                    if is_always_excluded_name(&class) {
-                        excluded = true;
-                        break;
-                    }
-                }
-                if let Some(id) = sel.attr("id") {
-                    if is_always_excluded_name(&id) {
-                        excluded = true;
-                        break;
-                    }
-                }
-
-                if filter_named_boilerplate {
-                    if let Some(class) = sel.attr("class") {
-                        if is_boilerplate(&class) {
-                            excluded = true;
-                            break;
-                        }
-                    }
-                    if let Some(id) = sel.attr("id") {
-                        if is_boilerplate(&id) {
-                            excluded = true;
-                            break;
-                        }
-                    }
-                }
-
-                if let Some(itemtype) = sel.attr("itemtype") {
-                    let itemtype_lower = itemtype.to_ascii_lowercase();
-                    if itemtype_lower.contains("breadcrumblist") {
-                        excluded = true;
-                        break;
-                    }
-                }
-            }
-
-            anc_opt = anc.parent();
         }
 
         if excluded {
@@ -4209,6 +4173,82 @@ mod tests {
             }
             Err(err) => panic!("expected Ok(_), got Err({err:?})"),
         }
+    }
+
+    #[test]
+    fn descendant_iterator_is_parent_before_child_for_parser_edge_cases() {
+        let documents = [
+            r"<main><p>implicit<p>second<table>foster<div>x</div><tr><td>cell",
+            r"<main><b><i>misnested</b> formatting</i><p>after</main>",
+            r#"<main><template><div>template</div></template>
+                <svg><foreignObject><div>foreign</div></foreignObject></svg>
+                <math><annotation-xml encoding="text/html"><p>math</p></annotation-xml></math>
+                <p>after</p></main>"#,
+        ];
+
+        for html in documents {
+            let document = Document::from(html);
+            let root = document.select("main");
+            let root_node = root.nodes().first().copied().expect("main");
+            let mut stack = vec![root_node.id];
+
+            for node in root_node.descendants() {
+                let parent_id = node.parent().map(|parent| parent.id);
+                while stack.last().is_some_and(|id| Some(*id) != parent_id) {
+                    stack.pop();
+                }
+                assert_eq!(stack.last().copied(), parent_id);
+                if node.first_child().is_some() {
+                    stack.push(node.id);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn filtered_text_stack_pops_after_deep_excluded_branch() {
+        let mut html = String::from(r#"<main class="comments-link">"#);
+        for _ in 0..512 {
+            html.push_str("<div>");
+        }
+        html.push_str("<p>retained prefix prose</p>");
+        html.push_str(r#"<section class="COMMENTS-LINK comments-link">"#);
+        for _ in 0..256 {
+            html.push_str("<div>");
+        }
+        html.push_str("<p>excluded deep payload</p>");
+        for _ in 0..256 {
+            html.push_str("</div>");
+        }
+        html.push_str("</section><p>retained sibling prose</p>");
+        for _ in 0..512 {
+            html.push_str("</div>");
+        }
+        html.push_str("<p>retained suffix prose</p></main>");
+
+        let document = Document::from(html);
+        let content = extract_filtered_text(&document.select("main"), &Options::default());
+        assert!(content.contains("retained prefix prose"));
+        assert!(content.contains("retained sibling prose"));
+        assert!(content.contains("retained suffix prose"));
+        assert!(!content.contains("excluded deep payload"));
+    }
+
+    #[test]
+    fn filtered_text_stack_ignores_pre_detached_nodes() {
+        let document = Document::from(
+            r#"<main>
+                <section><p>retained before detach</p></section>
+                <section id="detached"><div><p>detached payload</p></div></section>
+                <section><p>retained after detach</p></section>
+            </main>"#,
+        );
+        document.select("#detached").remove();
+
+        let content = extract_filtered_text(&document.select("main"), &Options::default());
+        assert!(content.contains("retained before detach"));
+        assert!(content.contains("retained after detach"));
+        assert!(!content.contains("detached payload"));
     }
 }
 
