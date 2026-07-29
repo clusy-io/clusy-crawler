@@ -147,6 +147,11 @@ verified clean, stable public source throughout. Their ignored artifacts are:
 | `balanced` | `bench/results/wcxb/20260729T-oss-balanced-9c7cc0a` | `627995ebc1c9e2005a88b8b007a3e56e2eb04ab9994f6ed3a78834a1958407a8` | `32be7cb53622a3caff574a3fae490238e66df35969442630d3f9b6824bea4d42` |
 | `adaptive` | `bench/results/wcxb/20260729T-oss-adaptive-9c7cc0a` | `c02cccf91d77540de9e52a795285abcfe9baae244edf236a5e28b70b056908ba` | `5137537fdd02c9f622aa6bae2531c98a79029199f0ea36c220a7c9ffcee8006a` |
 
+Public revision `f5647e1` later added an output-equivalent native fallback
+optimization, mirrored by hosted private revision `0fb00ee`. Its controlled
+before/after speed evidence is documented in the root README; it does not
+change the quality rows or prediction hashes above.
+
 The `adaptive` prediction SHA-256 values are
 `0520fcf3bf2dffe578dfe53e9cbff08ef874be2b521ad86b8dc2eca36fc3de00`
 for development and

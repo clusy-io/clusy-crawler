@@ -8,7 +8,12 @@ claim that the current implementation is universally state of the art.
 
 ## Delivery status
 
-Implemented foundations in the current worktree:
+Runtime foundations are mirrored through public source revision `f5647e1`.
+The Clusy-hosted platform currently deploys the equivalent private source
+revision `0fb00ee` as OCI digest
+`sha256:fa54e92290f3f6670840c827337fac101c073a08ef212a87cf6f7d0dcda678ff`.
+Later public commits add only research/docs until another runtime revision
+passes the same promotion gates:
 
 - deterministic `balanced`/`article_body` fast paths plus opt-in
   `adaptive`/`quality` profiles, bounded model runtime, a deterministic
@@ -209,6 +214,18 @@ score, error, and metadata exactly after excluding only measured latency.
 Their local throughput ranges (`127.4899`–`131.2818` pages/s raw and
 `57.3376`–`57.8572` pages/s scrubbed) are reported rather than selecting the
 fastest observation as a universal rate.
+
+The mirrored native fallback optimization at public revision `f5647e1`
+(private deployment revision `0fb00ee`) also passed an output-equivalence gate.
+Two alternating WCXB replays preserved the development and public-test
+prediction bytes and `0.859450` combined F1 while raising mean throughput by
+`2.95%` and `2.30%`, respectively. A direct cross-order replay over all 7,809
+WebMainBench inputs preserved all ten native return fields (canonical SHA-256
+`9777864cc79bca218125fea1e5dcc74726d30019fc05532a07414908dc0e5b95`)
+and raised the two-run mean from `129.4730` to `142.0023` pages/s (`+9.68%`).
+That direct measurement includes local file reads and JSON parsing with two
+threads; it is not the official WebMainBench harness or a service-throughput
+claim.
 
 The separate fine-grained row remains a development/architecture diagnostic,
 not part of the clean four-suite evidence. Its dirty artifact matched only 24

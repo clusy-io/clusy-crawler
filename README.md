@@ -145,6 +145,13 @@ remain clean private-revision `a19ae17` diagnostics and are not represented as
 OSS runs. None of these fixed-corpus results proves universal, live-crawler,
 Exa-comparative, or Firecrawl-comparative SOTA.
 
+The Clusy-hosted platform currently deploys private source revision `0fb00ee`
+as OCI digest
+`sha256:fa54e92290f3f6670840c827337fac101c073a08ef212a87cf6f7d0dcda678ff`.
+Its native fallback optimization is mirrored in this repository at public
+revision `f5647e1`; the differing commit IDs reflect the two repository
+histories.
+
 | Suite / profile | Pages | Quality | Extraction throughput | Honest comparison |
 |---|---:|---:|---:|---|
 | AEB `article_body` | 181 | P/R/F1 `0.955147 / 0.989721 / 0.972127` | `142.306` pages/s | Direct clean OSS run; `+0.014624` versus Trafilatura 2.0, CI `[+0.005346, +0.025342]` |
@@ -187,6 +194,22 @@ Direct-MD output differs from the leaderboard's main `HTML+MD` conversion
 contract. Webis and WebMainBench expose material quality gaps and are not SOTA
 results. Throughput is local, closed-loop extraction on artifact-recorded
 hardware, not HTTP-service or live-web crawl throughput.
+
+A controlled A/B for the mirrored fallback optimization removed DOM clones and
+pruning whose result was discarded. Two alternating WCXB replays kept all
+development and public-test predictions byte-identical (SHA-256
+`b2a427a3a8234351172173083eba60bdd6e7823bf0bb7591d62d14fa43c8ddd5`
+and
+`166128979118a9f375c35be5e5296d46b0a06f8a3d583c19a3b282ab83f2b0bb`)
+and kept combined F1 at `0.859450`; mean throughput rose by `2.95%` on
+development and `2.30%` on public test. A separate cross-order direct native
+replay on all 7,809 WebMainBench pages kept all ten returned fields identical
+(canonical SHA-256
+`9777864cc79bca218125fea1e5dcc74726d30019fc05532a07414908dc0e5b95`)
+while the two-run mean rose from `129.4730` to `142.0023` pages/s (`+9.68%`).
+That direct measurement includes local file reads and JSON parsing with two
+threads; neither result is an HTTP-service, live-web, or universal throughput
+claim.
 
 The source-backed v2 refiner has also been evaluated in a 545-page,
 reference-isolated shadow run:
