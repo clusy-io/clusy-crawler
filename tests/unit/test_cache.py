@@ -510,6 +510,11 @@ class TestCacheKey:
 def test_adaptive_profile_and_settings_validation() -> None:
     request = CrawlRequest(urls=["https://example.com"], extraction_profile="adaptive")
     assert request.extraction_profile == "adaptive"
+    service_settings = Settings(
+        _env_file=None,
+        adaptive_extraction_risky_page_types="service",
+    )
+    assert service_settings.adaptive_extraction_risky_page_types == "service"
 
     with pytest.raises(ValidationError):
         CrawlRequest(urls=["https://example.com"], extraction_profile="unknown")

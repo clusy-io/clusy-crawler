@@ -99,28 +99,58 @@ It is a closed-loop bounded-worker microbenchmark, not an HTTP-service or
 Internet throughput benchmark. Static HTTP, browser rendering, and live-network
 capacity must be measured separately.
 
-## Current clean validation
+## Retained clean validations
 
-The full 2026-07-28 release-candidate run used clean public commit
-[`c3ae00d`](https://github.com/clusy-io/clusy-crawler/commit/c3ae00d90b19003b7c635af5dec87ba177abbd85),
-the production asynchronous entry point, two workers, five warmup pages, and
-10,000 paired-bootstrap replicates:
+The public-origin validation remains the full 2026-07-28 run from clean public
+commit
+[`c3ae00d`](https://github.com/clusy-io/clusy-crawler/commit/c3ae00d90b19003b7c635af5dec87ba177abbd85).
+It used the production asynchronous entry point, two workers, five warmup
+pages, and 10,000 paired-bootstrap replicates:
 
 | Mode | Precision | Recall | F1 | pages/s | p50 | p95 | errors |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | async | 0.951014 | 0.989665 | 0.969955 | 133.33 | 12.97 ms | 30.59 ms | 0 |
 
-The result matches the pinned `rs_trafilatura` prediction on every aggregate
-AEB metric. Versus Trafilatura 2.0, ΔF1 is +0.012452 with a paired-bootstrap 95%
-interval of [+0.002093, +0.023745] and win probability 0.9892. Peak process RSS
-was 246,333,440 bytes.
+A separate full run on 2026-07-29 used clean private source revision
+`10ff0c1a7c9a2083958b674d64e15bb5a8a1b90e`. It was not executed from public
+OSS revision `837dddababc612bfa1ce438307b1e2fb29b4c2f5` or from the current public
+commit:
 
-The artifact directory is
+| Mode | Precision | Recall | F1 | pages/s | p50 | p95 | errors |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| async | 0.951014 | 0.989665 | 0.969955 | 157.205 | 11.617 ms | 22.813 ms | 0 |
+
+Both results match the pinned `rs_trafilatura` aggregate under AEB's metric.
+Versus Trafilatura 2.0, ΔF1 is +0.012452 with a paired-bootstrap 95% interval
+of [+0.002093, +0.023745] and win probability 0.9892. Peak process RSS was
+246,333,440 bytes for the public-origin run and 259,997,696 bytes for the
+private V2 run.
+
+The public-origin artifact directory is
 `bench/results/aeb/public-c3ae00d-clean/` (ignored by Git). The harness marked
 the run `CLAIMABLE` within the scope **AEB article-body extraction only** after
 verifying the clean source revision, pinned corpus and evaluator, full page set,
 native backend, and unchanged relevant-source hash. Throughput is an in-memory
 extractor result on an Apple M4 Pro and is not a live-network crawling claim.
+
+The retained private V2 artifact identifier is
+`bench/results/aeb/20260729T000138Z`; its `manifest.json` SHA-256 is
+`bcd55239efd34908c300aa062ea5272d1cb62f4c78207eb6ab562f5cdaa381da`.
+The harness recorded clean, stable `10ff0c1` source before and after execution
+and marked the complete 181-page result claimable only within the same AEB
+article-body scope.
+
+A post-run SHA-256 audit compared the private artifact's 49 recorded source
+files with public `837ddda`: 44 matched and none was missing. The suite runner,
+core extraction implementation, native algorithm sources, Cargo files, and
+`uv.lock` matched byte-for-byte. The five differences were `app/config.py`,
+`app/main.py`, `app/services/renderer.py`, `native/pyproject.toml`, and
+`pyproject.toml`; they comprise OSS configuration, comments, and package
+metadata, and the only executable delta is an adaptive-profile page-type
+validator that this `article_body` run did not exercise. The full snapshots are
+therefore not byte-identical, and the recorded native binary was not reproduced
+from `837ddda`. Treat the private result as source-audited evidence for the
+exercised extraction path, not as a run of the OSS commit.
 
 ## Artifacts and publication rules
 

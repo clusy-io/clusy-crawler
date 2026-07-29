@@ -264,6 +264,7 @@ class Settings(BaseSettings):
             "listing",
             "product",
             "repository",
+            "service",
             "webpage",
         }
         page_types = [item.strip().lower() for item in value.split(",") if item.strip()]

@@ -110,29 +110,51 @@ predates V2 and is not evidence for V2's broader `balanced` profile. Throughput
 is an in-memory extractor measurement on an Apple M4 Pro, not a live-network
 crawl result or a portable hardware guarantee.
 
-### Broader development diagnostics
+### Clean V2 fixed-corpus evidence — private execution, OSS source audit
 
-The following complete 2026-07-27 runs are useful regression evidence, but
-their source worktree was dirty and their artifacts are `NOT_CLAIMABLE`. V2
-changed `balanced` routing and cache/provenance semantics, so these rows are not
-V2 release results.
+The following results were executed from clean private revision `10ff0c1`,
+with WebMainBench's primary clean repeat from documentation-only child
+`7f202f4`. They were not executed from OSS commit `837ddda`.
+
+A post-run SHA-256 audit found the benchmark drivers, core extraction
+implementation, vendored native algorithm sources, Cargo lockfiles, and
+`uv.lock` byte-identical to OSS parent `837ddda`. Of each AEB, WCXB, and
+WebMainBench sealed 49-file source set, 44 files were exact. Five files differed:
+two comment-only files, two OSS package/lint metadata files, and one config file
+with comment wording plus an adaptive page-type validator entry. This branch
+ports that only executable delta (`service` pages); it was not exercised by
+these fixed `article_body` or `balanced` profiles. Webis additionally
+inventories generated native build files absent from public Git. This is
+source-audited evidence for the exercised extraction paths, not a benchmark run
+of the OSS commit or proof of universal, live-crawler, or vendor-comparative
+SOTA.
 
 | Suite / profile | Pages | Quality | Extraction throughput | Honest comparison |
 |---|---:|---:|---:|---|
-| WCXB `balanced` | 2,008 | combined F1 `0.859450`; dev `0.848433`; public test `0.891727` | 81.99 pages/s | Below published `rs-trafilatura` dev `0.859` and test `0.903`; combined and dev-only numbers are not comparable |
-| Webis `balanced` | 3,985 | macro ROUGE-LSum F1 `0.854920` | 277.588 pages/s | Below pinned Trafilatura `0.883461` and weighted ensemble `0.898844` |
-| WebMainBench `balanced`, raw Direct-MD | 7,809 | macro ROUGE-5 F1 `0.606672` | 117.58 pages/s | Below published Trafilatura `0.6402` and leading model-assisted `0.9098`; output contracts also differ |
-| WebMainBench `balanced`, scrubbed Direct-MD | 7,809 | macro ROUGE-5 F1 `0.605703` | 56.78 pages/s | Annotation markers removed before extraction; paired delta versus raw was `-0.000969` |
+| AEB `article_body` | 181 | P/R/F1 `0.951014 / 0.989665 / 0.969955` | `157.205` pages/s | Matches the embedded pinned `rs-trafilatura` aggregate; not an independent algorithmic win |
+| WCXB `balanced`, development | 1,497 | P/R/F1 `0.852732 / 0.898934 / 0.848433` | `90.65` pages/s | Public-label development evidence, not a blind test |
+| WCXB `balanced`, public test | 511 | P/R/F1 `0.894822 / 0.928969 / 0.891727` | `139.86` pages/s | Below the published `rs-trafilatura` public-test F1 `0.903` |
+| WCXB `balanced`, combined | 2,008 | P/R/F1 `0.863443 / 0.906577 / 0.859450` | `99.5618` pages/s | Sequential split aggregate; not comparable with a development-only headline |
+| Webis `balanced` | 3,985 | macro ROUGE-LSum P/R/F1 `0.867148 / 0.908456 / 0.854920`; macro Levenshtein `0.849806` | `274.8155` pages/s | Below pinned Trafilatura `0.883461` and weighted ensemble `0.898844` ROUGE-LSum F1 |
+| WebMainBench `balanced`, raw Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615569 / 0.677841 / 0.606672` | `127.4899` pages/s | Below published Trafilatura `0.6402` and leading model-assisted `0.9098`; output contracts also differ |
+| WebMainBench `balanced`, scrubbed Direct-MD | 7,809 | macro ROUGE-5 P/R/F1 `0.615698 / 0.676570 / 0.605703` | `57.8572` pages/s | Annotation markers removed before extraction; paired delta versus raw was `-0.000969` |
 
-WCXB covers seven page types but has public labels. The captured run produced
-all 2,008 predictions with zero extraction errors. Its combined score must not
-be compared with the leaderboard's development-only headline. Webis completed
-all eight datasets with zero errors and zero empty predictions; the official
-scorer, not the 14.356-second extraction pass, dominated wall time.
-WebMainBench covers 7,809 pages from 5,434 domains and exposes the present
-broad-Markdown gap clearly. Clusy's Direct-MD output also differs from the
-leaderboard's main `HTML+MD` conversion contract, so this is same-data evidence
-instead of an unconditional leaderboard placement.
+| Suite | Clean private source | `manifest.json` SHA-256 |
+|---|---|---|
+| AEB | `10ff0c1` | `bcd55239efd34908c300aa062ea5272d1cb62f4c78207eb6ab562f5cdaa381da` |
+| WCXB | `10ff0c1` | `a051965f480fd3a1cae780d7ccdd289b237163f7e644ba2dde9a9acc53e4b8d0` |
+| Webis | `10ff0c1` | `b43a79097a1a04ae3b2254cf25a7ecda9fe2b05be42304e9f79b25638f5ab51e` |
+| WebMainBench primary clean repeat | `7f202f4` | `df0deb7b3a2565b164cd0fff8f6687fd5d10173d402156425f9d3e07c6bb35d3` |
+
+All four suites completed with zero extraction errors; Webis also had zero
+empty predictions. WCXB's combined score must not be compared with a
+development-only leaderboard headline. WebMainBench covers 7,809 pages from
+5,434 domains; its repeated page outputs reproduce the original clean run
+exactly after excluding per-request latency. Clusy's Direct-MD output differs
+from the leaderboard's main `HTML+MD` conversion contract, so this is
+same-data evidence rather than an unconditional leaderboard placement.
+Throughput is local, closed-loop extraction on artifact-recorded hardware, not
+HTTP service or live-web crawl throughput.
 
 The source-backed v2 refiner has also been evaluated in a 545-page,
 reference-isolated shadow run:
@@ -146,12 +168,11 @@ reference-isolated shadow run:
 The refiner improved aggregate, code, and table scores but regressed text and
 formula scores under both policies. It therefore failed the monotonic
 promotion gate and remains **shadow-only and unwired**. This diagnostic is not
-a production or leaderboard result. Its currently ignored local artifact must
-be preserved and hashed before these values are cited as external evidence.
-
-No clean V2 release result is published yet. The final commit and immutable
-artifact paths must be recorded only after complete clean AEB, WCXB, Webis, and
-WebMainBench reruns; the development table above must not be silently relabeled.
+a production or leaderboard result. It combines two dirty development
+artifacts and remains non-claimable: the default/current manifest SHA-256 is
+`c97ef0be89740dbc419534eff12089e25793e0a287eb2faf0d6101225bbf951f`,
+and the exact-visible-sequence manifest SHA-256 is
+`bc9fc7b71e1a7e3bb6ba02cf6b2c7e216019e12e636157a42b687369af271e80`.
 
 See [`bench/NEUTRAL_BENCHMARK.md`](bench/NEUTRAL_BENCHMARK.md),
 [`bench/WCXB_BENCHMARK.md`](bench/WCXB_BENCHMARK.md),
@@ -159,8 +180,8 @@ See [`bench/NEUTRAL_BENCHMARK.md`](bench/NEUTRAL_BENCHMARK.md),
 [`bench/WEBMAINBENCH_BENCHMARK.md`](bench/WEBMAINBENCH_BENCHMARK.md), plus the
 separate
 [`bench/WEBMAINBENCH_FINEGRAINED_BENCHMARK.md`](bench/WEBMAINBENCH_FINEGRAINED_BENCHMARK.md),
-for exact reproduction and publication rules. The architecture and promotion
-gates are in [`docs/SOTA_ARCHITECTURE.md`](docs/SOTA_ARCHITECTURE.md).
+for protocol and reproduction rules. The architecture and promotion gates are
+in [`docs/SOTA_ARCHITECTURE.md`](docs/SOTA_ARCHITECTURE.md).
 
 ### Exa and Firecrawl comparison policy
 

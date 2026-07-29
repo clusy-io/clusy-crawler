@@ -1,6 +1,6 @@
 # Clusy crawler: evidence-driven SOTA architecture
 
-Status: architecture decision record, 2026-07-28.
+Status: architecture decision record, 2026-07-29.
 
 This document defines the architecture and release gates for making Clusy a
 best-in-class crawler for self-hosted use and downstream platforms. It does not
@@ -63,8 +63,8 @@ Still required before a broad SOTA or vendor-win claim:
   resumable, multi-worker crawls beyond the bounded request API;
 - create a separately consented, operator-owned domain/time corpus, calibrate
   the utility router, and pass multilingual/structure/latency/cost holdouts;
-- run clean, immutable public benchmark candidates and an authorized,
-  preregistered live Exa/Firecrawl study.
+- reproduce the fixed-corpus evidence directly from a recorded OSS commit and
+  run an authorized, preregistered live Exa/Firecrawl study.
 
 No selector checkpoint, semantic model, deterministic v2 refiner policy, or
 Exa/Firecrawl vendor-win claim has passed its production promotion gates.
@@ -136,25 +136,74 @@ model latency from weakening crawl politeness or host fairness.
 
 ## Evidence behind the decision
 
-The retained full-corpus artifacts establish one clean, narrow pre-V2 result
-and several broader development baselines:
+The first complete four-suite pass on 2026-07-29 ran from clean private source
+revision `10ff0c1a7c9a2083958b674d64e15bb5a8a1b90e`. A later clean
+WebMainBench run from its documentation-only child
+`7f202f43cdf21d076415fa3a1f7cfd005533de56` is the primary repeat. These
+artifacts were not produced from public OSS revision
+`837dddababc612bfa1ce438307b1e2fb29b4c2f5` or from the current public commit.
+They establish scoped fixed-corpus extraction evidence, not universal or
+vendor-comparative SOTA:
 
-| Benchmark | Scope | Current result | Evidence status |
+| Benchmark | Scope | Current result | Interpretation |
 | --- | --- | ---: | --- |
-| AEB | Article body | F1 `0.969955` | Clean public pre-V2 run at `c3ae00d`; matches the embedded pinned article backend |
-| WCXB | Seven page types | Test `0.891727` | Dirty development diagnostic; below the published leading test result |
-| Webis | Main-content extraction | ROUGE-LSum `0.854920` | Dirty development diagnostic; below Trafilatura and the published ensemble |
-| WebMainBench v1.1 | Broad HTML-to-Markdown | F1 `0.606672` | Dirty development diagnostic; materially below modern semantic-model systems |
-| WebMainBench fine-grained | Text/code/formula/table | Overall `0.214089` | Dirty development diagnostic; text `0.752301`, code `0.017775`, formula `0.300369`, table/TEDS `0` |
+| AEB | 181-page article body | P/R/F1 `0.951014 / 0.989665 / 0.969955`; `157.205` pages/s; p50/p95 `11.617 / 22.813 ms` | Claimable in AEB scope; matches the embedded pinned leading baseline |
+| WCXB development | 1,497 pages, seven page types | P/R/F1 `0.852732 / 0.898934 / 0.848433`; `90.65` pages/s; p50/p95 `13.61 / 59.42 ms` | Claimable public-label extraction evidence, not blind validation |
+| WCXB public test | 511 pages, seven page types | P/R/F1 `0.894822 / 0.928969 / 0.891727`; `139.86` pages/s; p50/p95 `11.08 / 33.04 ms` | Below the published leading test result |
+| WCXB combined | 2,008 pages | P/R/F1 `0.863443 / 0.906577 / 0.859450`; `99.5618` pages/s | Sequential split aggregate; not comparable with a development-only headline |
+| Webis | 3,985-page main-content extraction | macro ROUGE-LSum P/R/F1 `0.867148 / 0.908456 / 0.854920`; macro Levenshtein `0.849806`; `274.8155` pages/s; p50/p95 `7.551 / 26.242 ms` | `ARCHIVAL_REPRODUCIBLE`; below Trafilatura and the published ensemble |
+| WebMainBench v1.1 raw | 7,809-page broad Direct-MD | P/R/F1 `0.615569 / 0.677841 / 0.606672`; `127.4899` pages/s; original clean run `131.2818` | Protocol-valid and claimable on the fixed public scope; below modern semantic-model systems |
+| WebMainBench v1.1 scrubbed | 7,809-page broad Direct-MD | P/R/F1 `0.615698 / 0.676570 / 0.605703`; `57.8572` pages/s; original clean run `57.3376` | Required annotation-contamination diagnostic; zero extraction errors |
+| WebMainBench fine-grained | Text/code/formula/table | Overall `0.214089` | Dirty, non-claimable diagnostic; text `0.752301`, code `0.017775`, formula `0.300369`, table/TEDS `0` |
 
-The AEB run is claimable only within its article-body contract. It predates V2,
-matches the backend Clusy intentionally embeds, and is neither an independent
-algorithmic win nor evidence for V2's broader `balanced` profile. Every other
-row was produced from a dirty development worktree and is a
-regression/architecture diagnostic, not a clean release claim. The
-fine-grained run had zero extraction errors, but its structure scores make the
-current ceiling unambiguous: flattened prose cannot be repaired into reliable
-code, equations, and tables after extraction.
+| Suite | Retained private artifact identifier | `manifest.json` SHA-256 |
+| --- | --- | --- |
+| AEB | `bench/results/aeb/20260729T000138Z` | `bcd55239efd34908c300aa062ea5272d1cb62f4c78207eb6ab562f5cdaa381da` |
+| WCXB | `bench/results/wcxb/20260729T000227Z` | `a051965f480fd3a1cae780d7ccdd289b237163f7e644ba2dde9a9acc53e4b8d0` |
+| Webis | `bench/results/webis-v2-10ff0c1-20260729T0004Z` | `b43a79097a1a04ae3b2254cf25a7ecda9fe2b05be42304e9f79b25638f5ab51e` |
+| WebMainBench primary repeat | `bench/results/webmainbench/v2-isolated2-7f202f4-20260729T0728Z` | `df0deb7b3a2565b164cd0fff8f6687fd5d10173d402156425f9d3e07c6bb35d3` |
+| WebMainBench original clean run | `bench/results/webmainbench/v2-10ff0c1-20260729T0033Z` | `10350d98d93498b2f00217f4ebea3716a2a101f20c851b695ede30c55fdc505e` |
+
+A post-run SHA-256 audit compared each artifact's sealed source map with public
+`837ddda`. AEB, WCXB, and both WebMainBench runs matched 44 of 49 recorded
+files, with none missing. The five differences were `app/config.py`,
+`app/main.py`, `app/services/renderer.py`, `native/pyproject.toml`, and
+`pyproject.toml`; they are OSS configuration, comments, and package metadata,
+and the only executable delta is an adaptive-profile page-type validator not
+exercised by these `article_body` or `balanced` runs. Webis matched 102 of 147
+recorded paths, with the same five differences and 40 ignored generated
+`native/target` paths absent from public Git. Across the suites, the benchmark
+runners, core extractor, native algorithm/vendor sources, Cargo files, and
+`uv.lock` matched byte-for-byte.
+
+The complete snapshots are therefore not byte-identical, and no executed
+native binary was reproduced from a public `837ddda` build. Describe these as
+clean, source-audited private-revision results for the exercised paths, not as
+benchmark runs of the OSS commit. The older clean public AEB run at `c3ae00d`
+remains the only public-commit execution in this evidence set; it recorded the
+same F1 `0.969955` at `133.33` pages/s.
+
+AEB and WCXB are claimable only within their stated extraction scopes; Webis
+is archival-reproducible; WebMainBench is claimable only on its fixed public
+protocol. All throughput values are local closed-loop measurements on the
+artifact-recorded hardware with in-memory or local-corpus inputs, not HTTP
+service or live-web throughput. WebMainBench's Direct-MD contract also differs
+from the leaderboard's `HTML+MD` conversion path.
+
+The two clean WebMainBench runs reproduced every page's prediction, strategy,
+score, error, and metadata exactly after excluding only measured latency.
+Their local throughput ranges (`127.4899`–`131.2818` pages/s raw and
+`57.3376`–`57.8572` pages/s scrubbed) are reported rather than selecting the
+fastest observation as a universal rate.
+
+The separate fine-grained row remains a development/architecture diagnostic,
+not part of the clean four-suite evidence. Its dirty artifact matched only 24
+of 44 recorded source files against public `837ddda`, including differences in
+the harness and production runtime. It had zero extraction errors, but its
+structure scores make the current ceiling unambiguous: flattened prose cannot
+be repaired into reliable code, equations, and tables after extraction. The
+v2 refiner likewise remains shadow-only and unwired because it failed its
+monotonic promotion gate.
 
 The full 7,809-page `ordered-dom-ir.v1` label oracle reaches only F1
 `0.873146` (precision `0.935255`, recall `0.855861`) even though public
@@ -664,6 +713,10 @@ Use the narrowest statement supported by evidence:
   `rs-trafilatura` article backend” is acceptable within the article-body
   extraction scope. “SOTA-matching” must retain the embedded-backend caveat;
   it is not an independent algorithmic win or evidence for V2 `balanced`.
+- The clean private V2 rows may be described as source-audited fixed-corpus
+  evidence only when their private `10ff0c1` / `7f202f4` execution provenance
+  and the five-file OSS mismatch are stated. They must not be attributed to
+  public `837ddda` or called complete byte-identical OSS reproductions.
 - “Better than Exa/Firecrawl” cannot be supported by the current hash-only v3
   artifacts. It requires a redesigned independently rescorable or attested,
   matched-scope protocol plus favorable paired confidence and operational
@@ -683,9 +736,11 @@ Use the narrowest statement supported by evidence:
 4. **Serving scale — partial/planned:** split fetch/render/model worker pools,
    tenant budgets, backpressure, distributed cache, tracing, and per-route
    SLOs.
-5. **Evidence — in progress:** clean V2 public benchmark runs and
-   operator-owned calibration must precede any broad claim; a preregistered
-   live vendor study is a separate final gate.
+5. **Evidence — in progress:** clean private AEB, WCXB, Webis, and WebMainBench
+   artifacts are retained at `10ff0c1`, with the WebMainBench repeat at
+   `7f202f4`; a direct OSS-commit reproduction, operator-owned calibration, and
+   a preregistered live vendor study remain separate gates before any broad
+   claim.
 
 The adaptive foundation can ship behind an opt-in profile. It becomes the
 default only after the quality, latency, cost, and escalation-budget gates pass

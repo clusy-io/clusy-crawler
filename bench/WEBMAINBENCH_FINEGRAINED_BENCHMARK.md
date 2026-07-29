@@ -123,6 +123,16 @@ bench/results/webmainbench-finegrained/sota-architecture-regression-20260728/
 `summary.json` SHA-256:
 `15acb7b8da3b4f6a36c7f03d62ae65e8aaac5f7a296459b26079436a642032b9`.
 The copied artifact was verified byte-for-byte against the original run.
+Its `manifest.json` SHA-256 is
+`9770f8d4ffcc65683ff96bdd7eb3876a48f18204414213f8ed07e1582ee4bfc2`.
+
+This artifact predates the clean V2 runs. A post-run comparison against public
+OSS revision `837dddababc612bfa1ce438307b1e2fb29b4c2f5` matched only 24 of its 44
+recorded source files; the 20 differences include this benchmark's runner and
+documentation plus production extractor and native-IR files. It is therefore
+neither clean V2 evidence nor source-equivalent evidence for the OSS commit.
+Retain it only as the explicitly non-claimable architecture diagnostic
+described below.
 
 ### Architectural diagnosis
 
