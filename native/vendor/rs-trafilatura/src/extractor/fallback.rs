@@ -94,7 +94,9 @@ pub fn extract_discourse_content(doc: &Document) -> Option<String> {
 
             // Parse as HTML and extract text
             let temp_doc = Document::from(format!("<div>{unescaped}</div>"));
-            let text = dom::text_content(&temp_doc.select("div")).trim().to_string();
+            let text = dom::text_content_from_unique_roots(&temp_doc.select("div"))
+                .trim()
+                .to_string();
 
             if !text.is_empty() {
                 content_parts.push(text);
@@ -169,7 +171,11 @@ pub fn extract_json_ld_article_body(doc: &Document) -> Option<String> {
                 // If contains HTML, extract text
                 if body.contains("<p>") {
                     let temp_doc = Document::from(format!("<div>{body}</div>"));
-                    return Some(dom::text_content(&temp_doc.select("div")).trim().to_string());
+                    return Some(
+                        dom::text_content_from_unique_roots(&temp_doc.select("div"))
+                            .trim()
+                            .to_string(),
+                    );
                 }
                 return Some(body);
             }
@@ -674,6 +680,28 @@ mod tests {
         let text = result.unwrap();
         assert!(text.contains("Paragraph one"));
         assert!(!text.contains("<p>"));
+    }
+
+    #[test]
+    fn test_extract_json_ld_html_emits_each_source_node_once() {
+        let html = r#"<!DOCTYPE html>
+        <html>
+        <head>
+            <script type="application/ld+json">
+            {
+                "articleBody": "<p>Lead paragraph.</p><div><p>Nested source span.</p></div><div><p>Legitimate repeated text.</p></div><div><p>Legitimate repeated text.</p></div>"
+            }
+            </script>
+        </head>
+        <body></body>
+        </html>"#;
+
+        let doc = Document::from(html);
+        let text = extract_json_ld_article_body(&doc).expect("articleBody");
+
+        assert_eq!(text.matches("Nested source span.").count(), 1);
+        // Equal text at two distinct source offsets remains intact.
+        assert_eq!(text.matches("Legitimate repeated text.").count(), 2);
     }
 
     #[test]

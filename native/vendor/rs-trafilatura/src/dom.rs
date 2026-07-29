@@ -4,6 +4,8 @@
 //! This adapter layer offers familiar function names that map to dom_query,
 //! establishing a consistent DOM manipulation API matching go-trafilatura's expectations.
 
+use std::collections::HashSet;
+
 // Re-export core types for external use
 pub use dom_query::{Document, Selection};
 
@@ -93,6 +95,34 @@ pub fn tag_name(sel: &Selection) -> Option<String> {
 #[must_use]
 pub fn text_content(sel: &Selection) -> StrTendril {
     sel.text()
+}
+
+/// Get text content once for each source node represented by a selection.
+///
+/// `Selection::text()` concatenates the complete subtree of every selected
+/// root. When a broad selector contains both an ancestor and its descendants,
+/// that repeats the descendants' source text. Keep only the outermost selected
+/// roots so overlapping source identities are emitted once. Disjoint roots are
+/// intentionally retained even when their text is identical.
+#[must_use]
+pub fn text_content_from_unique_roots(sel: &Selection) -> StrTendril {
+    if sel.nodes().len() <= 1 {
+        return sel.text();
+    }
+
+    let selected_ids: HashSet<_> = sel.nodes().iter().map(|node| node.id).collect();
+    let roots: Vec<_> = sel
+        .nodes()
+        .iter()
+        .copied()
+        .filter(|node| {
+            !node
+                .ancestors_it(None)
+                .any(|ancestor| selected_ids.contains(&ancestor.id))
+        })
+        .collect();
+
+    Selection::from(roots).text()
 }
 
 /// Get inner HTML content
@@ -434,6 +464,19 @@ mod tests {
 
         assert_eq!(text_content(&div), "before bold after".into());
         assert!(doc.select("b").is_empty());
+    }
+
+    #[test]
+    fn test_unique_root_text_deduplicates_identity_not_equal_text() {
+        let doc = parse(r#"<div id="root"><div>same text</div><div>same text</div></div>"#);
+        let all_divs = doc.select("div");
+
+        // The outer root already contains both inner source nodes. Selecting
+        // every div would otherwise serialize each inner node a second time.
+        let text = text_content_from_unique_roots(&all_divs);
+
+        assert_eq!(text.matches("same text").count(), 2);
+        assert_eq!(text, text_content(&doc.select("#root")));
     }
 
     #[test]
