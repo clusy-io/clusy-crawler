@@ -12,7 +12,11 @@ import structlog
 
 from app.cache import get_cache, make_cache_key
 from app.config import settings
-from app.models.responses import CrawlResult, ExtractionMetadata
+from app.models.responses import (
+    CACHE_POLICY_REVISION,
+    CrawlResult,
+    ExtractionMetadata,
+)
 from app.services import academic as academic_module
 from app.services import fetcher as fetcher_module
 from app.services import scholarly_metadata as scholarly_metadata_module
@@ -162,6 +166,23 @@ async def _read_cached_result(
             "extraction": 0.0,
             "total": lookup_ms,
         }
+    return result
+
+
+def _apply_cache_policy_receipt(
+    result: CrawlResult,
+    *,
+    cache_read_permitted: bool,
+    cache_write_permitted: bool,
+) -> CrawlResult:
+    """Bind the response to the effective persistent-result cache policy."""
+    metadata = result.metadata
+    if metadata is None:
+        return result
+    metadata.cache_policy = "default" if cache_write_permitted else "no_store"
+    metadata.cache_read_permitted = cache_read_permitted
+    metadata.cache_write_permitted = cache_write_permitted
+    metadata.cache_policy_revision = CACHE_POLICY_REVISION
     return result
 
 
@@ -357,6 +378,7 @@ async def _crawl_single_url(
     max_age: int | None = None,
     extraction_profile: ExtractionProfile = "balanced",
     document_policy: DocumentPolicyCallback | None = None,
+    store_in_cache: bool = True,
 ) -> CrawlResult:
     if not _accepting_crawls:
         return CrawlResult(url=url, error="crawler is shutting down")
@@ -382,10 +404,16 @@ async def _crawl_single_url(
     # cache reads and writes until a versioned envelope can authenticate that
     # complete provenance. Flat crawl cache behavior remains unchanged.
     cache_allowed = document_policy is None
-    cache = get_cache() if cache_allowed else None
+    cache_read_permitted = cache_allowed and max_age != 0 and "html" not in formats
+    cache_write_permitted = cache_allowed and store_in_cache
+    cache = (
+        get_cache()
+        if cache_read_permitted or cache_write_permitted
+        else None
+    )
     # max_age == 0 bypasses the cache entirely (always re-crawl). "html" output
     # is never cached (too large), so those requests always take the live path.
-    if cache_allowed and max_age != 0 and "html" not in formats:
+    if cache_read_permitted:
         cached_result = await _read_cached_result(cache, cache_key, max_age)
         if cached_result is not None:
             effective_cached_url = (
@@ -396,6 +424,11 @@ async def _crawl_single_url(
             )
             if document_policy is not None:
                 await enforce_document_policy(document_policy, effective_cached_url)
+            _apply_cache_policy_receipt(
+                cached_result,
+                cache_read_permitted=cache_read_permitted,
+                cache_write_permitted=cache_write_permitted,
+            )
             return _project_formats(cached_result, formats)
 
     # Coalesce simultaneous cache misses/refreshes for the same effective crawl.
@@ -404,10 +437,11 @@ async def _crawl_single_url(
     # partition so it can never join a flat flight whose redirects/navigation
     # were created without the recursive scope and robots gate.
     flight_key = (
-        cache_key
-        if document_policy is None
-        else f"{cache_key}:document-policy:{id(document_policy)}"
+        f"{cache_key}:cache-policy:"
+        f"r{int(cache_read_permitted)}:w{int(cache_write_permitted)}"
     )
+    if document_policy is not None:
+        flight_key = f"{flight_key}:document-policy:{id(document_policy)}"
     lock = _get_singleflight_lock()
     async with lock:
         flight = _singleflight_tasks.get(flight_key)
@@ -424,7 +458,8 @@ async def _crawl_single_url(
                     word_count_threshold=word_count_threshold,
                     extraction_profile=extraction_profile,
                     document_policy=document_policy,
-                    cache_result=cache_allowed,
+                    cache_read_permitted=cache_read_permitted,
+                    cache_write_permitted=cache_write_permitted,
                     lock=lock,
                 )
             )
@@ -474,7 +509,8 @@ async def _crawl_uncached_and_cache(
     word_count_threshold: int,
     extraction_profile: ExtractionProfile,
     document_policy: DocumentPolicyCallback | None,
-    cache_result: bool,
+    cache_read_permitted: bool,
+    cache_write_permitted: bool,
     lock: asyncio.Lock,
 ) -> CrawlResult:
     """Run one canonical live crawl, cache it, and retire its flight entry."""
@@ -488,7 +524,12 @@ async def _crawl_uncached_and_cache(
             extraction_profile=extraction_profile,
             document_policy=document_policy,
         )
-        if cache_result and _result_is_stable_for_cache(result):
+        _apply_cache_policy_receipt(
+            result,
+            cache_read_permitted=cache_read_permitted,
+            cache_write_permitted=cache_write_permitted,
+        )
+        if cache_write_permitted and _result_is_stable_for_cache(result):
             await _store_cached_result(cache, cache_key, result)
         return result
     finally:
@@ -1715,6 +1756,7 @@ class _RecursiveCrawlJob:
         extraction_profile: ExtractionProfile,
         formats: list[str],
         max_age: int | None,
+        store_in_cache: bool,
     ) -> None:
         self._priority = priority
         self._js_render = js_render
@@ -1726,6 +1768,7 @@ class _RecursiveCrawlJob:
         if "links" not in self._internal_formats:
             self._internal_formats.append("links")
         self._max_age = max_age
+        self._store_in_cache = store_in_cache
         self._concurrency = max(
             1,
             min(max_pages, settings.max_concurrent_tasks),
@@ -1812,6 +1855,11 @@ class _RecursiveCrawlJob:
         document_policy = _RecursiveDocumentPolicy(self._frontier)
         try:
             await enforce_document_policy(document_policy, lease.url)
+            cache_options: dict[str, bool] = {}
+            if not self._store_in_cache:
+                # Preserve the historical call surface for embedders and test
+                # doubles unless the caller opted into the new policy.
+                cache_options["store_in_cache"] = False
             result = await _crawl_single_url(
                 url=lease.url,
                 js_render=self._js_render,
@@ -1821,6 +1869,7 @@ class _RecursiveCrawlJob:
                 max_age=self._max_age,
                 extraction_profile=self._extraction_profile,
                 document_policy=document_policy,
+                **cache_options,
             )
         except asyncio.CancelledError:
             raise
@@ -1952,6 +2001,7 @@ async def _crawl_urls_recursive(
     extraction_profile: ExtractionProfile,
     formats: list[str],
     max_age: int | None,
+    store_in_cache: bool,
 ) -> list[CrawlResult]:
     if max_pages < len(urls):
         raise ValueError("max_pages must be at least the number of seed URLs")
@@ -1968,6 +2018,7 @@ async def _crawl_urls_recursive(
             extraction_profile=extraction_profile,
             formats=formats,
             max_age=max_age,
+            store_in_cache=store_in_cache,
         )
     except (UrlCanonicalizationError, ValueError):
         return [
@@ -1988,6 +2039,7 @@ async def crawl_urls(
     extraction_profile: ExtractionProfile = "balanced",
     formats: list[str] | None = None,
     max_age: int | None = None,
+    store_in_cache: bool = True,
     json_schema: dict[str, Any] | None = None,
     extraction_prompt: str | None = None,
     max_depth: int = 0,
@@ -2009,6 +2061,7 @@ async def crawl_urls(
             extraction_profile=extraction_profile,
             formats=formats,
             max_age=max_age,
+            store_in_cache=store_in_cache,
         )
     else:
         tasks = [
@@ -2020,6 +2073,7 @@ async def crawl_urls(
                 formats,
                 max_age,
                 extraction_profile,
+                store_in_cache=store_in_cache,
             )
             for u in urls
         ]

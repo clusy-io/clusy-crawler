@@ -51,6 +51,9 @@ class TestHealth:
             "quality-source-selection.v0"
         )
         assert isinstance(data["playwright_enabled"], bool)
+        assert data["crawl_store_in_cache_supported"] is True
+        assert data["crawl_cache_policy_revision"] == "crawl-cache-policy.v1"
+        assert data["crawl_service_identity_schema"] == "crawl-service-identity.v1"
 
     @pytest.mark.anyio
     async def test_version_sha_uses_validated_settings_not_live_environment(

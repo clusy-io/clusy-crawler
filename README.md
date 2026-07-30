@@ -206,6 +206,7 @@ curl --fail --request POST http://127.0.0.1:11235/crawl \
     "extraction_profile": "balanced",
     "formats": ["markdown", "links"],
     "max_age": 0,
+    "store_in_cache": false,
     "js_render": null,
     "max_depth": 0
   }'
@@ -228,7 +229,48 @@ Important request limits:
 `max_depth=0` processes only the supplied URLs. Recursive requests require
 `max_pages >= len(urls)`.
 
-Exact request and response schemas live in
+Representative response:
+
+```json
+{
+  "status": "ok",
+  "results": [
+    {
+      "url": "https://example.com/docs",
+      "markdown": "# Example\n\nExtracted content.",
+      "links": ["https://example.com/docs/next"],
+      "metadata": {
+        "content_scope": "main_content",
+        "extraction_route": "general_html",
+        "rendered": false,
+        "cache_status": "live",
+        "cache_policy": "no_store",
+        "cache_read_permitted": false,
+        "cache_write_permitted": false,
+        "cache_policy_revision": "crawl-cache-policy.v1",
+        "completeness_coverage": "source_full"
+      },
+      "cached": false,
+      "error": null
+    }
+  ],
+  "total_pages": 1,
+  "service_identity": {
+    "schema_version": "crawl-service-identity.v1",
+    "revision": "<git-sha>",
+    "config_fingerprint": "<64-lowercase-hex>",
+    "image_digest": "sha256:<64-lowercase-hex>"
+  }
+}
+```
+
+`max_age=0` bypasses persistent result-cache reads. `store_in_cache=false`
+disables persistent result-cache writes. Use both for a live no-store crawl.
+The receipt describes only Clusy's persistent crawl-result cache; it is not a
+zero-data-retention promise for process memory, network transit, logs, target
+sites, browsers, or infrastructure telemetry.
+
+Exact schemas live in
 [`app/models/requests.py`](app/models/requests.py) and
 [`app/models/responses.py`](app/models/responses.py).
 

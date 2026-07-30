@@ -4,6 +4,21 @@ This guide covers health, observability, release verification, rollback, and
 failure handling. Image selection and host setup are documented in
 [`SELF_HOSTING.md`](SELF_HOSTING.md).
 
+## Request cache policy
+
+The request-level persistent-result cache controls are independent:
+
+- `max_age=0` bypasses persistent crawl-result cache reads;
+- `store_in_cache=false` prevents persistent crawl-result cache writes; and
+- using both produces a live no-store request with an explicit response
+  receipt.
+
+This boundary is deliberately narrower than zero-data retention. Operational
+logs, transient process memory, network transit, target-site behavior,
+browser state, and infrastructure telemetry require separate policies.
+
+Do not log, commit, bake into images, or pass credentials on a command line.
+
 ## Health and identity
 
 ```bash

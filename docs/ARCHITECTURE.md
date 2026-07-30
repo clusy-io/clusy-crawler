@@ -145,10 +145,18 @@ revision, serving configuration, and credential identities through
 non-reversible fingerprints. A hit is returned only when it satisfies the
 request's `max_age` policy.
 
-This revision bypasses the flat result cache for policy-aware
-recursive crawls because the flat envelope cannot replay the complete
-redirect, robots, and scope decision chain. Recursive work still uses
-policy-partitioned in-process singleflight.
+`max_age=0` disables persistent result-cache reads for the request.
+`store_in_cache=false` independently disables persistent result-cache writes.
+The effective read/write decision is returned in a versioned per-result
+receipt. Policy-specific singleflight keys prevent a no-store request from
+joining work that may write a result. Every crawl response also carries the
+source revision, serving-config fingerprint, and image digest of the process
+that produced it.
+
+Policy-aware recursive crawls bypass the flat result cache because the
+cache envelope cannot bind and revalidate the complete redirect, robots, and
+scope decision chain. They still use policy-partitioned in-process
+singleflight.
 
 ## Source-backed document IR
 

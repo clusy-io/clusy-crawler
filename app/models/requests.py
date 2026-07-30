@@ -51,6 +51,10 @@ class CrawlRequest(BaseModel):
     # 0 = always re-crawl (bypass cache); N = serve cached only if younger than N.
     # Mirrors Firecrawl's maxAge / Exa's maxAgeHours.
     max_age: int | None = Field(default=None, ge=0)
+    # Disable persistent crawl-result cache writes for this request. Combine
+    # with max_age=0 when the caller also requires a guaranteed live fetch.
+    # This is intentionally narrower than a provider-wide ZDR promise.
+    store_in_cache: bool = Field(default=True)
     # Structured extraction (the "json" format). Provide a JSON Schema for
     # schema-constrained output, and/or a natural-language extraction prompt.
     # Requires ANTHROPIC_API_KEY; otherwise the result carries an error.

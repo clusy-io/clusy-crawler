@@ -4,6 +4,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+CACHE_POLICY_REVISION = "crawl-cache-policy.v1"
+SERVICE_IDENTITY_RECEIPT_REVISION = "crawl-service-identity.v1"
+
 
 class ExtractionMetadata(BaseModel):
     title: str = ""
@@ -68,6 +71,13 @@ class ExtractionMetadata(BaseModel):
     cache_status: Literal["live", "hit"] = "live"
     cache_age_ms: float | None = Field(default=None, ge=0)
     cache_lookup_ms: float | None = Field(default=None, ge=0)
+    # Request-local receipt for the persistent crawl-result cache. This does
+    # not claim that unrelated operational logs or upstream providers have a
+    # zero-data-retention policy.
+    cache_policy: Literal["default", "no_store"] = "default"
+    cache_read_permitted: bool = True
+    cache_write_permitted: bool = True
+    cache_policy_revision: str = CACHE_POLICY_REVISION
 
 
 class CrawlResult(BaseModel):
@@ -81,11 +91,21 @@ class CrawlResult(BaseModel):
     error: str | None = None
 
 
+class ServiceIdentityReceipt(BaseModel):
+    """Immutable serving identity of the process that produced a response."""
+
+    schema_version: str = SERVICE_IDENTITY_RECEIPT_REVISION
+    revision: str
+    config_fingerprint: str
+    image_digest: str
+
+
 class CrawlResponse(BaseModel):
     status: str = "ok"
     results: list[CrawlResult] = Field(default_factory=list)
     total_time_ms: float = 0
     total_pages: int = 0
+    service_identity: ServiceIdentityReceipt
 
 
 class MDResponse(BaseModel):
@@ -138,3 +158,6 @@ class VersionResponse(BaseModel):
     quality_backend_revision: str = ""
     quality_source_selection_schema: str = ""
     playwright_enabled: bool = False
+    crawl_store_in_cache_supported: bool = True
+    crawl_cache_policy_revision: str = CACHE_POLICY_REVISION
+    crawl_service_identity_schema: str = SERVICE_IDENTITY_RECEIPT_REVISION

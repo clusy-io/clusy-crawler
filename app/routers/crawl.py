@@ -5,8 +5,10 @@ import time
 import structlog
 from fastapi import APIRouter
 
+from app.config import settings
 from app.models.requests import CrawlRequest
-from app.models.responses import CrawlResponse
+from app.models.responses import CrawlResponse, ServiceIdentityReceipt
+from app.routers.health import serving_config_fingerprint
 from app.services.crawler import crawl_urls
 
 logger = structlog.get_logger()
@@ -25,6 +27,7 @@ async def crawl(req: CrawlRequest) -> CrawlResponse:
         extraction_profile=req.extraction_profile,
         formats=[str(output_format) for output_format in req.formats],
         max_age=req.max_age,
+        store_in_cache=req.store_in_cache,
         json_schema=req.json_schema,
         extraction_prompt=req.extraction_prompt,
         max_depth=req.max_depth,
@@ -39,4 +42,9 @@ async def crawl(req: CrawlRequest) -> CrawlResponse:
         results=results,
         total_time_ms=round(elapsed_ms, 1),
         total_pages=len(results) if req.max_depth > 0 else len(req.urls),
+        service_identity=ServiceIdentityReceipt(
+            revision=settings.git_sha,
+            config_fingerprint=serving_config_fingerprint(),
+            image_digest=settings.image_digest,
+        ),
     )

@@ -14,6 +14,10 @@ from fastapi import APIRouter, Response
 
 from app.cache import CACHE_SCHEMA_VERSION, get_cache
 from app.config import settings
+from app.models.responses import (
+    CACHE_POLICY_REVISION,
+    SERVICE_IDENTITY_RECEIPT_REVISION,
+)
 from app.services.extractor import (
     ADAPTIVE_ROUTER_REVISION,
     PIPELINE_REVISION,
@@ -308,6 +312,9 @@ async def version() -> dict[str, str | bool]:
         ),
         "quality_source_selection_schema": SOURCE_SELECTION_RECEIPT_V0_SCHEMA,
         "playwright_enabled": settings.playwright_enabled,
+        "crawl_store_in_cache_supported": True,
+        "crawl_cache_policy_revision": CACHE_POLICY_REVISION,
+        "crawl_service_identity_schema": SERVICE_IDENTITY_RECEIPT_REVISION,
     }
 
 

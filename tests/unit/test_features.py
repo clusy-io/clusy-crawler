@@ -288,6 +288,61 @@ async def test_max_age_zero_bypasses_cache(mem_cache, stub_fetch):
     assert stub_fetch["n"] == 2  # forced re-fetch
 
 
+async def test_cold_no_store_never_resolves_persistent_cache(stub_fetch, monkeypatch):
+    def cache_must_not_be_resolved():
+        raise AssertionError("cold no-store request must not resolve persistent cache")
+
+    monkeypatch.setattr(crawler_mod, "get_cache", cache_must_not_be_resolved)
+
+    result = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/no-store"],
+            max_age=0,
+            store_in_cache=False,
+        )
+    )[0]
+
+    assert result.error is None
+    assert result.cached is False
+    assert result.metadata is not None
+    assert result.metadata.cache_policy == "no_store"
+    assert result.metadata.cache_read_permitted is False
+    assert result.metadata.cache_write_permitted is False
+    assert result.metadata.cache_policy_revision == "crawl-cache-policy.v1"
+    assert stub_fetch["n"] == 1
+
+
+async def test_no_store_can_read_when_freshness_allows_but_never_writes(
+    stub_fetch,
+    monkeypatch,
+):
+    calls: list[str] = []
+
+    class RecordingCache:
+        async def get(self, _key):
+            calls.append("get")
+            return None
+
+        async def set(self, _key, _value):
+            calls.append("set")
+
+    monkeypatch.setattr(crawler_mod, "get_cache", lambda: RecordingCache())
+
+    result = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/read-only-cache"],
+            max_age=60,
+            store_in_cache=False,
+        )
+    )[0]
+
+    assert calls == ["get"]
+    assert result.metadata is not None
+    assert result.metadata.cache_policy == "no_store"
+    assert result.metadata.cache_read_permitted is True
+    assert result.metadata.cache_write_permitted is False
+
+
 async def test_stale_entry_triggers_recrawl(mem_cache, stub_fetch):
     await crawler_mod.crawl_urls(["https://ex.com/a"])
     # Age the stored entry well past the freshness bar.
@@ -469,6 +524,64 @@ async def test_simultaneous_identical_crawls_are_singleflight(mem_cache, monkeyp
     assert results[0].links == ["https://singleflight.example/source"]
     assert all(result.markdown for result in results)
     assert all(result.links is None for result in results[1:])
+
+
+async def test_no_store_request_cannot_join_cache_writing_singleflight(
+    mem_cache,
+    monkeypatch,
+):
+    both_started = asyncio.Event()
+    release = asyncio.Event()
+    calls = {"n": 0}
+    html = (
+        "<html><head><title>T</title></head><body><p>"
+        + " ".join(["word"] * 80)
+        + "</p></body></html>"
+    )
+
+    async def blocking_fetch(url, js_render=False, wait_for_selector=None):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            both_started.set()
+        await release.wait()
+        return FetchResult(
+            html=html,
+            status_code=200,
+            content_type="text/html",
+        )
+
+    monkeypatch.setattr(fetcher_mod, "fetch_url", blocking_fetch)
+    monkeypatch.setattr("app.config.settings.js_render_mode", "never")
+    monkeypatch.setattr(crawler_mod, "_crawl_semaphore", None)
+    monkeypatch.setattr(crawler_mod, "_singleflight_tasks", {})
+    monkeypatch.setattr(crawler_mod, "_singleflight_lock", None)
+    monkeypatch.setattr(crawler_mod, "_singleflight_loop", None)
+
+    cache_writing = asyncio.create_task(
+        crawler_mod._crawl_single_url(
+            "https://singleflight.example/cache-policy",
+            max_age=0,
+        )
+    )
+    no_store = asyncio.create_task(
+        crawler_mod._crawl_single_url(
+            "https://singleflight.example/cache-policy",
+            max_age=0,
+            store_in_cache=False,
+        )
+    )
+    await asyncio.wait_for(both_started.wait(), timeout=1)
+    release.set()
+    writing_result, no_store_result = await asyncio.gather(cache_writing, no_store)
+
+    assert calls["n"] == 2
+    assert len(mem_cache.store) == 1
+    assert writing_result.metadata is not None
+    assert writing_result.metadata.cache_write_permitted is True
+    assert no_store_result.metadata is not None
+    assert no_store_result.metadata.cache_policy == "no_store"
+    assert no_store_result.metadata.cache_read_permitted is False
+    assert no_store_result.metadata.cache_write_permitted is False
 
 
 async def test_cancelled_singleflight_waiter_does_not_cancel_other_waiters(
