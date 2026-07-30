@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from bench import aeb_current_oss_baseline as current_oss_baseline  # noqa: E402
 from bench.source_provenance import (  # noqa: E402
     SourceInventoryError,
     git_visible_vendor_files,
@@ -56,12 +57,18 @@ AEB_TREE = "258fee1bb38bcb642afec48cb80e51bd1594c259"
 AEB_CORPUS_SIZE = 181
 AEB_EVALUATOR_SHA256 = "c01bf1cc7989700273ab1ba6d30fcdedc22fdb4301e7b4c1ac20635bb7632ea8"
 AEB_GROUND_TRUTH_SHA256 = "512e9a9498912047a966e22f47302e849dfa45dca1f555d97588317dac7e5a3d"
-BASELINES = ("trafilatura", "rs_trafilatura")
+HISTORICAL_BASELINES = ("trafilatura", "rs_trafilatura")
+CURRENT_OSS_BASELINE = "trafilatura_2_1_0"
 DEFAULT_SEED = 20260727
 DEFAULT_BOOTSTRAP_SAMPLES = 10_000
 SPLIT_ALGORITHM = "sha1(item_key) parity: even=dev, odd=test"
 PREDICTION_TRANSFORM = "identity-production-output-v1"
 SOURCE_FIXED_FILES = (
+    "bench/aeb_current_oss_baseline.py",
+    "bench/aeb_current_oss_worker.py",
+    "bench/aeb_trafilatura_2_1_0_environment.json",
+    "bench/aeb_trafilatura_2_1_0_requirements.in",
+    "bench/aeb_trafilatura_2_1_0_requirements.lock",
     "bench/neutral_benchmark.py",
     "bench/source_provenance.py",
     "pyproject.toml",
@@ -153,6 +160,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="deterministic smoke subset; any limited run is marked NOT CLAIMABLE",
     )
+    parser.add_argument(
+        "--trafilatura-python",
+        type=Path,
+        required=True,
+        help=(
+            "dedicated interpreter containing the frozen 17-distribution "
+            "Trafilatura 2.1.0 environment; the worker runs with -I -B and "
+            "receives only a label-free input capsule"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -242,7 +259,7 @@ def verify_aeb_checkout(root: Path) -> dict[str, Any]:
     missing_html = [key for key in ground_truth if not (root / "html" / f"{key}.html.gz").is_file()]
     if missing_html:
         raise BenchmarkError(f"AEB is missing {len(missing_html)} HTML fixtures")
-    for baseline in BASELINES:
+    for baseline in HISTORICAL_BASELINES:
         if not (root / "output" / f"{baseline}.json").is_file():
             raise BenchmarkError(f"AEB baseline prediction missing: output/{baseline}.json")
 
@@ -920,10 +937,27 @@ async def async_main(args: argparse.Namespace) -> int:
     if args.limit is not None and args.limit < 2:
         raise BenchmarkError("--limit must be at least 2")
 
+    source_before = _source_provenance()
     aeb_root = args.aeb_root.resolve()
+    output_dir = _make_output_dir(args.output_dir)
+    try:
+        current_oss = current_oss_baseline.run_replay(
+            aeb_root=aeb_root,
+            output_dir=output_dir,
+            # A venv launcher is commonly a symlink to its base interpreter.
+            # Resolving it would silently escape the frozen venv.
+            python_executable=args.trafilatura_python,
+        )
+    except current_oss_baseline.CurrentOSSBaselineError as error:
+        raise BenchmarkError(f"current OSS baseline verification failed: {error}") from error
+
+    # Labels and evaluator code enter this process only after the independent
+    # Trafilatura worker has exited and its label-free receipt has been checked.
     dataset = verify_aeb_checkout(aeb_root)
     evaluator = load_official_evaluator(aeb_root)
     ground_truth: dict[str, dict[str, Any]] = evaluator.load_json(aeb_root / "ground-truth.json")
+    if set(current_oss["predictions"]) != set(ground_truth):
+        raise BenchmarkError("current OSS baseline keys do not match the pinned AEB labels")
 
     from app.config import settings
     from app.services.extractor import (
@@ -952,7 +986,6 @@ async def async_main(args: argparse.Namespace) -> int:
     if concurrency < 1:
         raise BenchmarkError("--concurrency must be positive")
 
-    source_before = _source_provenance()
     environment = _environment_metadata(
         settings=settings,
         native_backend_version=native_backend_version,
@@ -969,12 +1002,14 @@ async def async_main(args: argparse.Namespace) -> int:
 
     baseline_predictions: dict[str, dict[str, dict[str, Any]]] = {}
     baseline_versions: dict[str, str] = {}
-    for baseline in BASELINES:
+    for baseline in HISTORICAL_BASELINES:
         prediction, version = evaluator.load_prediction(aeb_root / "output" / f"{baseline}.json")
         if set(prediction) != set(ground_truth):
             raise BenchmarkError(f"official {baseline} prediction keys do not match AEB")
         baseline_predictions[baseline] = prediction
         baseline_versions[baseline] = version
+    baseline_predictions[CURRENT_OSS_BASELINE] = current_oss["predictions"]
+    baseline_versions[CURRENT_OSS_BASELINE] = current_oss["version"]
 
     split_keys = {
         "full": selected_keys,
@@ -993,7 +1028,6 @@ async def async_main(args: argparse.Namespace) -> int:
         json.dumps(split_manifest_payload, sort_keys=True).encode("utf-8")
     ).hexdigest()
 
-    output_dir = _make_output_dir(args.output_dir)
     _write_json(output_dir / "split_manifest.json", split_manifest_payload)
 
     modes = ("async", "sync") if args.mode == "both" else (args.mode,)
@@ -1115,6 +1149,19 @@ async def async_main(args: argparse.Namespace) -> int:
         )
     if not source_stable:
         claim_reasons.append("relevant Clusy source files changed during the run")
+    if (
+        current_oss.get("verified") is not True
+        or current_oss.get("version") != current_oss_baseline.EXPECTED_VERSION
+        or current_oss.get("receipt", {}).get("pages") != AEB_CORPUS_SIZE
+        or current_oss.get("receipt", {}).get("config_sha256")
+        != current_oss_baseline.CONFIG_SHA256
+        or current_oss.get("input_inventory_sha256")
+        != current_oss_baseline.AEB_HTML_INVENTORY_SHA256
+        or current_oss.get("requirements_lock", {}).get("verified") is not True
+        or current_oss.get("requirements_lock", {}).get("trafilatura_wheel_sha256")
+        != current_oss_baseline.EXPECTED_WHEEL_SHA256
+    ):
+        claim_reasons.append("exact Trafilatura 2.1.0 replay receipt is not fully verified")
 
     report = {
         "schema_version": 1,
@@ -1147,6 +1194,11 @@ async def async_main(args: argparse.Namespace) -> int:
             "split_algorithm": SPLIT_ALGORITHM,
             "split_manifest_sha256": split_manifest_hash,
             "baseline_versions": baseline_versions,
+            "current_oss_baseline": {
+                key: value
+                for key, value in current_oss.items()
+                if key != "predictions"
+            },
         },
         "environment": environment,
         "source": {

@@ -4,7 +4,9 @@ This harness measures Clusy on Zyte/ScrapingHub's independent
 [Article Extraction Benchmark][aeb] (AEB). It calls the production
 `app.services.extractor.extract_content_async` entry point by default, loads the
 official evaluator directly from the pinned AEB checkout, and preserves raw
-predictions and complete provenance.
+predictions and complete provenance. It retains AEB's historical baseline
+outputs and independently replays exact Trafilatura `2.1.0` before labels or
+evaluator code enter the benchmark process.
 
 It is deliberately an **article-body extraction benchmark**, not evidence for
 an unqualified "SOTA crawler" claim.
@@ -17,6 +19,11 @@ Prepare the exact frozen dataset:
 git clone https://github.com/scrapinghub/article-extraction-benchmark.git /tmp/clusy-aeb
 git -C /tmp/clusy-aeb checkout --detach 4a3bc979f76c0df73cb95fe272e2fc1b96f9f010
 uv sync --frozen
+
+uv venv --python 3.13.5 /tmp/clusy-trafilatura-2.1
+uv pip sync --require-hashes \
+  --python /tmp/clusy-trafilatura-2.1/bin/python \
+  bench/aeb_trafilatura_2_1_0_requirements.lock
 ```
 
 Run the production asynchronous extractor:
@@ -25,6 +32,7 @@ Run the production asynchronous extractor:
 uv run python bench/neutral_benchmark.py /tmp/clusy-aeb \
   --mode async \
   --extraction-profile article_body \
+  --trafilatura-python /tmp/clusy-trafilatura-2.1/bin/python \
   --bootstrap-samples 10000
 ```
 
@@ -33,18 +41,57 @@ The runner refuses any AEB commit other than
 hashes of `evaluate.py` and `ground-truth.json`, and refuses tracked dataset
 modifications. It never downloads or evaluates a mutable `HEAD`.
 
+The current-OSS replay is fail-closed:
+
+- the controller inventories the exact 181 tracked `html/*.html.gz` Git blobs,
+  compressed bytes, decoded bytes, keys, and pinned upstream
+  `extractors/run_trafilatura.py`;
+- only those gzip files and a cryptographic manifest enter a temporary
+  label-free capsule;
+- a fresh Python `-I -B` process with a minimal environment verifies the
+  capsule, installed `trafilatura==2.1.0` payload, reviewed worker source, and
+  the sole call configuration
+  `trafilatura.extract(html, include_comments=False)`;
+- the frozen CPython `3.13.5` Darwin/arm64 environment, built with uv `0.11.6`,
+  contains exactly 17 distributions. Every installed `RECORD` entry is checked
+  against its declared SHA-256 and size, every canonical distribution payload
+  is bound to the reviewed environment manifest, and the complete importable
+  `site-packages` tree is inventoried so an extra or modified module fails
+  closed;
+- the separate requirements lock pins all 17 versions and accepted archive
+  hashes under `--require-hashes`; the controller verifies that it includes the
+  reviewed Trafilatura `2.1.0` wheel hash. The production `uv.lock` remains
+  independent candidate provenance rather than being forced to match
+  comparator transitive versions;
+- the controller does not put `ground-truth.json`, `evaluate.py`, historical
+  outputs, or Clusy predictions in the capsule, and the reviewed worker opens
+  only capsule inputs. Python `-I` isolates imports and environment influence;
+  it is not an OS filesystem sandbox. Labels and evaluator code are loaded only
+  after the worker exits;
+- another platform needs its own reviewed environment manifest and must not
+  reuse the Darwin/arm64 receipt;
+- every prediction, input binding, receipt, and provenance file is hashed by
+  the final artifact manifest.
+
 For a non-publishable smoke run:
 
 ```bash
 uv run python bench/neutral_benchmark.py /tmp/clusy-aeb \
+  --trafilatura-python /tmp/clusy-trafilatura-2.1/bin/python \
   --limit 12 \
   --bootstrap-samples 200
 ```
 
+`--limit` reduces only the Clusy candidate run. The provenance-gated
+Trafilatura comparator still replays all 181 pages so its receipt remains
+complete.
+
 For an explicitly labelled synchronous comparison:
 
 ```bash
-uv run python bench/neutral_benchmark.py /tmp/clusy-aeb --mode both
+uv run python bench/neutral_benchmark.py /tmp/clusy-aeb \
+  --trafilatura-python /tmp/clusy-trafilatura-2.1/bin/python \
+  --mode both
 ```
 
 `--mode sync` alone is marked non-claimable because it omits the production
@@ -73,10 +120,13 @@ The stable development/test split is `sha1(item_key)` parity:
 - odd hash: test.
 
 It is independent of page order and the bootstrap seed. The report contains
-full, development, and test quality for Clusy and both official baselines:
+full, development, and test quality for Clusy and three distinct comparison
+points:
 
-- `trafilatura.json` (`2.0.0` at the pinned AEB commit);
-- `rs_trafilatura.json` (`9261e08` at the pinned AEB commit).
+- historical `trafilatura.json` (`2.0.0` at the pinned AEB commit);
+- historical `rs_trafilatura.json` (`9261e08` at the pinned AEB commit);
+- label-free local replay `trafilatura_2_1_0`, using exact Trafilatura `2.1.0`
+  and the pinned upstream call configuration.
 
 For each split and baseline, the runner performs a paired page bootstrap. Each
 replicate samples the same page indices for Clusy and the baseline and calls the
@@ -153,6 +203,13 @@ validator that this `article_body` run did not exercise. The full snapshots are
 therefore not byte-identical, and the recorded native binary was not reproduced
 from `837ddda`. Treat the private result as source-audited evidence for the
 exercised extraction path, not as a run of the OSS commit.
+### Trafilatura 2.1.0 comparison track
+
+The exact Trafilatura `2.1.0` replay has no registered public result yet. A
+formal number may be added only after this harness is committed cleanly, all
+adversarial and repository gates pass, and a complete source-bound OSS
+artifact is retained. Private-repository or diagnostic output must not be
+copied into public README claims.
 
 ## Artifacts and publication rules
 
@@ -165,6 +222,18 @@ contains:
 - `raw/production_markdown_async.json` — untouched production outputs and
   extractor metadata;
 - `raw/page_metrics_async.jsonl` — per-page latency, split, strategy, and errors;
+- `baselines/trafilatura_2_1_0_input_manifest.json` — label-free fixture
+  inventory and pinned upstream runner identity;
+- `baselines/trafilatura_2_1_0_environment_manifest.json` — reviewed Python,
+  platform, exact 17-package closure, canonical `RECORD` commitments, and full
+  `site-packages` commitment;
+- `baselines/trafilatura_2_1_0_requirements.lock` — exact retained
+  hash-pinned installation lock verified by the controller;
+- `baselines/trafilatura_2_1_0_worker_result.json` — exact per-page predictions,
+  input hashes, full distribution/file inventories, call configuration, and
+  worker receipt;
+- `baselines/trafilatura_2_1_0_predictions.json` — normalized AEB prediction
+  artifact used by the paired scorer;
 - `split_manifest.json` — exact full/dev/test membership;
 - `manifest.json` — size and SHA-256 of every other artifact.
 
@@ -172,6 +241,9 @@ The runner prints and records `NOT CLAIMABLE` if:
 
 - fewer than all 181 pages were evaluated;
 - the production asynchronous entry point was omitted;
+- exact Trafilatura `2.1.0`, its 17-distribution installed environment,
+  hash-pinned requirements lock, reviewed wheel hash, label-free 181-page
+  replay, or receipt verification did not succeed;
 - the Clusy worktree was dirty; or
 - relevant source files changed while the run was executing.
 

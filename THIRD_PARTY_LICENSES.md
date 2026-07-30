@@ -22,7 +22,7 @@ including notices for transitive dependencies and Chromium.
 | h2 | >=4.3 | MIT |
 | brotli | >=1.1 | MIT |
 | zstandard | >=0.23 | BSD-3-Clause |
-| trafilatura | >=2.0,<3.0 | Apache-2.0 |
+| trafilatura | >=2.1,<3.0 | Apache-2.0 |
 | markdownify | >=1.2,<2.0 | MIT |
 | beautifulsoup4 | >=4.12,<5.0 | MIT |
 | readability-lxml | >=0.8.1,<1.0 | Apache-2.0 |
