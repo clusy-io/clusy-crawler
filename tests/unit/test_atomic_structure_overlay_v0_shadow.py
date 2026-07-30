@@ -275,10 +275,19 @@ def test_scorer_requires_external_artifact_hashes_before_evaluator_import() -> N
 
 def test_scorer_binds_native_replay_binary_before_evaluator_import(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     native = importlib.import_module("clusy_native._native")
     extension = Path(str(native.__file__))
-    extension_sha256 = __import__("hashlib").sha256(extension.read_bytes()).hexdigest()
+    replay_root = tmp_path / "replay-root"
+    replay_package = replay_root / "clusy_native"
+    replay_package.mkdir(parents=True)
+    replay_extension = replay_package / extension.name
+    replay_extension.write_bytes(extension.read_bytes())
+    assert replay_extension.stat().st_nlink == 1
+    extension_sha256 = (
+        __import__("hashlib").sha256(replay_extension.read_bytes()).hexdigest()
+    )
     decisions = {
         "worker": {
             "capsule": {
@@ -291,7 +300,7 @@ def test_scorer_binds_native_replay_binary_before_evaluator_import(
 
     child_source = f"""
 import json, sys
-sys.path[:0] = [{str(ROOT)!r}, {str(extension.parent.parent)!r}]
+sys.path[:0] = [{str(ROOT)!r}, {str(replay_root)!r}]
 from bench import score_atomic_frozen_decisions as scorer
 decisions = {decisions!r}
 assert "clusy_native" not in sys.modules
