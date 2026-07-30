@@ -1,7 +1,7 @@
 # Architecture
 
 Clusy Crawler is a bounded FastAPI service that fetches HTTP(S) resources and
-returns source-grounded Markdown plus provenance. Its default extraction path
+returns source-derived Markdown plus provenance. Its default extraction path
 is deterministic and local. Chromium, Redis, model-assisted main-content
 extraction, and schema-constrained JSON extraction are optional and
 independently gated.
@@ -93,7 +93,9 @@ extraction. Candidate comparison is bounded and deterministic.
 
 `adaptive` and `quality` preserve the deterministic result when the optional
 backend is absent, saturated, times out, trips its circuit breaker, returns an
-invalid response, or fails verification.
+invalid response, or fails verification. Model-assisted output is checked
+against source-token coverage and ordering thresholds; this is bounded
+heuristic grounding, not a token-level source identity guarantee.
 
 ### 5. Projection and output
 
@@ -136,14 +138,10 @@ revision, serving configuration, and credential identities through
 non-reversible fingerprints. A hit is returned only when it satisfies the
 request's `max_age` policy.
 
-The current public branch bypasses the flat result cache for policy-aware
+This revision bypasses the flat result cache for policy-aware
 recursive crawls because the flat envelope cannot replay the complete
 redirect, robots, and scope decision chain. Recursive work still uses
 policy-partitioned in-process singleflight.
-
-This cache change is newer than the separately operated `bdbfd7c` deployment
-record. That historical static deployment had Redis disabled, so the changed
-cache path was not reachable there.
 
 ## Source-backed document IR
 
@@ -194,7 +192,7 @@ The current service does not provide:
 - cross-replica rate-limit coordination;
 - hard process isolation for every parser;
 - bundled unrestricted model weights; or
-- a universal SOTA or Exa/Firecrawl superiority guarantee.
+- a cross-benchmark or live-provider superiority guarantee.
 
 Research successors and their promotion gates are documented in
 [`RESEARCH.md`](RESEARCH.md).

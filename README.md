@@ -2,7 +2,7 @@
 
 # Clusy Crawler
 
-**Fast, bounded, source-grounded web extraction**
+**Fast, bounded, source-derived web extraction**
 
 [![CI](https://github.com/clusy-io/clusy-crawler/actions/workflows/ci.yml/badge.svg)](https://github.com/clusy-io/clusy-crawler/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
@@ -13,7 +13,7 @@ An Apache-2.0, self-hosted FastAPI service for turning HTTP(S) resources into
 clean Markdown, HTML, links, or schema-constrained JSON.
 
 [Quick start](#quick-start) · [Architecture](#architecture) ·
-[API](#api) · [Evidence](#verified-evidence) ·
+[API](#api) · [Evidence](#evidence-status) ·
 [Self-hosting](docs/SELF_HOSTING.md) · [Research](docs/RESEARCH.md)
 
 </div>
@@ -27,10 +27,9 @@ provenance. The default extraction path is local and does not require a model.
 
 > **Claim boundary**
 >
-> Current evidence includes a scoped article-body quality win and exact-output
-> native speedups. It does not establish universal extraction SOTA, search
-> SOTA, or an overall Exa/Firecrawl win. Every number below is tied to a named
-> protocol and interpretation.
+> One direct public-repository AEB article-body result is registered as
+> Verified. Broader WebMain, WCXB, and live-provider evaluations remain
+> outside the claim set. Every measured statement below is registry-bound.
 
 ## Quick start
 
@@ -247,58 +246,21 @@ Set `IMAGE_DIGEST` when the platform exposes an immutable OCI digest.
 
 All validated defaults are defined in [`app/config.py`](app/config.py).
 
-## Verified evidence
+## Evidence status
 
-### Quality
+| Status | Scope | Result | Interpretation |
+| --- | --- | --- | --- |
+| Verified | AEB `article_body`, 181 pages | P/R/F1 `0.955147 / 0.989721 / 0.972127`; `142.31` pages/s | F1 `+0.014624` vs Trafilatura 2.0.0; paired 95% interval `[+0.005346, +0.025342]` <!-- clusy-evidence: aeb.article-body.4dd1755-public.2026-07-29 --> |
+| Historical 2026-07-29 | Local native extraction on three locked corpora | Rate change: WebMain `+13.9905%`, WCXB `+26.9355%`, stress `+35.3818%` | All registered fields exact; original raw bundle not retained <!-- clusy-evidence: native.filter-stack.95b3bbe-public.2026-07-29 --> |
+| Diagnostic | General-web and structured extraction | Evaluation in progress | No cross-benchmark leadership claim |
+| Pending | Exa and Firecrawl | Matched live protocol not complete | No vendor superiority claim |
 
-The repository contains source-bound public artifacts for the strongest
-article-body and WCXB results.
-
-| Suite | Pages | Result | Interpretation |
-| --- | ---: | ---: | --- |
-| AEB `article_body` | 181 | P/R/F1 `0.955147 / 0.989721 / 0.972127` | `+0.014624` F1 vs Trafilatura 2.0; paired 95% CI `[+0.005346, +0.025342]` |
-| WCXB `adaptive`, public test | 511 | P/R/F1 `0.895244 / 0.942960 / 0.901714` | `+0.009987` F1 vs `balanced`; public diagnostic with unresolved classifier provenance |
-| WebMainBench v1.1, raw Direct-MD | 7,809 | ROUGE-5 F1 `0.606672` | Broad structured-content gap remains |
-| WebMainBench 545 | 545 | Overall `0.214089` | Text `0.752301`; code `0.017775`; formula `0.300369`; table/TEDS `0` |
-
-The AEB row is a scoped public-corpus article-body result, not a general-web
-ranking. WCXB labels are public, and the embedded page classifier has no
-item-level training manifest; WCXB is therefore diagnostic rather than unseen
-test evidence.
-
-### Exact-output native speed
-
-The promoted linear filtered-DOM traversal preserved all ten native output
-fields on three locked corpora:
-
-| Corpus | Pages | Pooled local extraction-rate change |
-| --- | ---: | ---: |
-| WebMainBench | 7,809 | `+13.9905%` |
-| WCXB | 2,008 | `+26.9355%` |
-| Deterministic stress set | 248 | `+35.3818%` |
-
-On the measured WCXB resource runs, mean retired instructions decreased
-`22.3282%`, cycles decreased `21.7726%`, and peak memory footprint decreased
-`0.5101%`.
-
-These are local extraction-loop A/Bs—not HTTP, browser, network, or
-end-to-end service measurements. See
-[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) and the immutable
-[`native-filter-stack-bdbfd7c`](bench/evidence/native-filter-stack-bdbfd7c/PROTOCOL.md)
-record.
-
-### Deployment evidence
-
-The implementation mirrored at public commit `95b3bbe` was separately
-deployed from private source `bdbfd7c` and passed readiness, identity,
-authentication, SSRF, and live-crawl gates. That historical deployment record
-is included to verify the implementation lineage. It does **not** mean the
-current public branch, its later cache change, or its research surfaces are
-deployed.
-
-No current artifact supports a universal SOTA or overall Exa/Firecrawl
-superiority claim. The required gates are explicit in
-[`docs/RESEARCH.md`](docs/RESEARCH.md).
+The Verified row was produced directly from the public repository and is bound
+to a clean source commit, frozen protocol, compact report, retained raw
+archive, and exact hashes in
+[`bench/evidence/registry.json`](bench/evidence/registry.json). See
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) for the execution boundary,
+limitations, and evidence-status rules.
 
 ## Development
 

@@ -7,9 +7,9 @@ container digests remain the authoritative release identities.
 
 ## Unreleased
 
-This public branch contains the public mirror of the separately deployed
-`bdbfd7c` extraction implementation and later repository-only changes.
-Repository presence does not imply that the current branch is deployed.
+This branch contains the open-source crawler implementation and its
+self-hosting assets. Repository presence never implies that an operator has
+deployed a particular revision.
 
 ### Added
 
@@ -59,13 +59,13 @@ Repository presence does not imply that the current branch is deployed.
 
 - Source-backed exact lattice decoding, selection certificates, and the
   synthetic focused-frontier policy remain default-off or unwired.
-- The filtered-HTML-shape candidate at `415d36c` failed its preregistered
-  performance gates and was rejected.
-- Universal SOTA and an overall Exa/Firecrawl win remain unproven. Their gates
-  are defined in [`docs/RESEARCH.md`](docs/RESEARCH.md).
+- A filtered-HTML-shape experiment failed its preregistered promotion gates and
+  was not included.
+- Cross-benchmark leadership and live-provider superiority remain unproven.
+  Their gates are defined in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 
 ## Evidence
 
-Current results and claim boundaries are maintained in
+Registered results and claim boundaries are maintained in
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md). Immutable implementation records
 live under [`bench/evidence`](bench/evidence).

@@ -62,17 +62,21 @@ Only the immutable evidence records linked below are checked in; larger AEB,
 WCXB, Webis, and WebMainBench raw bundles must be retained separately with
 their hashes and the corresponding reproduction protocol.
 
-## Immutable implementation evidence
+## Registered evidence
 
-These records bind source lineage, corpora, output commitments, measurements,
-and promotion decisions. They are historical audit artifacts and should not be
-rewritten after publication.
+[`evidence/registry.json`](evidence/registry.json) is the machine-enforced
+claim index. It binds every published measurement to a source identity, frozen
+protocol, compact artifact, raw-retention status, metric pointer, scope, and
+permission gates.
 
-| Record | Decision |
+| Record | Status |
 | --- | --- |
-| [`evidence/native-dom-clone-a51212c/PROTOCOL.md`](evidence/native-dom-clone-a51212c/PROTOCOL.md) | Promoted |
-| [`evidence/native-filter-stack-bdbfd7c/PROTOCOL.md`](evidence/native-filter-stack-bdbfd7c/PROTOCOL.md) | Promoted; separately deployed implementation |
-| [`evidence/rejected-native-filtered-shape-415d36c/PROTOCOL.md`](evidence/rejected-native-filtered-shape-415d36c/PROTOCOL.md) | Rejected |
+| [`evidence/aeb-article-body-4dd1755-public/PROTOCOL.md`](evidence/aeb-article-body-4dd1755-public/PROTOCOL.md) | Verified scoped AEB result with externally retained raw evidence |
+| [`evidence/native-filter-stack-95b3bbe-public/PROTOCOL.md`](evidence/native-filter-stack-95b3bbe-public/PROTOCOL.md) | Historical public-only implementation A/B; raw bundle unavailable |
+
+The public records contain no private cloud, registry, deployment, traffic, or
+rollback metadata. Older copied private evidence was removed from the public
+tree and remains recoverable from Git history.
 
 ## Interpretation rules
 

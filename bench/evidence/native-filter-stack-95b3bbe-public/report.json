@@ -1,0 +1,79 @@
+{
+  "claim_binding": {
+    "id": "native.filter-stack.95b3bbe-public.2026-07-29",
+    "kind": "implementation_benchmark",
+    "protocol_sha256": "b5b6428d25af5b91f5d8d6f7bbf11b9d16924bacb9ced14fe4fe7d2b70eba479",
+    "raw_archive_sha256": null,
+    "raw_manifest_sha256": null,
+    "recorded_at_utc": "2026-07-29T17:02:52Z",
+    "scope": {
+      "comparators": [
+        {
+          "name": "baseline filtered traversal",
+          "version": "ffd61dbe"
+        },
+        {
+          "name": "linear filtered traversal",
+          "version": "95b3bbec"
+        }
+      ],
+      "dataset": "WebMain, WCXB, and deterministic stress locked corpora",
+      "dataset_revision": "webmain-85765fe7+wcxb-3634f976+stress-506a8026",
+      "dataset_sha256": "8123ded6cc15adeb38c747d4f194fed38d3138f40d08825f0b32e31b581430fc",
+      "execution_boundary": "local native extraction over preloaded records with counterbalanced forward and reverse traversal",
+      "limitations": [
+        "Historical local extraction-loop A/B; not HTTP, browser, network, service, or provider performance",
+        "The original large raw bundle is not retained",
+        "Runtime source equivalence is established, not whole-build reproduction from the public commit",
+        "Exact equality covers only the three locked corpora and ten serialized fields"
+      ],
+      "output_contract": "byte-identical framing and values for ten UTF-8 extraction fields",
+      "pages": 10065,
+      "profile": "native broad extraction",
+      "split": "three complete locked corpora",
+      "task": "exact-output native extraction implementation A/B",
+      "vendors": [
+        "Clusy"
+      ]
+    },
+    "source": {
+      "clean": true,
+      "commit": "95b3bbecdf447980ca845fc2442e4e4555418671",
+      "repository": "clusy-io/clusy-crawler",
+      "runtime_source_sha256": "6dc82c36a25a29d5e08d15a422989f1ccd907c3592553202be7bf08b49d07504",
+      "tree": "47e414aa9fbae67cbc4f7cbd506a3aa9ff13ec84"
+    },
+    "status": "Historical"
+  },
+  "environment": {
+    "logical_cpus": 12,
+    "machine": "Apple M4 Pro, Mac16,8",
+    "os": "macOS 26.6 arm64",
+    "rustc": "1.85.0"
+  },
+  "metrics": {
+    "stress_gain_percent": "35.381838418492165",
+    "wcxb_gain_percent": "26.935456045867202",
+    "webmain_gain_percent": "13.990485601398085"
+  },
+  "output_equality": {
+    "all_ten_fields_exact": true,
+    "stress_sha256": "72c75882e1c22a7d12a0b2b56ad4618f3e5d3805ecf092e4005e436486442704",
+    "wcxb_sha256": "356544b710fe4a255ed2264722ee719d6e45cee7fd00390482dd3bc8f761e77a",
+    "webmain_sha256": "9b6f5e126f4bebc2a59e688138ae74b4677c7a2503038f7de1dd102a6e652f1b"
+  },
+  "permissions": {
+    "scoped_sota": false,
+    "scoped_superiority": true,
+    "vendor_superiority": false
+  },
+  "raw_evidence": {
+    "retention": "not_retained"
+  },
+  "schema": "clusy.native.filter-stack.public-historical-evidence.v1",
+  "verification": {
+    "artifact_complete": true,
+    "claimable": true,
+    "source_stable": true
+  }
+}
