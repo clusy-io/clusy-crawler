@@ -30,6 +30,7 @@ const HARD_MAX_TYPED_ATOMS: usize = 1_024;
 const HARD_MAX_TYPED_CERTIFICATE_BYTES: usize = 8 * 1024 * 1024;
 const HARD_MAX_TYPED_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const TYPED_OVERLAY_BATCH_CONTRACT_VERSION: &str = "typed-atomic-overlay-batch.v0";
+const LOCAL_ATOMIC_BATCH_CONTRACT_VERSION: &str = "local-atomic-selection-batch.v0";
 
 const ENTRY_KIND_ELEMENT: u8 = 1;
 const ENTRY_KIND_TEXT: u8 = 2;
@@ -301,6 +302,61 @@ impl NativeTypedAtomicOverlayItemV0 {
     }
 }
 
+/// One request/result slot in the local-atomic batch bridge.
+///
+/// Rejections deliberately retain only their request identity and a stable
+/// reason code. Accepted creation items carry canonical local-atomic
+/// certificate bytes; accepted verification items additionally carry an exact
+/// replay of those bytes against the supplied immutable document graph.
+#[pyclass(frozen)]
+pub(super) struct NativeLocalAtomicBatchItemV0 {
+    certificate: Vec<u8>,
+    #[pyo3(get)]
+    contract_version: &'static str,
+    #[pyo3(get)]
+    validation_scope: &'static str,
+    #[pyo3(get)]
+    request_index: usize,
+    #[pyo3(get)]
+    selected_id: String,
+    #[pyo3(get)]
+    atom_kind: &'static str,
+    #[pyo3(get)]
+    accepted: bool,
+    #[pyo3(get)]
+    reason: &'static str,
+    #[pyo3(get)]
+    source_order: Option<usize>,
+    #[pyo3(get)]
+    source_start: Option<usize>,
+    #[pyo3(get)]
+    source_end: Option<usize>,
+    #[pyo3(get)]
+    source_span_digest: String,
+    #[pyo3(get)]
+    source_digest: String,
+    #[pyo3(get)]
+    graph_digest: String,
+    #[pyo3(get)]
+    output_digest: String,
+    #[pyo3(get)]
+    certificate_digest: String,
+    #[pyo3(get)]
+    markdown: String,
+    #[pyo3(get)]
+    verified: bool,
+    #[pyo3(get)]
+    deterministic: bool,
+}
+
+#[pymethods]
+impl NativeLocalAtomicBatchItemV0 {
+    #[getter]
+    fn certificate<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, &self.certificate)
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (
     document,
@@ -374,6 +430,50 @@ fn create_typed_atomic_overlay_batch_v0_native(
 }
 
 #[pyfunction]
+#[pyo3(signature = (
+    document,
+    selected_ids,
+    max_output_bytes=DEFAULT_MAX_OUTPUT_BYTES,
+    max_total_certificate_bytes=HARD_MAX_TYPED_CERTIFICATE_BYTES,
+    max_total_output_bytes=HARD_MAX_TYPED_OUTPUT_BYTES,
+))]
+fn create_local_atomic_selection_batch_v0_native(
+    py: Python<'_>,
+    document: PyRef<'_, NativeDocumentIRV2>,
+    selected_ids: &Bound<'_, PyList>,
+    max_output_bytes: usize,
+    max_total_certificate_bytes: usize,
+    max_total_output_bytes: usize,
+) -> PyResult<Vec<NativeLocalAtomicBatchItemV0>> {
+    let output_limit = validate_output_limit(max_output_bytes).map_err(CertificateError::python)?;
+    let certificate_total_limit = validate_batch_aggregate_limit(
+        max_total_certificate_bytes,
+        HARD_MAX_TYPED_CERTIFICATE_BYTES,
+        "max_total_certificate_bytes",
+    )
+    .map_err(CertificateError::python)?;
+    let output_total_limit = validate_batch_aggregate_limit(
+        max_total_output_bytes,
+        HARD_MAX_TYPED_OUTPUT_BYTES,
+        "max_total_output_bytes",
+    )
+    .map_err(CertificateError::python)?;
+    let selected_ids = bounded_local_atomic_ids(selected_ids)?;
+    let owned = OwnedCertificateDocument::from_native(&document);
+    drop(document);
+    py.detach(move || {
+        create_local_atomic_selection_batch(
+            &owned.view(),
+            &selected_ids,
+            output_limit,
+            certificate_total_limit,
+            output_total_limit,
+        )
+        .map_err(CertificateError::python)
+    })
+}
+
+#[pyfunction]
 fn decode_selection_certificate_v0_native(
     py: Python<'_>,
     encoded: &[u8],
@@ -408,6 +508,56 @@ fn verify_typed_atomic_overlay_batch_v0_native(
     py.detach(move || {
         verify_typed_atomic_overlay_batch(&owned.view(), &encoded_certificates, verifier_limit)
             .map_err(CertificateError::python)
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+    document,
+    selected_ids,
+    encoded_certificates,
+    max_output_bytes=DEFAULT_MAX_OUTPUT_BYTES,
+    max_total_certificate_bytes=HARD_MAX_TYPED_CERTIFICATE_BYTES,
+    max_total_output_bytes=HARD_MAX_TYPED_OUTPUT_BYTES,
+))]
+fn verify_and_replay_local_atomic_selection_batch_v0_native(
+    py: Python<'_>,
+    document: PyRef<'_, NativeDocumentIRV2>,
+    selected_ids: &Bound<'_, PyList>,
+    encoded_certificates: &Bound<'_, PyList>,
+    max_output_bytes: usize,
+    max_total_certificate_bytes: usize,
+    max_total_output_bytes: usize,
+) -> PyResult<Vec<NativeLocalAtomicBatchItemV0>> {
+    let verifier_limit =
+        validate_output_limit(max_output_bytes).map_err(CertificateError::python)?;
+    let certificate_total_limit = validate_batch_aggregate_limit(
+        max_total_certificate_bytes,
+        HARD_MAX_TYPED_CERTIFICATE_BYTES,
+        "max_total_certificate_bytes",
+    )
+    .map_err(CertificateError::python)?;
+    let output_total_limit = validate_batch_aggregate_limit(
+        max_total_output_bytes,
+        HARD_MAX_TYPED_OUTPUT_BYTES,
+        "max_total_output_bytes",
+    )
+    .map_err(CertificateError::python)?;
+    let selected_ids = bounded_local_atomic_ids(selected_ids)?;
+    let encoded_certificates =
+        bounded_local_atomic_certificates(encoded_certificates, selected_ids.len())?;
+    let owned = OwnedCertificateDocument::from_native(&document);
+    drop(document);
+    py.detach(move || {
+        verify_local_atomic_selection_batch(
+            &owned.view(),
+            &selected_ids,
+            &encoded_certificates,
+            verifier_limit,
+            certificate_total_limit,
+            output_total_limit,
+        )
+        .map_err(CertificateError::python)
     })
 }
 
@@ -542,6 +692,7 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<NativeSelectionReceiptV0>()?;
     module.add_class::<NativeSelectionReplayV0>()?;
     module.add_class::<NativeTypedAtomicOverlayItemV0>()?;
+    module.add_class::<NativeLocalAtomicBatchItemV0>()?;
     module.add_function(wrap_pyfunction!(
         create_selection_certificate_v0_native,
         module
@@ -555,11 +706,19 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
+        create_local_atomic_selection_batch_v0_native,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
         decode_selection_certificate_v0_native,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
         verify_typed_atomic_overlay_batch_v0_native,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        verify_and_replay_local_atomic_selection_batch_v0_native,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
@@ -1008,6 +1167,423 @@ fn typed_atomic_item(
         verified: true,
         deterministic: true,
     })
+}
+
+fn local_atomic_batch_invariants(
+    document: &CertificateDocument<'_>,
+) -> CertificateResult<BatchInvariants> {
+    // This is the only batch-wide validation pass. Per-item work below is
+    // deliberately limited to the selected subtree and its ancestor chain.
+    validate_document_scoped(document, ValidationScope::LocalAtomic)?;
+    Ok(BatchInvariants {
+        source_digest: source_digest_v0(document.source.as_bytes()),
+        graph_digest: graph_digest_validated(document)?,
+    })
+}
+
+fn create_local_atomic_selection_batch(
+    document: &CertificateDocument<'_>,
+    selected_ids: &[String],
+    max_output_bytes: usize,
+    max_total_certificate_bytes: usize,
+    max_total_output_bytes: usize,
+) -> CertificateResult<Vec<NativeLocalAtomicBatchItemV0>> {
+    validate_local_atomic_batch_shape(selected_ids)?;
+    let invariants = local_atomic_batch_invariants(document)?;
+    let mut items = Vec::with_capacity(selected_ids.len());
+    let mut total_certificate_bytes = 0usize;
+    let mut total_output_bytes = 0usize;
+    let mut certificate_budget_exhausted = false;
+    let mut output_budget_exhausted = false;
+
+    for (request_index, selected_id) in selected_ids.iter().enumerate() {
+        if certificate_budget_exhausted {
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "aggregate_certificate_byte_budget",
+            ));
+            continue;
+        }
+        if output_budget_exhausted {
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "aggregate_output_byte_budget",
+            ));
+            continue;
+        }
+        let created = create_local_atomic_batch_item(
+            document,
+            request_index,
+            selected_id,
+            max_output_bytes,
+            invariants,
+        );
+        let Ok(item) = created else {
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "certificate_provenance_rejected",
+            ));
+            continue;
+        };
+        let next_certificate_bytes = total_certificate_bytes
+            .checked_add(item.certificate.len())
+            .ok_or_else(|| {
+                CertificateError::new("local atomic aggregate certificate byte overflow")
+            })?;
+        if next_certificate_bytes > max_total_certificate_bytes {
+            certificate_budget_exhausted = true;
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "aggregate_certificate_byte_budget",
+            ));
+            continue;
+        }
+        let next_output_bytes = total_output_bytes
+            .checked_add(item.markdown.len())
+            .ok_or_else(|| CertificateError::new("local atomic aggregate output byte overflow"))?;
+        if next_output_bytes > max_total_output_bytes {
+            output_budget_exhausted = true;
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "aggregate_output_byte_budget",
+            ));
+            continue;
+        }
+        total_certificate_bytes = next_certificate_bytes;
+        total_output_bytes = next_output_bytes;
+        items.push(item);
+    }
+    Ok(items)
+}
+
+fn create_local_atomic_batch_item(
+    document: &CertificateDocument<'_>,
+    request_index: usize,
+    selected_id: &str,
+    max_output_bytes: usize,
+    invariants: BatchInvariants,
+) -> CertificateResult<NativeLocalAtomicBatchItemV0> {
+    let (atom_kind, entry) = local_atomic_entry(document, selected_id)?;
+    let selected_id_owned = selected_id.to_owned();
+    let markdown = render_selection(
+        document,
+        std::slice::from_ref(&selected_id_owned),
+        max_output_bytes,
+    )?;
+    let certificate = DecodedCertificate {
+        scope: ValidationScope::LocalAtomic,
+        source_digest: invariants.source_digest,
+        graph_digest: invariants.graph_digest,
+        output_digest: output_digest_v0(markdown.as_bytes()),
+        output_bytes: u64_from_usize(markdown.len())?,
+        max_output_bytes: u64_from_usize(max_output_bytes)?,
+        entries: vec![entry.clone()],
+    };
+    let encoded = encode_certificate(&certificate)?;
+    if decode_certificate(&encoded)? != certificate {
+        return Err(CertificateError::new(
+            "local atomic batch certificate did not round-trip canonically",
+        ));
+    }
+    local_atomic_accepted_item(
+        document,
+        request_index,
+        atom_kind,
+        entry,
+        certificate,
+        encoded,
+        markdown,
+        false,
+    )
+}
+
+fn verify_local_atomic_selection_batch(
+    document: &CertificateDocument<'_>,
+    selected_ids: &[String],
+    encoded_certificates: &[Vec<u8>],
+    verifier_output_limit: usize,
+    max_total_certificate_bytes: usize,
+    max_total_output_bytes: usize,
+) -> CertificateResult<Vec<NativeLocalAtomicBatchItemV0>> {
+    validate_local_atomic_batch_shape(selected_ids)?;
+    if selected_ids.len() != encoded_certificates.len() {
+        return Err(CertificateError::new(
+            "local atomic batch ID and certificate counts differ",
+        ));
+    }
+    let invariants = local_atomic_batch_invariants(document)?;
+    let mut items = Vec::with_capacity(selected_ids.len());
+    let mut total_certificate_bytes = 0usize;
+    let mut total_output_bytes = 0usize;
+    let mut certificate_budget_exhausted = false;
+    let mut output_budget_exhausted = false;
+
+    for (request_index, (selected_id, encoded)) in
+        selected_ids.iter().zip(encoded_certificates).enumerate()
+    {
+        if certificate_budget_exhausted {
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "aggregate_certificate_byte_budget",
+            ));
+            continue;
+        }
+        if output_budget_exhausted {
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "aggregate_output_byte_budget",
+            ));
+            continue;
+        }
+        let next_certificate_bytes = total_certificate_bytes
+            .checked_add(encoded.len())
+            .ok_or_else(|| {
+                CertificateError::new("local atomic aggregate certificate byte overflow")
+            })?;
+        if next_certificate_bytes > max_total_certificate_bytes {
+            certificate_budget_exhausted = true;
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "aggregate_certificate_byte_budget",
+            ));
+            continue;
+        }
+        let verified = verify_local_atomic_batch_item(
+            document,
+            request_index,
+            selected_id,
+            encoded,
+            verifier_output_limit,
+            invariants,
+        );
+        let Ok(item) = verified else {
+            total_certificate_bytes = next_certificate_bytes;
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "certificate_replay_rejected",
+            ));
+            continue;
+        };
+        let next_output_bytes = total_output_bytes
+            .checked_add(item.markdown.len())
+            .ok_or_else(|| CertificateError::new("local atomic aggregate output byte overflow"))?;
+        if next_output_bytes > max_total_output_bytes {
+            output_budget_exhausted = true;
+            items.push(local_atomic_rejection(
+                document,
+                request_index,
+                selected_id,
+                "aggregate_output_byte_budget",
+            ));
+            continue;
+        }
+        total_certificate_bytes = next_certificate_bytes;
+        total_output_bytes = next_output_bytes;
+        items.push(item);
+    }
+    Ok(items)
+}
+
+fn verify_local_atomic_batch_item(
+    document: &CertificateDocument<'_>,
+    request_index: usize,
+    selected_id: &str,
+    encoded: &[u8],
+    verifier_output_limit: usize,
+    invariants: BatchInvariants,
+) -> CertificateResult<NativeLocalAtomicBatchItemV0> {
+    let certificate = decode_certificate(encoded)?;
+    if certificate.scope != ValidationScope::LocalAtomic {
+        return Err(CertificateError::new(
+            "local atomic batch requires a local-atomic certificate",
+        ));
+    }
+    if certificate.source_digest != invariants.source_digest {
+        return Err(CertificateError::new("source digest mismatch"));
+    }
+    if certificate.graph_digest != invariants.graph_digest {
+        return Err(CertificateError::new("graph digest mismatch"));
+    }
+    if certificate.entries.len() != 1 || certificate.entries[0].id != selected_id {
+        return Err(CertificateError::new(
+            "local atomic certificate does not match its requested selection ID",
+        ));
+    }
+    let (atom_kind, expected_entry) = local_atomic_entry(document, selected_id)?;
+    if certificate.entries[0] != expected_entry {
+        return Err(CertificateError::new(
+            "selection ID, event order, or source span mismatch",
+        ));
+    }
+    let certificate_limit = usize_from_u64(certificate.max_output_bytes)?;
+    let effective_limit = certificate_limit.min(verifier_output_limit);
+    let selected_id_owned = selected_id.to_owned();
+    let markdown = render_selection(
+        document,
+        std::slice::from_ref(&selected_id_owned),
+        effective_limit,
+    )?;
+    if u64_from_usize(markdown.len())? != certificate.output_bytes {
+        return Err(CertificateError::new("serialized output length mismatch"));
+    }
+    if output_digest_v0(markdown.as_bytes()) != certificate.output_digest {
+        return Err(CertificateError::new("serialized output digest mismatch"));
+    }
+    local_atomic_accepted_item(
+        document,
+        request_index,
+        atom_kind,
+        expected_entry,
+        certificate,
+        encoded.to_vec(),
+        markdown,
+        true,
+    )
+}
+
+fn local_atomic_entry(
+    document: &CertificateDocument<'_>,
+    selected_id: &str,
+) -> CertificateResult<(&'static str, SelectionEntry)> {
+    validate_id(selected_id)?;
+    let root_index = document
+        .graph
+        .element_by_id
+        .get(selected_id)
+        .copied()
+        .ok_or_else(|| {
+            CertificateError::new("local atomic certificate requires an element selection")
+        })?;
+    let root = document
+        .graph
+        .elements
+        .get(root_index)
+        .ok_or_else(|| CertificateError::new("local atomic element is out of bounds"))?;
+    let atom_kind = match root.exposed.tag.as_str() {
+        "pre" => "code",
+        "table" => "table",
+        _ => {
+            return Err(CertificateError::new(
+                "local atomic certificate only supports pre and table elements",
+            ));
+        }
+    };
+    let root_span = validate_local_complete_subtree(document, root_index)?;
+    validate_local_atomic_ancestors(document, root_index, root_span)?;
+    validate_local_exact_text_provenance(document, root_index, root_span)?;
+    Ok((
+        atom_kind,
+        SelectionEntry {
+            kind: SelectionKind::Element,
+            id: selected_id.to_owned(),
+            order: u64_from_usize(root.exposed.order)?,
+            source_start: u64_from_usize(root_span.0)?,
+            source_end: u64_from_usize(root_span.1)?,
+        },
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn local_atomic_accepted_item(
+    document: &CertificateDocument<'_>,
+    request_index: usize,
+    atom_kind: &'static str,
+    entry: SelectionEntry,
+    certificate: DecodedCertificate,
+    encoded: Vec<u8>,
+    markdown: String,
+    verified: bool,
+) -> CertificateResult<NativeLocalAtomicBatchItemV0> {
+    let source_start = usize_from_u64(entry.source_start)?;
+    let source_end = usize_from_u64(entry.source_end)?;
+    let source_fragment = document
+        .source
+        .get(source_start..source_end)
+        .ok_or_else(|| CertificateError::new("local atomic source span is not UTF-8 aligned"))?;
+    Ok(NativeLocalAtomicBatchItemV0 {
+        certificate_digest: hex_digest(&certificate_digest_v0(&encoded)),
+        certificate: encoded,
+        contract_version: LOCAL_ATOMIC_BATCH_CONTRACT_VERSION,
+        validation_scope: ValidationScope::LocalAtomic.name(),
+        request_index,
+        selected_id: entry.id,
+        atom_kind,
+        accepted: true,
+        reason: "accepted",
+        source_order: Some(usize_from_u64(entry.order)?),
+        source_start: Some(source_start),
+        source_end: Some(source_end),
+        source_span_digest: hex_digest(&framed_digest(
+            b"clusy-local-atomic-batch-source-span-v0",
+            source_fragment.as_bytes(),
+        )),
+        source_digest: hex_digest(&certificate.source_digest),
+        graph_digest: hex_digest(&certificate.graph_digest),
+        output_digest: hex_digest(&certificate.output_digest),
+        markdown,
+        verified,
+        deterministic: true,
+    })
+}
+
+fn local_atomic_rejection(
+    document: &CertificateDocument<'_>,
+    request_index: usize,
+    selected_id: &str,
+    reason: &'static str,
+) -> NativeLocalAtomicBatchItemV0 {
+    NativeLocalAtomicBatchItemV0 {
+        certificate: Vec::new(),
+        contract_version: LOCAL_ATOMIC_BATCH_CONTRACT_VERSION,
+        validation_scope: ValidationScope::LocalAtomic.name(),
+        request_index,
+        selected_id: selected_id.to_owned(),
+        atom_kind: local_atomic_kind_hint(document, selected_id),
+        accepted: false,
+        reason,
+        source_order: None,
+        source_start: None,
+        source_end: None,
+        source_span_digest: String::new(),
+        source_digest: String::new(),
+        graph_digest: String::new(),
+        output_digest: String::new(),
+        certificate_digest: String::new(),
+        markdown: String::new(),
+        verified: false,
+        deterministic: true,
+    }
+}
+
+fn local_atomic_kind_hint(document: &CertificateDocument<'_>, selected_id: &str) -> &'static str {
+    document
+        .graph
+        .element_by_id
+        .get(selected_id)
+        .and_then(|index| document.graph.elements.get(*index))
+        .map_or("", |element| match element.exposed.tag.as_str() {
+            "pre" => "code",
+            "table" => "table",
+            _ => "",
+        })
 }
 
 fn validate_document_scoped(
@@ -1854,6 +2430,19 @@ fn validate_output_limit(value: usize) -> CertificateResult<usize> {
     Ok(value)
 }
 
+fn validate_batch_aggregate_limit(
+    value: usize,
+    hard_maximum: usize,
+    name: &'static str,
+) -> CertificateResult<usize> {
+    if value == 0 || value > hard_maximum {
+        return Err(CertificateError::new(format!(
+            "{name} must be between 1 and {hard_maximum}"
+        )));
+    }
+    Ok(value)
+}
+
 fn bounded_selected_ids(selected_ids: &Bound<'_, PyList>) -> PyResult<Vec<String>> {
     let selection_count = selected_ids.len();
     if selection_count == 0 {
@@ -1874,6 +2463,57 @@ fn bounded_selected_ids(selected_ids: &Bound<'_, PyList>) -> PyResult<Vec<String
         let value = value.to_str()?;
         validate_id(value).map_err(CertificateError::python)?;
         output.push(value.to_owned());
+    }
+    Ok(output)
+}
+
+fn bounded_local_atomic_ids(selected_ids: &Bound<'_, PyList>) -> PyResult<Vec<String>> {
+    if selected_ids.is_empty() {
+        return Err(CertificateError::new("local atomic batch must not be empty").python());
+    }
+    if selected_ids.len() > HARD_MAX_TYPED_ATOMS {
+        return Err(
+            CertificateError::new("local atomic batch contains too many selections").python(),
+        );
+    }
+    let output = bounded_selected_ids(selected_ids)?;
+    validate_local_atomic_batch_shape(&output).map_err(CertificateError::python)?;
+    Ok(output)
+}
+
+fn bounded_local_atomic_certificates(
+    encoded_certificates: &Bound<'_, PyList>,
+    expected_count: usize,
+) -> PyResult<Vec<Vec<u8>>> {
+    if encoded_certificates.len() != expected_count {
+        return Err(
+            CertificateError::new("local atomic batch ID and certificate counts differ").python(),
+        );
+    }
+    let mut output = Vec::with_capacity(expected_count);
+    let mut total_bytes = 0usize;
+    for value in encoded_certificates.iter() {
+        let value = value.cast::<PyBytes>().map_err(|_| {
+            CertificateError::new("local atomic batch certificate must be bytes").python()
+        })?;
+        let encoded = value.as_bytes();
+        if encoded.is_empty() || encoded.len() > HARD_MAX_CERTIFICATE_BYTES {
+            return Err(CertificateError::new(
+                "local atomic batch certificate byte length is invalid",
+            )
+            .python());
+        }
+        total_bytes = total_bytes.checked_add(encoded.len()).ok_or_else(|| {
+            CertificateError::new("local atomic batch certificate total byte length overflow")
+                .python()
+        })?;
+        if total_bytes > HARD_MAX_TYPED_CERTIFICATE_BYTES {
+            return Err(CertificateError::new(
+                "local atomic batch certificates exceed the hard aggregate byte limit",
+            )
+            .python());
+        }
+        output.push(encoded.to_vec());
     }
     Ok(output)
 }
@@ -1910,6 +2550,29 @@ fn bounded_typed_certificates(encoded_certificates: &Bound<'_, PyList>) -> PyRes
         output.push(encoded.to_vec());
     }
     Ok(output)
+}
+
+fn validate_local_atomic_batch_shape(selected_ids: &[String]) -> CertificateResult<()> {
+    if selected_ids.is_empty() {
+        return Err(CertificateError::new(
+            "local atomic batch must not be empty",
+        ));
+    }
+    if selected_ids.len() > HARD_MAX_TYPED_ATOMS {
+        return Err(CertificateError::new(
+            "local atomic batch contains too many selections",
+        ));
+    }
+    let mut seen = HashSet::with_capacity(selected_ids.len());
+    for selected_id in selected_ids {
+        validate_id(selected_id)?;
+        if !seen.insert(selected_id.as_str()) {
+            return Err(CertificateError::new(
+                "local atomic batch contains a duplicate selection ID",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_selection_shape(selected_ids: &[String]) -> CertificateResult<()> {
@@ -3393,9 +4056,13 @@ fn event_order_u64(graph: &Graph, event: EventRef) -> CertificateResult<u64> {
 }
 
 fn graph_digest(document: &CertificateDocument<'_>) -> CertificateResult<[u8; 32]> {
+    validate_graph_topology(document.graph)?;
+    validate_structure_references(document.graph)?;
+    graph_digest_validated(document)
+}
+
+fn graph_digest_validated(document: &CertificateDocument<'_>) -> CertificateResult<[u8; 32]> {
     let graph = document.graph;
-    validate_graph_topology(graph)?;
-    validate_structure_references(graph)?;
     let ordered = ordered_events(graph)?;
     let mut digest = CanonicalDigest::new(b"clusy-ordered-dom-graph-digest-v0");
     digest.string(super::SCHEMA_VERSION);
@@ -4277,6 +4944,196 @@ mod tests {
             first.certificate.output_digest,
             second.certificate.output_digest
         );
+    }
+
+    #[test]
+    fn local_atomic_batch_matches_legacy_bytes_and_exact_replay() {
+        let result = build(
+            "<!doctype html><html><head><title>local batch</title></head><body><main>\
+             <pre><code class=\"language-rust\">let answer = 42;</code></pre>\
+             <table><tbody><tr><th>Name</th><th>Score</th></tr>\
+             <tr><td>Clusy</td><td>42</td></tr></tbody></table>\
+             </main></body></html>",
+        );
+        let ids = vec![id_for_tag(&result, "pre"), id_for_tag(&result, "table")];
+        let items = create_local_atomic_selection_batch(
+            &view(&result),
+            &ids,
+            4_096,
+            HARD_MAX_TYPED_CERTIFICATE_BYTES,
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+        )
+        .unwrap();
+        assert_eq!(items.len(), ids.len());
+
+        for (id, item) in ids.iter().zip(&items) {
+            let legacy =
+                create_local_atomic_certificate(&view(&result), std::slice::from_ref(id), 4_096)
+                    .unwrap();
+            let legacy_encoded = encode_certificate(&legacy).unwrap();
+            let legacy_replay = verify_decoded_and_replay_scoped(
+                &view(&result),
+                legacy.clone(),
+                &legacy_encoded,
+                4_096,
+                ValidationScope::LocalAtomic,
+            )
+            .unwrap();
+            assert!(item.accepted);
+            assert!(!item.verified);
+            assert_eq!(item.validation_scope, "local_atomic");
+            assert_eq!(item.certificate, legacy_encoded);
+            assert_eq!(item.markdown, legacy_replay.markdown);
+            assert_eq!(
+                decode_certificate(&item.certificate).unwrap().scope,
+                ValidationScope::LocalAtomic
+            );
+        }
+
+        let certificates = items
+            .iter()
+            .map(|item| item.certificate.clone())
+            .collect::<Vec<_>>();
+        let replayed = verify_local_atomic_selection_batch(
+            &view(&result),
+            &ids,
+            &certificates,
+            4_096,
+            HARD_MAX_TYPED_CERTIFICATE_BYTES,
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+        )
+        .unwrap();
+        assert!(replayed.iter().all(|item| item.accepted && item.verified));
+        assert_eq!(
+            replayed
+                .iter()
+                .map(|item| (&item.certificate, &item.markdown))
+                .collect::<Vec<_>>(),
+            items
+                .iter()
+                .map(|item| (&item.certificate, &item.markdown))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn local_atomic_batch_isolates_provenance_and_replay_rejections() {
+        let result = build(
+            "<!doctype html><html><head><title>isolation</title></head><body><main>\
+             <pre>bad &amp; transformed</pre><pre>good literal</pre>\
+             <table><tr><td>safe table</td></tr></table>\
+             </main></body></html>",
+        );
+        let ids = result
+            .graph
+            .elements
+            .iter()
+            .filter(|element| matches!(element.exposed.tag.as_str(), "pre" | "table"))
+            .map(|element| element.exposed.id.clone())
+            .collect::<Vec<_>>();
+        let items = create_local_atomic_selection_batch(
+            &view(&result),
+            &ids,
+            4_096,
+            HARD_MAX_TYPED_CERTIFICATE_BYTES,
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+        )
+        .unwrap();
+        assert_eq!(items.len(), 3);
+        assert!(!items[0].accepted);
+        assert_eq!(items[0].reason, "certificate_provenance_rejected");
+        assert!(items[0].certificate.is_empty());
+        assert!(items[1].accepted);
+        assert!(items[2].accepted);
+
+        let valid_result = build(
+            "<!doctype html><html><head><title>tamper</title></head><body>\
+             <pre>first literal</pre><pre>second literal</pre></body></html>",
+        );
+        let valid_ids = valid_result
+            .graph
+            .elements
+            .iter()
+            .filter(|element| element.exposed.tag == "pre")
+            .map(|element| element.exposed.id.clone())
+            .collect::<Vec<_>>();
+        let created = create_local_atomic_selection_batch(
+            &view(&valid_result),
+            &valid_ids,
+            4_096,
+            HARD_MAX_TYPED_CERTIFICATE_BYTES,
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+        )
+        .unwrap();
+        let mut certificates = created
+            .iter()
+            .map(|item| item.certificate.clone())
+            .collect::<Vec<_>>();
+        certificates[0][12] ^= 1;
+        let replayed = verify_local_atomic_selection_batch(
+            &view(&valid_result),
+            &valid_ids,
+            &certificates,
+            4_096,
+            HARD_MAX_TYPED_CERTIFICATE_BYTES,
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+        )
+        .unwrap();
+        assert!(!replayed[0].accepted);
+        assert_eq!(replayed[0].reason, "certificate_replay_rejected");
+        assert!(replayed[1].accepted);
+        assert!(replayed[1].verified);
+    }
+
+    #[test]
+    fn local_atomic_batch_enforces_scope_identity_and_aggregate_caps() {
+        let result = build(
+            "<!doctype html><html><head><title>caps</title></head><body>\
+             <pre>first literal</pre><pre>second literal</pre></body></html>",
+        );
+        let ids = result
+            .graph
+            .elements
+            .iter()
+            .filter(|element| element.exposed.tag == "pre")
+            .map(|element| element.exposed.id.clone())
+            .collect::<Vec<_>>();
+        let unlimited = create_local_atomic_selection_batch(
+            &view(&result),
+            &ids,
+            4_096,
+            HARD_MAX_TYPED_CERTIFICATE_BYTES,
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+        )
+        .unwrap();
+        let capped = create_local_atomic_selection_batch(
+            &view(&result),
+            &ids,
+            4_096,
+            unlimited[0].certificate.len(),
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+        )
+        .unwrap();
+        assert!(capped[0].accepted);
+        assert!(!capped[1].accepted);
+        assert_eq!(capped[1].reason, "aggregate_certificate_byte_budget");
+
+        let full_scope =
+            create_certificate(&view(&result), std::slice::from_ref(&ids[0]), 4_096).unwrap();
+        let full_scope_encoded = encode_certificate(&full_scope).unwrap();
+        let scope_replay = verify_local_atomic_selection_batch(
+            &view(&result),
+            std::slice::from_ref(&ids[0]),
+            &[full_scope_encoded],
+            4_096,
+            HARD_MAX_TYPED_CERTIFICATE_BYTES,
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+        )
+        .unwrap();
+        assert!(!scope_replay[0].accepted);
+        assert_eq!(scope_replay[0].reason, "certificate_replay_rejected");
+
+        assert!(validate_local_atomic_batch_shape(&[ids[0].clone(), ids[0].clone()]).is_err());
     }
 
     #[test]

@@ -697,6 +697,74 @@ def test_decisions_are_deterministic_in_parallel_and_config_bound() -> None:
 
 
 @pytest.mark.parametrize(
+    ("html", "candidate", "config"),
+    [
+        (
+            _document(
+                '<pre><code class="language-python">'
+                "def locked():\n    return 7</code></pre>"
+            ),
+            "prefix\n\ndef locked(): return 7\n\nsuffix",
+            _enabled(),
+        ),
+        (
+            _document(
+                "<table><thead><tr><th>Name</th><th>Score</th></tr></thead>"
+                "<tbody><tr><td>Clusy</td><td>10</td></tr></tbody></table>"
+            ),
+            "Name Score\nClusy 10",
+            _enabled(),
+        ),
+        (
+            _document(
+                "<pre><code>alpha literal code</code></pre>"
+                "<table><thead><tr><th>K</th><th>V</th></tr></thead>"
+                "<tbody><tr><td>beta</td><td>2</td></tr></tbody></table>"
+            ),
+            "alpha literal code\n\nK V\nbeta 2",
+            _enabled(),
+        ),
+        (
+            _document(
+                "<pre><code>bad &amp; transformed</code></pre>"
+                "<pre><code>good literal sibling</code></pre>"
+            ),
+            "bad & transformed\n\ngood literal sibling",
+            _enabled(),
+        ),
+        (
+            _document("<pre><code>disabled identity</code></pre>"),
+            "disabled identity",
+            AtomicStructureOverlayV0Config(enabled=False),
+        ),
+    ],
+)
+def test_batch_bridge_preserves_locked_legacy_decisions_and_output(
+    html: str,
+    candidate: str,
+    config: AtomicStructureOverlayV0Config,
+) -> None:
+    batch = overlay_module._propose_atomic_structure_overlay_v0(
+        html,
+        candidate,
+        config=config,
+        use_batch_certificate_bridge=True,
+    )
+    legacy = overlay_module._propose_atomic_structure_overlay_v0(
+        html,
+        candidate,
+        config=config,
+        use_batch_certificate_bridge=False,
+    )
+
+    assert batch == legacy
+    assert batch.output_markdown.encode("utf-8") == legacy.output_markdown.encode(
+        "utf-8"
+    )
+    assert batch.decision_digest == legacy.decision_digest
+
+
+@pytest.mark.parametrize(
     "candidate",
     [
         "",

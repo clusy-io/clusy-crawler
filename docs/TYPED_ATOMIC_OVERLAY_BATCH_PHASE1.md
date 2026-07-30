@@ -4,6 +4,11 @@ Status: research-only, default-off, unwired. Base source: `96779e4`. The cost
 audit also inspected the hardened atomic-overlay research commit `8592510`.
 This note is not a production or quality claim.
 
+This file records the original full-document phase-one prototype. A later
+bridge ports the hardened `pre`/`table` overlay to a batch-native
+`local_atomic` scope; see `LOCAL_ATOMIC_BATCH_BRIDGE_V0.md`. `list` and `math`
+remain on the stricter full-document prototype path.
+
 ## Cost found in `8592510`
 
 The overlay parses HTML once inside one proposal call. Parsing is not the main
@@ -87,15 +92,16 @@ Phase one is not promotable. It still needs:
 3. The candidate-alignment and all-or-nothing patch layer. This prototype
    certifies typed replacements but does not splice them into crawler output.
 4. Exact visible-token preservation across candidate, patch, and final output.
-5. A batch local-provenance scope for code, table, list, and math, followed by
-   adversarial HTML tokenizer and parser-repair tests.
+5. A local-provenance extension for list and math. The later bridge covers
+   `pre` and `table`, with adversarial tokenizer, scope, tamper, aggregate-cap,
+   and unrelated-sibling tests.
 6. Independent frozen certificate replay, not only same-implementation replay.
 7. WebMainBench-545 latency, p95/p99, peak RSS, output growth, certificate
    bytes, and cold/warm measurements against both `96779e4` and `8592510`.
 8. Platform contract, container, and deployment gates after a candidate is
    wired. No production route is changed here.
 
-## Bounded next patch
+## Original bounded next patch
 
 The next implementation should keep this batch boundary and:
 
@@ -110,3 +116,7 @@ The next implementation should keep this batch boundary and:
    in one deterministic decision record;
 5. verify a stored decision with one parse and one native batch replay, without
    recomputing proposal policy.
+
+The later `pre`/`table` bridge implements items 1, 3, and 5 for the existing
+atomic overlay. Direct indexed rendering and the remaining typed roots are
+still open.

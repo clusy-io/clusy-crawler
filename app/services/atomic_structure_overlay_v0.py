@@ -25,14 +25,21 @@ from typing import Literal
 
 from clusy_native import (
     DocumentIRV2Limits,
+    LocalAtomicBatchItemV0,
     NativeDocumentIRV2,
     NativeIRElementV2,
     NativeIRTableCellV2,
     NativeIRTableV2,
     NativeIRTextRunV2,
+    create_local_atomic_selection_batch_v0,
     create_local_atomic_selection_certificate_v0,
     extract_document_ir_v2,
+    verify_and_replay_local_atomic_selection_batch_v0,
     verify_and_replay_local_atomic_selection_certificate_v0,
+)
+from clusy_native.local_atomic_batch_v0 import (
+    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_CERTIFICATE_BYTES,
+    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_OUTPUT_BYTES,
 )
 
 ATOMIC_STRUCTURE_OVERLAY_V0_SCHEMA = "exact-atomic-structure-overlay.v0"
@@ -412,6 +419,7 @@ def _propose_atomic_structure_overlay_v0(
     candidate_markdown: str,
     *,
     config: AtomicStructureOverlayV0Config,
+    use_batch_certificate_bridge: bool = True,
 ) -> AtomicStructureOverlayDecisionV0:
     """Compute an exact decision without invoking caller-controlled code."""
 
@@ -575,6 +583,29 @@ def _propose_atomic_structure_overlay_v0(
             "atom_budget",
         )
 
+    batch_certificate_items: dict[str, LocalAtomicBatchItemV0] = {}
+    if use_batch_certificate_bridge and atoms:
+        try:
+            created_items = create_local_atomic_selection_batch_v0(
+                document,
+                (atom.element.id for atom in atoms),
+                max_output_bytes=config.max_replacement_bytes,
+                max_total_certificate_bytes=(
+                    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_CERTIFICATE_BYTES
+                ),
+                max_total_output_bytes=(
+                    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_OUTPUT_BYTES
+                ),
+            )
+            batch_certificate_items = {
+                item.selected_id: item for item in created_items
+            }
+        except (TypeError, ValueError, RuntimeError):
+            # Preserve the overlay's per-atom fail-closed decision surface.
+            # A batch-wide invariant failure is represented as the same local
+            # certificate provenance rejection the legacy bridge emitted.
+            batch_certificate_items = {}
+
     proposals: list[AtomicStructureProposalV0] = []
     total_certificate_bytes = 0
     certificate_budget_exhausted = False
@@ -600,6 +631,8 @@ def _propose_atomic_structure_overlay_v0(
             input_digest=input_digest,
             config_digest=config_digest,
             config=config,
+            batch_certificate_item=batch_certificate_items.get(atom.element.id),
+            use_batch_certificate_bridge=use_batch_certificate_bridge,
         )
         next_certificate_bytes = total_certificate_bytes + len(proposal.certificate)
         if next_certificate_bytes > config.max_total_certificate_bytes:
@@ -629,6 +662,41 @@ def _propose_atomic_structure_overlay_v0(
             visible_tokens_identical=True,
         )
 
+    replay_items_by_id: dict[str, LocalAtomicBatchItemV0] = {}
+    if use_batch_certificate_bridge:
+        try:
+            replay_items = verify_and_replay_local_atomic_selection_batch_v0(
+                document,
+                (proposal.selected_id for proposal in accepted_proposals),
+                (proposal.certificate for proposal in accepted_proposals),
+                max_output_bytes=config.max_replacement_bytes,
+                max_total_certificate_bytes=(
+                    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_CERTIFICATE_BYTES
+                ),
+                max_total_output_bytes=(
+                    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_OUTPUT_BYTES
+                ),
+            )
+        except (TypeError, ValueError, RuntimeError):
+            return _global_rejection(
+                candidate_markdown,
+                proposals,
+                source_digest,
+                input_digest,
+                config_digest,
+                "certificate_replay_mismatch",
+            )
+        if any(not item.accepted or not item.verified for item in replay_items):
+            return _global_rejection(
+                candidate_markdown,
+                proposals,
+                source_digest,
+                input_digest,
+                config_digest,
+                "certificate_replay_mismatch",
+            )
+        replay_items_by_id = {item.selected_id: item for item in replay_items}
+
     output_bytes = candidate_bytes
     for proposal in sorted(
         accepted_proposals,
@@ -636,16 +704,29 @@ def _propose_atomic_structure_overlay_v0(
         reverse=True,
     ):
         start, end = _required_span(proposal)
-        replay = verify_and_replay_local_atomic_selection_certificate_v0(
-            document,
-            proposal.certificate,
-            max_output_bytes=config.max_replacement_bytes,
-        )
+        if use_batch_certificate_bridge:
+            replay_item = replay_items_by_id.get(proposal.selected_id)
+            if replay_item is None:
+                return _global_rejection(
+                    candidate_markdown,
+                    proposals,
+                    source_digest,
+                    input_digest,
+                    config_digest,
+                    "certificate_replay_mismatch",
+                )
+            replay_markdown = replay_item.markdown
+        else:
+            replay_markdown = verify_and_replay_local_atomic_selection_certificate_v0(
+                document,
+                proposal.certificate,
+                max_output_bytes=config.max_replacement_bytes,
+            ).markdown
         replacement_bytes = _certified_replacement(
             context,
             proposal.atom_kind,
             proposal.selected_id,
-            replay.markdown,
+            replay_markdown,
         ).encode("utf-8")
         if _framed_digest(
             "clusy-atomic-overlay-replacement-v0", replacement_bytes
@@ -824,6 +905,8 @@ def _evaluate_atom(
     input_digest: str,
     config_digest: str,
     config: AtomicStructureOverlayV0Config,
+    batch_certificate_item: LocalAtomicBatchItemV0 | None,
+    use_batch_certificate_bridge: bool,
 ) -> AtomicStructureProposalV0:
     document = context.document
     element = atom.element
@@ -894,25 +977,36 @@ def _evaluate_atom(
     if eligibility_reason is not None:
         return _make_proposal(base, reason=eligibility_reason)
 
-    try:
-        certificate = create_local_atomic_selection_certificate_v0(
-            document,
-            [element.id],
-            max_output_bytes=config.max_replacement_bytes,
-        )
-        replay = verify_and_replay_local_atomic_selection_certificate_v0(
-            document,
-            certificate,
-            max_output_bytes=config.max_replacement_bytes,
-        )
-    except Exception:
-        return _make_proposal(base, reason="certificate_provenance_rejected")
-    certificate_bytes = certificate.encoded
+    if use_batch_certificate_bridge:
+        if batch_certificate_item is None or not batch_certificate_item.accepted:
+            return _make_proposal(base, reason="certificate_provenance_rejected")
+        certificate_bytes = batch_certificate_item.certificate
+        replacement_markdown = batch_certificate_item.markdown
+        graph_digest = batch_certificate_item.graph_digest
+        certificate_digest = batch_certificate_item.certificate_digest
+    else:
+        try:
+            certificate = create_local_atomic_selection_certificate_v0(
+                document,
+                [element.id],
+                max_output_bytes=config.max_replacement_bytes,
+            )
+            replay = verify_and_replay_local_atomic_selection_certificate_v0(
+                document,
+                certificate,
+                max_output_bytes=config.max_replacement_bytes,
+            )
+        except Exception:
+            return _make_proposal(base, reason="certificate_provenance_rejected")
+        certificate_bytes = certificate.encoded
+        replacement_markdown = replay.markdown
+        graph_digest = certificate.graph_digest
+        certificate_digest = certificate.certificate_digest
     replacement_text = _certified_replacement(
         context,
         atom.kind,
         element.id,
-        replay.markdown,
+        replacement_markdown,
     )
     replacement_bytes = replacement_text.encode("utf-8")
     if len(certificate_bytes) > config.max_certificate_bytes:
@@ -981,7 +1075,7 @@ def _evaluate_atom(
         reason="accepted",
         candidate_span_start=candidate_byte_start,
         candidate_span_end=candidate_byte_end,
-        graph_digest=certificate.graph_digest,
+        graph_digest=graph_digest,
         replacement_digest=_framed_digest(
             "clusy-atomic-overlay-replacement-v0",
             replacement_bytes,
@@ -994,7 +1088,7 @@ def _evaluate_atom(
             replacement_bytes,
         ),
         visible_token_digest=visible_token_digest,
-        certificate_digest=certificate.certificate_digest,
+        certificate_digest=certificate_digest,
         certificate=certificate_bytes,
         visible_token_count=len(atom_tokens),
         replacement_bytes=len(replacement_bytes),

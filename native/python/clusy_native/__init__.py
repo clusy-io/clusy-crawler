@@ -12,6 +12,7 @@ from ._native import (
     NativeIRTableCellV2,
     NativeIRTableV2,
     NativeIRTextRunV2,
+    NativeLocalAtomicBatchItemV0,
     NativeSelectionCertificateV0,
     NativeSelectionReceiptV0,
     NativeSelectionReplayV0,
@@ -31,6 +32,13 @@ from .document_ir_v2 import (
     DocumentIRV2Limits,
     extract_document_ir_v2,
     reconstruct_document_ir_v2,
+)
+from .local_atomic_batch_v0 import (
+    LOCAL_ATOMIC_SELECTION_BATCH_V0_CONTRACT,
+    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_ATOMS,
+    LocalAtomicBatchItemV0,
+    create_local_atomic_selection_batch_v0,
+    verify_and_replay_local_atomic_selection_batch_v0,
 )
 from .selection_certificate_v0 import (
     DEFAULT_SELECTION_CERTIFICATE_V0_MAX_OUTPUT_BYTES,
@@ -64,14 +72,19 @@ __all__ = [
     "NativeIRTableCellV2",
     "NativeIRTableV2",
     "NativeIRTextRunV2",
+    "NativeLocalAtomicBatchItemV0",
     "NativeSelectionCertificateV0",
     "NativeSelectionReceiptV0",
     "NativeSelectionReplayV0",
+    "LOCAL_ATOMIC_SELECTION_BATCH_V0_CONTRACT",
+    "LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_ATOMS",
+    "LocalAtomicBatchItemV0",
     "backend_version",
     "SelectionCertificateV0",
     "SelectionReceiptV0",
     "SelectionReplayV0",
     "create_local_atomic_selection_certificate_v0",
+    "create_local_atomic_selection_batch_v0",
     "create_selection_certificate_v0",
     "decode_selection_certificate_v0",
     "extract_document_blocks",
@@ -82,4 +95,5 @@ __all__ = [
     "reconstruct_document_ir_v2",
     "verify_and_replay_selection_certificate_v0",
     "verify_and_replay_local_atomic_selection_certificate_v0",
+    "verify_and_replay_local_atomic_selection_batch_v0",
 ]

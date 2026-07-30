@@ -42,6 +42,11 @@ An accepted patch requires all of the following:
 10. Exact full-output visible identity under the same normalization.
 11. Deterministic recomputation through the public verifier.
 
+The research implementation now batches certificate creation across all
+enumerated `pre`/`table` roots and batches final replay verification; see
+`LOCAL_ATOMIC_BATCH_BRIDGE_V0.md`. This does not change the default-disabled
+or production-wiring boundary.
+
 The only allowed implicit selected-scope element is the standard direct
 `tbody` inserted beneath a `table`. Its rows and cells must remain explicit,
 ordered, source-contained, and grid-complete.
