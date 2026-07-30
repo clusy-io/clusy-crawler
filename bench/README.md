@@ -72,7 +72,8 @@ permission gates.
 
 | Record | Status |
 | --- | --- |
-| [`evidence/aeb-article-body-4dd1755-public/PROTOCOL.md`](evidence/aeb-article-body-4dd1755-public/PROTOCOL.md) | Verified scoped AEB result with externally retained raw evidence |
+| [`evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md`](evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md) | Verified scoped AEB result against exact Trafilatura 2.1.0 |
+| [`evidence/aeb-article-body-4dd1755-public/PROTOCOL.md`](evidence/aeb-article-body-4dd1755-public/PROTOCOL.md) | Verified dated AEB result against Trafilatura 2.0.0 |
 | [`evidence/native-filter-stack-95b3bbe-public/PROTOCOL.md`](evidence/native-filter-stack-95b3bbe-public/PROTOCOL.md) | Historical public-only implementation A/B; raw bundle unavailable |
 
 The public records contain no private cloud, registry, deployment, traffic, or

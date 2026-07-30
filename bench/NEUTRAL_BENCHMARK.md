@@ -149,67 +149,31 @@ It is a closed-loop bounded-worker microbenchmark, not an HTTP-service or
 Internet throughput benchmark. Static HTTP, browser rendering, and live-network
 capacity must be measured separately.
 
-## Current clean public validation
+## Evidence status
 
-The full 2026-07-29 run used clean public source revision
-`4252a0b71a0a2157194d3466445b70bb373d73b6`, the production asynchronous entry
-point, two workers, five warmup pages, and 10,000 paired-bootstrap replicates:
+The current registered result is the clean public
+[`73b0297` evidence record](evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md).
+It used all 181 pages, the production asynchronous entry point, two workers,
+five warm-ups, and 10,000 paired-bootstrap replicates:
 
-| Mode | Precision | Recall | F1 | pages/s | p50 | p95 | errors |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| async | 0.955147 | 0.989721 | 0.972127 | 137.844 | 12.933 ms | 26.488 ms | 0 |
+| System | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: |
+| Clusy | 0.955147 | 0.989721 | 0.972127 |
+| Trafilatura 2.1.0 | 0.938372 | 0.977519 | 0.957546 |
 
-The candidate is +0.002172 F1 above the pinned `rs_trafilatura` prediction,
-with a paired-bootstrap 95% interval of [0, +0.006589], win probability
-0.6349, loss probability 0, and equality probability 0.3651. Versus
-Trafilatura 2.0, ΔF1 is +0.014624 with a paired-bootstrap 95% interval of
-[+0.005346, +0.025342] and win probability 0.9995. Peak process RSS was
-264,536,064 bytes.
+The paired F1 delta is `+0.014581`, with a 95% interval of
+`[+0.005547, +0.025336]` and win fraction `0.9996`. Candidate local throughput
+was `152.71` pages/s, with p50/p95 latency of `12.00/24.05` ms and zero errors.
+These performance values cover only the recorded in-memory Apple M4 Pro
+extraction boundary.
 
-The only changed prediction relative to the earlier clean public run is a page
-that exercised overlapping wrapper and descendant roots in temporary JSON-LD
-DOM serialization; the other 180 prediction records are byte-identical. The
-generic fix filters selected roots by source ancestry before serialization. It
-does not collapse equal text from disjoint source nodes and contains no page,
-hostname, or benchmark-specific condition.
-
-The artifact directory is `bench/results/aeb/20260729T090959Z` (ignored by
-Git). Its `manifest.json` SHA-256 is
-`7b014b56cd8d99dc8280bb2ac7b5f86e3c55972fb4c380289b9025fe13be29b0`;
-the report SHA-256 is
-`fc80a5840b81e9f871faa2a0f60c4829f9cf6fea3224bf520c1c0ac207df6b3f`.
-The harness verified clean, stable public source before and after execution and
-marked the complete result `CLAIMABLE` only within the AEB article-body scope.
-Throughput is an in-memory extractor result on an Apple M4 Pro and is not a
-live-network crawling claim.
-
-For historical context, clean public commit `c3ae00d` and clean private
-revision `10ff0c1` both scored F1 0.969955 before this fix, at 133.33 and
-157.205 pages/s respectively. The local throughput difference between runs is
-not a quality or service-capacity comparison.
-
-The retained private pre-fix V2 artifact identifier is
-`bench/results/aeb/20260729T000138Z`; its `manifest.json` SHA-256 is
-`bcd55239efd34908c300aa062ea5272d1cb62f4c78207eb6ab562f5cdaa381da`.
-
-A post-run SHA-256 audit compared the private artifact's 49 recorded source
-files with public `837ddda`: 44 matched and none was missing. The suite runner,
-core extraction implementation, native algorithm sources, Cargo files, and
-`uv.lock` matched byte-for-byte. The five differences were `app/config.py`,
-`app/main.py`, `app/services/renderer.py`, `native/pyproject.toml`, and
-`pyproject.toml`; they comprise OSS configuration, comments, and package
-metadata, and the only executable delta is an adaptive-profile page-type
-validator that this `article_body` run did not exercise. The full snapshots are
-therefore not byte-identical, and the recorded native binary was not reproduced
-from `837ddda`. Treat the private result as source-audited evidence for the
-exercised extraction path, not as a run of the OSS commit.
-### Trafilatura 2.1.0 comparison track
-
-The exact Trafilatura `2.1.0` replay has no registered public result yet. A
-formal number may be added only after this harness is committed cleanly, all
-adversarial and repository gates pass, and a complete source-bound OSS
-artifact is retained. Private-repository or diagnostic output must not be
-copied into public README claims.
+The retained raw artifact manifest SHA-256 is
+`a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02`;
+the archive SHA-256 is
+`8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b`.
+The older
+[`4dd1755` record](evidence/aeb-article-body-4dd1755-public/PROTOCOL.md)
+remains valid for its dated Trafilatura 2.0 comparison.
 
 ## Artifacts and publication rules
 

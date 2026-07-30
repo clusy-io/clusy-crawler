@@ -1,0 +1,115 @@
+{
+  "claim_binding": {
+    "id": "aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30",
+    "kind": "benchmark_result",
+    "protocol_sha256": "5da03fcc7c05d03228635af1c0f05f70829d23c5a379e14f7d1416604781b155",
+    "raw_archive_sha256": "8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b",
+    "raw_manifest_sha256": "a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02",
+    "recorded_at_utc": "2026-07-30T22:58:52Z",
+    "scope": {
+      "comparators": [
+        {
+          "name": "Trafilatura",
+          "version": "2.1.0"
+        },
+        {
+          "name": "Trafilatura",
+          "version": "2.0.0"
+        },
+        {
+          "name": "rs-trafilatura",
+          "version": "9261e08"
+        }
+      ],
+      "dataset": "Article Extraction Benchmark",
+      "dataset_revision": "4a3bc979f76c0df73cb95fe272e2fc1b96f9f010",
+      "dataset_sha256": "512e9a9498912047a966e22f47302e849dfa45dca1f555d97588317dac7e5a3d",
+      "execution_boundary": "in-memory decoded HTML to production ExtractionResult; closed-loop concurrency 2",
+      "limitations": [
+        "Article-body extraction only; not crawling, rendering, or general-web evaluation",
+        "The public benchmark fixtures were fetched with JavaScript disabled",
+        "Throughput is local Apple M4 Pro extraction throughput, not HTTP-service throughput",
+        "The result is bound to the recorded source commit and does not establish current deployment state",
+        "The point-score lead over rs-trafilatura is not statistically conclusive under the paired interval"
+      ],
+      "output_contract": "exact production article_body output with identity prediction transform and the pinned official evaluator",
+      "pages": 181,
+      "profile": "article_body",
+      "split": "full",
+      "task": "article-body extraction",
+      "vendors": [
+        "Clusy"
+      ]
+    },
+    "source": {
+      "clean": true,
+      "commit": "73b02974b4cf2aab0764922cf7ac664e0f3bc36f",
+      "repository": "clusy-io/clusy-crawler",
+      "runtime_source_sha256": "91890c92612dc1f74c143196b234ced9f546c396155daafd816113b4051d95a5",
+      "tree": "9fb2f1150a4082e7bd905bfc406ab11520da0153"
+    },
+    "status": "Verified"
+  },
+  "comparator": {
+    "call": "trafilatura.extract(html, include_comments=False)",
+    "environment_manifest_sha256": "fa522352d9e0369dbd1e17794adb09c9e47b9f316f30a6ef6971dc1221eb391f",
+    "input_inventory_sha256": "1c9833287ef2ee3bf3d9d948dbec300f867316e71815c003640d57e7567a04e9",
+    "packages": 17,
+    "requirements_lock_sha256": "68b1fe778be9ec1d65ed930f1b3e57e15d195cce5b9c4b87fae6df3cb22d9d5f",
+    "site_files": 2632,
+    "trafilatura_version": "2.1.0",
+    "trafilatura_wheel_sha256": "0eded5207a806445ddebbe36eae30b9035fe6a2f233c36f6fe82663fca8b9d30",
+    "worker_schema": "clusy.aeb.current-oss.worker-result.v2",
+    "worker_sha256": "12fa9f0cde9b89b7c4a77cd4546ac5b31ae5155339388b90db0f965fc5de2f42"
+  },
+  "dataset": {
+    "commit": "4a3bc979f76c0df73cb95fe272e2fc1b96f9f010",
+    "evaluator_sha256": "c01bf1cc7989700273ab1ba6d30fcdedc22fdb4301e7b4c1ac20635bb7632ea8",
+    "ground_truth_sha256": "512e9a9498912047a966e22f47302e849dfa45dca1f555d97588317dac7e5a3d",
+    "html_inventory_sha256": "1c9833287ef2ee3bf3d9d948dbec300f867316e71815c003640d57e7567a04e9",
+    "pages": 181,
+    "public_ground_truth": true,
+    "tree": "258fee1bb38bcb642afec48cb80e51bd1594c259"
+  },
+  "metrics": {
+    "errors": "0",
+    "f1": "0.9721267477263196",
+    "f1_delta_ci95_high_vs_trafilatura_2_1": "0.02533555028953053",
+    "f1_delta_ci95_low_vs_trafilatura_2_1": "0.0055474478846463775",
+    "f1_delta_vs_trafilatura_2_1": "0.014581090763431392",
+    "p50_latency_ms": "11.999624999589287",
+    "p95_latency_ms": "24.054708999756258",
+    "pages_per_second": "152.71126292964416",
+    "precision": "0.9551471924829309",
+    "recall": "0.9897209165735447",
+    "trafilatura_2_1_f1": "0.9575456569628882",
+    "win_fraction_vs_trafilatura_2_1": "0.9996"
+  },
+  "permissions": {
+    "scoped_sota": false,
+    "scoped_superiority": true,
+    "vendor_superiority": false
+  },
+  "protocol": {
+    "bootstrap_samples": 10000,
+    "concurrency": 2,
+    "page_order": "deterministic shuffle",
+    "prediction_transform": "identity-production-output-v1",
+    "seed": 20260727,
+    "warmup_pages": 5
+  },
+  "raw_evidence": {
+    "archive_sha256": "8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b",
+    "local_ignored_path": "bench/results/aeb/20260730T225852Z-trafilatura-2.1-formal",
+    "manifest_sha256": "a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02",
+    "report_sha256": "f0d8e5ab91bf40910d06860a9a8028ceea9947307f21f734eb636d997ccefc9b",
+    "retention": "external_retained"
+  },
+  "schema": "clusy.aeb.article-body.compact-evidence.v1",
+  "verification": {
+    "artifact_complete": true,
+    "claimable": true,
+    "comparator_verified": true,
+    "source_stable": true
+  }
+}

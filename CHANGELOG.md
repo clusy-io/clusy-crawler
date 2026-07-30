@@ -7,6 +7,10 @@ container digests remain the authoritative release identities.
 
 ## Unreleased
 
+No changes yet.
+
+## 0.2.0-beta.1 - 2026-07-30
+
 This branch contains the open-source crawler implementation and its
 self-hosting assets. Repository presence never implies that an operator has
 deployed a particular revision.

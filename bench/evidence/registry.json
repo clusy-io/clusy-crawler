@@ -143,6 +143,188 @@
     },
     {
       "artifact": {
+        "path": "bench/evidence/aeb-article-body-trafilatura-2-1-73b0297-public/report.json",
+        "raw_archive_sha256": "8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b",
+        "raw_manifest_sha256": "a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02",
+        "raw_retention": "external_retained",
+        "sha256": "7de33d9a1561437949d25a916835ce7deec6a43905355e6ddc64ce654246df35"
+      },
+      "id": "aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30",
+      "kind": "benchmark_result",
+      "metrics": [
+        {
+          "aggregation": "official full-corpus four-token-shingle F1",
+          "artifact_pointer": "/metrics/f1",
+          "display": "0.972127",
+          "format": ".6f",
+          "key": "f1",
+          "unit": "score",
+          "value": "0.9721267477263196"
+        },
+        {
+          "aggregation": "official full-corpus four-token-shingle precision",
+          "artifact_pointer": "/metrics/precision",
+          "display": "0.955147",
+          "format": ".6f",
+          "key": "precision",
+          "unit": "score",
+          "value": "0.9551471924829309"
+        },
+        {
+          "aggregation": "official full-corpus four-token-shingle recall",
+          "artifact_pointer": "/metrics/recall",
+          "display": "0.989721",
+          "format": ".6f",
+          "key": "recall",
+          "unit": "score",
+          "value": "0.9897209165735447"
+        },
+        {
+          "aggregation": "closed-loop in-memory extraction throughput at concurrency two",
+          "artifact_pointer": "/metrics/pages_per_second",
+          "display": "152.71",
+          "format": ".2f",
+          "key": "pages_per_second",
+          "unit": "pages_per_second",
+          "value": "152.71126292964416"
+        },
+        {
+          "aggregation": "official full-corpus Trafilatura 2.1.0 four-token-shingle F1",
+          "artifact_pointer": "/metrics/trafilatura_2_1_f1",
+          "display": "0.957546",
+          "format": ".6f",
+          "key": "trafilatura_2_1_f1",
+          "unit": "score",
+          "value": "0.9575456569628882"
+        },
+        {
+          "aggregation": "full-corpus F1 delta against exact Trafilatura 2.1.0",
+          "artifact_pointer": "/metrics/f1_delta_vs_trafilatura_2_1",
+          "display": "+0.014581",
+          "format": "+.6f",
+          "key": "f1_delta_vs_trafilatura_2_1",
+          "unit": "score",
+          "value": "0.014581090763431392"
+        },
+        {
+          "aggregation": "paired 95% bootstrap interval lower bound against exact Trafilatura 2.1.0",
+          "artifact_pointer": "/metrics/f1_delta_ci95_low_vs_trafilatura_2_1",
+          "display": "+0.005547",
+          "format": "+.6f",
+          "key": "f1_delta_ci95_low_vs_trafilatura_2_1",
+          "unit": "score",
+          "value": "0.0055474478846463775"
+        },
+        {
+          "aggregation": "paired 95% bootstrap interval upper bound against exact Trafilatura 2.1.0",
+          "artifact_pointer": "/metrics/f1_delta_ci95_high_vs_trafilatura_2_1",
+          "display": "+0.025336",
+          "format": "+.6f",
+          "key": "f1_delta_ci95_high_vs_trafilatura_2_1",
+          "unit": "score",
+          "value": "0.02533555028953053"
+        },
+        {
+          "aggregation": "paired page-bootstrap win fraction against exact Trafilatura 2.1.0",
+          "artifact_pointer": "/metrics/win_fraction_vs_trafilatura_2_1",
+          "display": "0.9996",
+          "format": ".4f",
+          "key": "win_fraction_vs_trafilatura_2_1",
+          "unit": "ratio",
+          "value": "0.9996"
+        },
+        {
+          "aggregation": "candidate per-page extraction latency p50",
+          "artifact_pointer": "/metrics/p50_latency_ms",
+          "display": "12.00",
+          "format": ".2f",
+          "key": "p50_latency_ms",
+          "unit": "milliseconds",
+          "value": "11.999624999589287"
+        },
+        {
+          "aggregation": "candidate per-page extraction latency p95",
+          "artifact_pointer": "/metrics/p95_latency_ms",
+          "display": "24.05",
+          "format": ".2f",
+          "key": "p95_latency_ms",
+          "unit": "milliseconds",
+          "value": "24.054708999756258"
+        }
+      ],
+      "permissions": {
+        "current_production": false,
+        "metric": true,
+        "scoped_sota": {
+          "allowed": false,
+          "artifact_pointer": null
+        },
+        "scoped_superiority": {
+          "allowed": true,
+          "artifact_pointer": "/permissions/scoped_superiority"
+        },
+        "vendor_superiority": {
+          "allowed": false,
+          "artifact_pointer": null
+        }
+      },
+      "protocol": {
+        "path": "bench/evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md",
+        "sha256": "5da03fcc7c05d03228635af1c0f05f70829d23c5a379e14f7d1416604781b155"
+      },
+      "recorded_at_utc": "2026-07-30T22:58:52Z",
+      "scope": {
+        "comparators": [
+          {
+            "name": "Trafilatura",
+            "version": "2.1.0"
+          },
+          {
+            "name": "Trafilatura",
+            "version": "2.0.0"
+          },
+          {
+            "name": "rs-trafilatura",
+            "version": "9261e08"
+          }
+        ],
+        "dataset": "Article Extraction Benchmark",
+        "dataset_revision": "4a3bc979f76c0df73cb95fe272e2fc1b96f9f010",
+        "dataset_sha256": "512e9a9498912047a966e22f47302e849dfa45dca1f555d97588317dac7e5a3d",
+        "execution_boundary": "in-memory decoded HTML to production ExtractionResult; closed-loop concurrency 2",
+        "limitations": [
+          "Article-body extraction only; not crawling, rendering, or general-web evaluation",
+          "The public benchmark fixtures were fetched with JavaScript disabled",
+          "Throughput is local Apple M4 Pro extraction throughput, not HTTP-service throughput",
+          "The result is bound to the recorded source commit and does not establish current deployment state",
+          "The point-score lead over rs-trafilatura is not statistically conclusive under the paired interval"
+        ],
+        "output_contract": "exact production article_body output with identity prediction transform and the pinned official evaluator",
+        "pages": 181,
+        "profile": "article_body",
+        "split": "full",
+        "task": "article-body extraction",
+        "vendors": [
+          "Clusy"
+        ]
+      },
+      "source": {
+        "clean": true,
+        "commit": "73b02974b4cf2aab0764922cf7ac664e0f3bc36f",
+        "repository": "clusy-io/clusy-crawler",
+        "runtime_source_sha256": "91890c92612dc1f74c143196b234ced9f546c396155daafd816113b4051d95a5",
+        "tree": "9fb2f1150a4082e7bd905bfc406ab11520da0153"
+      },
+      "status": "Verified",
+      "verification": {
+        "artifact_complete_pointer": "/verification/artifact_complete",
+        "binding_pointer": "/claim_binding",
+        "claimable_pointer": "/verification/claimable",
+        "source_stable_pointer": "/verification/source_stable"
+      }
+    },
+    {
+      "artifact": {
         "path": "bench/evidence/native-filter-stack-95b3bbe-public/report.json",
         "raw_archive_sha256": null,
         "raw_manifest_sha256": null,
