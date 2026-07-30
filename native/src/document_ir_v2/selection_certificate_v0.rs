@@ -26,6 +26,10 @@ const HARD_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 const HARD_MAX_CERTIFICATE_BYTES: usize = 2 * 1024 * 1024;
 const HARD_MAX_SELECTIONS: usize = 16_384;
 const HARD_MAX_ID_BYTES: usize = 256;
+const HARD_MAX_TYPED_ATOMS: usize = 1_024;
+const HARD_MAX_TYPED_CERTIFICATE_BYTES: usize = 8 * 1024 * 1024;
+const HARD_MAX_TYPED_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+const TYPED_OVERLAY_BATCH_CONTRACT_VERSION: &str = "typed-atomic-overlay-batch.v0";
 
 const ENTRY_KIND_ELEMENT: u8 = 1;
 const ENTRY_KIND_TEXT: u8 = 2;
@@ -252,6 +256,51 @@ impl NativeSelectionReplayV0 {
     }
 }
 
+/// One independently replayable, source-spanned typed structure.
+///
+/// The embedded bytes use the unchanged ``selection-certificate.v0`` wire
+/// format. This additive wrapper exists only for the unwired batch prototype.
+#[pyclass(frozen)]
+pub(super) struct NativeTypedAtomicOverlayItemV0 {
+    certificate: Vec<u8>,
+    #[pyo3(get)]
+    contract_version: &'static str,
+    #[pyo3(get)]
+    atom_kind: &'static str,
+    #[pyo3(get)]
+    selected_id: String,
+    #[pyo3(get)]
+    source_order: usize,
+    #[pyo3(get)]
+    source_start: usize,
+    #[pyo3(get)]
+    source_end: usize,
+    #[pyo3(get)]
+    source_span_digest: String,
+    #[pyo3(get)]
+    source_digest: String,
+    #[pyo3(get)]
+    graph_digest: String,
+    #[pyo3(get)]
+    output_digest: String,
+    #[pyo3(get)]
+    certificate_digest: String,
+    #[pyo3(get)]
+    markdown: String,
+    #[pyo3(get)]
+    verified: bool,
+    #[pyo3(get)]
+    deterministic: bool,
+}
+
+#[pymethods]
+impl NativeTypedAtomicOverlayItemV0 {
+    #[getter]
+    fn certificate<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, &self.certificate)
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (
     document,
@@ -303,6 +352,28 @@ fn create_local_atomic_selection_certificate_v0_native(
 }
 
 #[pyfunction]
+#[pyo3(signature = (
+    document,
+    selected_ids,
+    max_output_bytes=DEFAULT_MAX_OUTPUT_BYTES,
+))]
+fn create_typed_atomic_overlay_batch_v0_native(
+    py: Python<'_>,
+    document: PyRef<'_, NativeDocumentIRV2>,
+    selected_ids: &Bound<'_, PyList>,
+    max_output_bytes: usize,
+) -> PyResult<Vec<NativeTypedAtomicOverlayItemV0>> {
+    let output_limit = validate_output_limit(max_output_bytes).map_err(CertificateError::python)?;
+    let selected_ids = bounded_typed_atom_ids(selected_ids)?;
+    let owned = OwnedCertificateDocument::from_native(&document);
+    drop(document);
+    py.detach(move || {
+        create_typed_atomic_overlay_batch(&owned.view(), &selected_ids, output_limit)
+            .map_err(CertificateError::python)
+    })
+}
+
+#[pyfunction]
 fn decode_selection_certificate_v0_native(
     py: Python<'_>,
     encoded: &[u8],
@@ -314,6 +385,29 @@ fn decode_selection_certificate_v0_native(
     py.detach(move || {
         let certificate = decode_certificate(&encoded).map_err(CertificateError::python)?;
         native_certificate(encoded, &certificate).map_err(CertificateError::python)
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+    document,
+    encoded_certificates,
+    max_output_bytes=DEFAULT_MAX_OUTPUT_BYTES,
+))]
+fn verify_typed_atomic_overlay_batch_v0_native(
+    py: Python<'_>,
+    document: PyRef<'_, NativeDocumentIRV2>,
+    encoded_certificates: &Bound<'_, PyList>,
+    max_output_bytes: usize,
+) -> PyResult<Vec<NativeTypedAtomicOverlayItemV0>> {
+    let verifier_limit =
+        validate_output_limit(max_output_bytes).map_err(CertificateError::python)?;
+    let encoded_certificates = bounded_typed_certificates(encoded_certificates)?;
+    let owned = OwnedCertificateDocument::from_native(&document);
+    drop(document);
+    py.detach(move || {
+        verify_typed_atomic_overlay_batch(&owned.view(), &encoded_certificates, verifier_limit)
+            .map_err(CertificateError::python)
     })
 }
 
@@ -447,6 +541,7 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<NativeSelectionCertificateV0>()?;
     module.add_class::<NativeSelectionReceiptV0>()?;
     module.add_class::<NativeSelectionReplayV0>()?;
+    module.add_class::<NativeTypedAtomicOverlayItemV0>()?;
     module.add_function(wrap_pyfunction!(
         create_selection_certificate_v0_native,
         module
@@ -456,7 +551,15 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
+        create_typed_atomic_overlay_batch_v0_native,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
         decode_selection_certificate_v0_native,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        verify_typed_atomic_overlay_batch_v0_native,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
@@ -606,6 +709,304 @@ fn verify_decoded_and_replay_scoped(
         certificate,
         encoded: encoded.to_vec(),
         markdown,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct BatchInvariants {
+    source_digest: [u8; 32],
+    graph_digest: [u8; 32],
+}
+
+fn typed_atomic_overlay_invariants(
+    document: &CertificateDocument<'_>,
+) -> CertificateResult<BatchInvariants> {
+    validate_document_scoped(document, ValidationScope::FullDocument)?;
+    Ok(BatchInvariants {
+        source_digest: source_digest_v0(document.source.as_bytes()),
+        graph_digest: graph_digest(document)?,
+    })
+}
+
+fn create_typed_atomic_overlay_batch(
+    document: &CertificateDocument<'_>,
+    selected_ids: &[String],
+    max_output_bytes: usize,
+) -> CertificateResult<Vec<NativeTypedAtomicOverlayItemV0>> {
+    validate_typed_batch_shape(selected_ids.len())?;
+    let invariants = typed_atomic_overlay_invariants(document)?;
+    let mut items = Vec::with_capacity(selected_ids.len());
+    let mut previous_order = None;
+    let mut previous_source_end = None;
+    let mut seen: HashSet<String> = HashSet::with_capacity(selected_ids.len());
+    let mut total_certificate_bytes = 0usize;
+    let mut total_output_bytes = 0usize;
+
+    for selected_id in selected_ids {
+        if !seen.insert(selected_id.clone()) {
+            return Err(CertificateError::new(
+                "typed overlay batch contains a duplicate selection ID",
+            ));
+        }
+        let (atom_kind, entry) = typed_atomic_entry(document, selected_id)?;
+        validate_typed_batch_order(&entry, previous_order, previous_source_end)?;
+        let markdown = render_selection(
+            document,
+            std::slice::from_ref(selected_id),
+            max_output_bytes,
+        )?;
+        total_output_bytes = checked_typed_batch_bytes(
+            total_output_bytes,
+            markdown.len(),
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+            "typed overlay outputs exceed the aggregate byte limit",
+        )?;
+        let certificate = DecodedCertificate {
+            scope: ValidationScope::FullDocument,
+            source_digest: invariants.source_digest,
+            graph_digest: invariants.graph_digest,
+            output_digest: output_digest_v0(markdown.as_bytes()),
+            output_bytes: u64_from_usize(markdown.len())?,
+            max_output_bytes: u64_from_usize(max_output_bytes)?,
+            entries: vec![entry.clone()],
+        };
+        let encoded = encode_certificate(&certificate)?;
+        if decode_certificate(&encoded)? != certificate {
+            return Err(CertificateError::new(
+                "typed overlay certificate did not round-trip canonically",
+            ));
+        }
+        total_certificate_bytes = checked_typed_batch_bytes(
+            total_certificate_bytes,
+            encoded.len(),
+            HARD_MAX_TYPED_CERTIFICATE_BYTES,
+            "typed overlay certificates exceed the aggregate byte limit",
+        )?;
+        let next_order = entry.order;
+        let next_source_end = entry.source_end;
+        items.push(typed_atomic_item(
+            document,
+            atom_kind,
+            entry,
+            certificate,
+            encoded,
+            markdown,
+        )?);
+        previous_order = Some(next_order);
+        previous_source_end = Some(next_source_end);
+    }
+    Ok(items)
+}
+
+fn verify_typed_atomic_overlay_batch(
+    document: &CertificateDocument<'_>,
+    encoded_certificates: &[Vec<u8>],
+    verifier_output_limit: usize,
+) -> CertificateResult<Vec<NativeTypedAtomicOverlayItemV0>> {
+    validate_typed_batch_shape(encoded_certificates.len())?;
+    let invariants = typed_atomic_overlay_invariants(document)?;
+    let mut items = Vec::with_capacity(encoded_certificates.len());
+    let mut previous_order = None;
+    let mut previous_source_end = None;
+    let mut seen: HashSet<String> = HashSet::with_capacity(encoded_certificates.len());
+    let mut total_output_bytes = 0usize;
+
+    for encoded in encoded_certificates {
+        let certificate = decode_certificate(encoded)?;
+        if certificate.source_digest != invariants.source_digest {
+            return Err(CertificateError::new("source digest mismatch"));
+        }
+        if certificate.graph_digest != invariants.graph_digest {
+            return Err(CertificateError::new("graph digest mismatch"));
+        }
+        if certificate.entries.len() != 1 {
+            return Err(CertificateError::new(
+                "typed overlay certificate must select exactly one atom",
+            ));
+        }
+        let encoded_again = encode_certificate(&certificate)?;
+        if encoded_again != *encoded {
+            return Err(CertificateError::new(
+                "typed overlay certificate is not canonical",
+            ));
+        }
+        let entry = certificate
+            .entries
+            .first()
+            .cloned()
+            .ok_or_else(|| CertificateError::new("typed overlay entry is unavailable"))?;
+        if !seen.insert(entry.id.clone()) {
+            return Err(CertificateError::new(
+                "typed overlay batch contains a duplicate selection ID",
+            ));
+        }
+        let (atom_kind, expected_entry) = typed_atomic_entry(document, &entry.id)?;
+        if entry != expected_entry {
+            return Err(CertificateError::new(
+                "selection ID, event order, or source span mismatch",
+            ));
+        }
+        validate_typed_batch_order(&entry, previous_order, previous_source_end)?;
+        let certificate_limit = usize_from_u64(certificate.max_output_bytes)?;
+        let effective_limit = certificate_limit.min(verifier_output_limit);
+        let markdown =
+            render_selection(document, std::slice::from_ref(&entry.id), effective_limit)?;
+        total_output_bytes = checked_typed_batch_bytes(
+            total_output_bytes,
+            markdown.len(),
+            HARD_MAX_TYPED_OUTPUT_BYTES,
+            "typed overlay outputs exceed the aggregate byte limit",
+        )?;
+        if u64_from_usize(markdown.len())? != certificate.output_bytes {
+            return Err(CertificateError::new("serialized output length mismatch"));
+        }
+        if output_digest_v0(markdown.as_bytes()) != certificate.output_digest {
+            return Err(CertificateError::new("serialized output digest mismatch"));
+        }
+        previous_order = Some(entry.order);
+        previous_source_end = Some(entry.source_end);
+        items.push(typed_atomic_item(
+            document,
+            atom_kind,
+            entry,
+            certificate,
+            encoded.clone(),
+            markdown,
+        )?);
+    }
+    Ok(items)
+}
+
+fn checked_typed_batch_bytes(
+    current: usize,
+    additional: usize,
+    maximum: usize,
+    message: &'static str,
+) -> CertificateResult<usize> {
+    let next = current
+        .checked_add(additional)
+        .ok_or_else(|| CertificateError::new(message))?;
+    if next > maximum {
+        return Err(CertificateError::new(message));
+    }
+    Ok(next)
+}
+
+fn validate_typed_batch_shape(item_count: usize) -> CertificateResult<()> {
+    if item_count == 0 {
+        return Err(CertificateError::new(
+            "typed overlay batch must not be empty",
+        ));
+    }
+    if item_count > HARD_MAX_TYPED_ATOMS {
+        return Err(CertificateError::new(
+            "typed overlay batch contains too many atoms",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_typed_batch_order(
+    entry: &SelectionEntry,
+    previous_order: Option<u64>,
+    previous_source_end: Option<u64>,
+) -> CertificateResult<()> {
+    if previous_order.is_some_and(|previous| entry.order <= previous) {
+        return Err(CertificateError::new(
+            "typed overlay atoms are not in strict event order",
+        ));
+    }
+    if previous_source_end.is_some_and(|previous| entry.source_start < previous) {
+        return Err(CertificateError::new(
+            "typed overlay source spans overlap or are out of order",
+        ));
+    }
+    Ok(())
+}
+
+fn typed_atomic_entry(
+    document: &CertificateDocument<'_>,
+    selected_id: &str,
+) -> CertificateResult<(&'static str, SelectionEntry)> {
+    validate_id(selected_id)?;
+    let graph = document.graph;
+    let element_index = graph
+        .element_by_id
+        .get(selected_id)
+        .copied()
+        .ok_or_else(|| CertificateError::new("unknown typed atom selection ID"))?;
+    let element = graph
+        .elements
+        .get(element_index)
+        .ok_or_else(|| CertificateError::new("typed atom element is out of bounds"))?;
+    let atom_kind = match element.exposed.tag.as_str() {
+        "pre" | "code" => "code",
+        "table" => "table",
+        "ul" | "ol" | "dl" => "list",
+        tag if is_math_element(tag, &element.attrs) => "math",
+        _ => {
+            return Err(CertificateError::new(
+                "typed overlay supports only code, table, list, and math roots",
+            ));
+        }
+    };
+    if outermost_atomic_ancestor(graph, EventRef::Element(element_index)) != Some(element_index) {
+        return Err(CertificateError::new(
+            "typed overlay atom is nested in another atomic structure",
+        ));
+    }
+    let (kind, source_start, source_end) =
+        validate_selected_event(document, EventRef::Element(element_index))?;
+    if kind != SelectionKind::Element {
+        return Err(CertificateError::new(
+            "typed overlay atom must be an element selection",
+        ));
+    }
+    Ok((
+        atom_kind,
+        SelectionEntry {
+            kind,
+            id: selected_id.to_owned(),
+            order: u64_from_usize(element.exposed.order)?,
+            source_start: u64_from_usize(source_start)?,
+            source_end: u64_from_usize(source_end)?,
+        },
+    ))
+}
+
+fn typed_atomic_item(
+    document: &CertificateDocument<'_>,
+    atom_kind: &'static str,
+    entry: SelectionEntry,
+    certificate: DecodedCertificate,
+    encoded: Vec<u8>,
+    markdown: String,
+) -> CertificateResult<NativeTypedAtomicOverlayItemV0> {
+    let source_start = usize_from_u64(entry.source_start)?;
+    let source_end = usize_from_u64(entry.source_end)?;
+    let source_fragment = document
+        .source
+        .get(source_start..source_end)
+        .ok_or_else(|| CertificateError::new("typed atom source span is not UTF-8 aligned"))?;
+    Ok(NativeTypedAtomicOverlayItemV0 {
+        certificate_digest: hex_digest(&certificate_digest_v0(&encoded)),
+        certificate: encoded,
+        contract_version: TYPED_OVERLAY_BATCH_CONTRACT_VERSION,
+        atom_kind,
+        selected_id: entry.id,
+        source_order: usize_from_u64(entry.order)?,
+        source_start,
+        source_end,
+        source_span_digest: hex_digest(&framed_digest(
+            b"clusy-typed-atomic-overlay-source-span-v0",
+            source_fragment.as_bytes(),
+        )),
+        source_digest: hex_digest(&certificate.source_digest),
+        graph_digest: hex_digest(&certificate.graph_digest),
+        output_digest: hex_digest(&certificate.output_digest),
+        markdown,
+        verified: true,
+        deterministic: true,
     })
 }
 
@@ -1473,6 +1874,40 @@ fn bounded_selected_ids(selected_ids: &Bound<'_, PyList>) -> PyResult<Vec<String
         let value = value.to_str()?;
         validate_id(value).map_err(CertificateError::python)?;
         output.push(value.to_owned());
+    }
+    Ok(output)
+}
+
+fn bounded_typed_atom_ids(selected_ids: &Bound<'_, PyList>) -> PyResult<Vec<String>> {
+    validate_typed_batch_shape(selected_ids.len()).map_err(CertificateError::python)?;
+    let output = bounded_selected_ids(selected_ids)?;
+    Ok(output)
+}
+
+fn bounded_typed_certificates(encoded_certificates: &Bound<'_, PyList>) -> PyResult<Vec<Vec<u8>>> {
+    validate_typed_batch_shape(encoded_certificates.len()).map_err(CertificateError::python)?;
+    let mut output = Vec::with_capacity(encoded_certificates.len());
+    let mut total_bytes = 0usize;
+    for value in encoded_certificates.iter() {
+        let value = value.cast::<PyBytes>().map_err(|_| {
+            CertificateError::new("typed overlay certificate must be bytes").python()
+        })?;
+        let encoded = value.as_bytes();
+        if encoded.is_empty() || encoded.len() > HARD_MAX_CERTIFICATE_BYTES {
+            return Err(
+                CertificateError::new("typed overlay certificate byte length is invalid").python(),
+            );
+        }
+        total_bytes = total_bytes.checked_add(encoded.len()).ok_or_else(|| {
+            CertificateError::new("typed overlay certificate total byte length overflow").python()
+        })?;
+        if total_bytes > HARD_MAX_TYPED_CERTIFICATE_BYTES {
+            return Err(CertificateError::new(
+                "typed overlay certificates exceed the aggregate byte limit",
+            )
+            .python());
+        }
+        output.push(encoded.to_vec());
     }
     Ok(output)
 }
@@ -3842,5 +4277,63 @@ mod tests {
             first.certificate.output_digest,
             second.certificate.output_digest
         );
+    }
+
+    #[test]
+    fn typed_atomic_batch_matches_individual_certificates_and_rejects_tamper() {
+        let result = build(
+            "<!doctype html><html><head><title>typed</title></head><body><main>\
+             <pre><code>value = 1\nprint(value)</code></pre>\
+             <table><tbody><tr><th>Name</th></tr><tr><td>Clusy</td></tr></tbody></table>\
+             <ol start=\"3\"><li>first</li><li>second</li></ol>\
+             <math display=\"block\"><semantics><mi>x</mi>\
+             <annotation encoding=\"application/x-tex\">x^2</annotation>\
+             </semantics></math></main></body></html>",
+        );
+        let ids = vec![
+            id_for_tag(&result, "pre"),
+            id_for_tag(&result, "table"),
+            id_for_tag(&result, "ol"),
+            id_for_tag(&result, "math"),
+        ];
+        let items = create_typed_atomic_overlay_batch(&view(&result), &ids, 4_096).unwrap();
+        assert_eq!(
+            items.iter().map(|item| item.atom_kind).collect::<Vec<_>>(),
+            vec!["code", "table", "list", "math"]
+        );
+
+        let mut encoded = Vec::new();
+        for (id, item) in ids.iter().zip(&items) {
+            let individual =
+                create_certificate(&view(&result), std::slice::from_ref(id), 4_096).unwrap();
+            let individual_encoded = encode_certificate(&individual).unwrap();
+            let individual_replay =
+                verify_and_replay(&view(&result), &individual_encoded, 4_096).unwrap();
+            assert_eq!(item.certificate, individual_encoded);
+            assert_eq!(item.markdown, individual_replay.markdown);
+            assert_eq!(
+                item.source_span_digest,
+                hex_digest(&framed_digest(
+                    b"clusy-typed-atomic-overlay-source-span-v0",
+                    result.source[item.source_start..item.source_end].as_bytes(),
+                ))
+            );
+            encoded.push(item.certificate.clone());
+        }
+
+        let replayed = verify_typed_atomic_overlay_batch(&view(&result), &encoded, 4_096).unwrap();
+        assert_eq!(
+            replayed
+                .iter()
+                .map(|item| (&item.certificate, &item.markdown))
+                .collect::<Vec<_>>(),
+            items
+                .iter()
+                .map(|item| (&item.certificate, &item.markdown))
+                .collect::<Vec<_>>()
+        );
+
+        encoded[2][12] ^= 1;
+        assert!(verify_typed_atomic_overlay_batch(&view(&result), &encoded, 4_096).is_err());
     }
 }

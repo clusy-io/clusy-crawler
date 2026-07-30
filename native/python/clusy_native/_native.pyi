@@ -208,6 +208,23 @@ class NativeSelectionReplayV0:
     markdown: Final[str]
     receipt: Final[NativeSelectionReceiptV0]
 
+class NativeTypedAtomicOverlayItemV0:
+    certificate: Final[bytes]
+    contract_version: Final[str]
+    atom_kind: Final[str]
+    selected_id: Final[str]
+    source_order: Final[int]
+    source_start: Final[int]
+    source_end: Final[int]
+    source_span_digest: Final[str]
+    source_digest: Final[str]
+    graph_digest: Final[str]
+    output_digest: Final[str]
+    certificate_digest: Final[str]
+    markdown: Final[str]
+    verified: Final[bool]
+    deterministic: Final[bool]
+
 class NativeDocumentIRV2:
     elements: Final[list[NativeIRElementV2]]
     text_runs: Final[list[NativeIRTextRunV2]]
@@ -295,9 +312,19 @@ def create_local_atomic_selection_certificate_v0_native(
     selected_ids: list[str],
     max_output_bytes: int = 4 * 1024 * 1024,
 ) -> NativeSelectionCertificateV0: ...
+def create_typed_atomic_overlay_batch_v0_native(
+    document: NativeDocumentIRV2,
+    selected_ids: list[str],
+    max_output_bytes: int = 4 * 1024 * 1024,
+) -> list[NativeTypedAtomicOverlayItemV0]: ...
 def decode_selection_certificate_v0_native(
     encoded: bytes,
 ) -> NativeSelectionCertificateV0: ...
+def verify_typed_atomic_overlay_batch_v0_native(
+    document: NativeDocumentIRV2,
+    encoded_certificates: list[bytes],
+    max_output_bytes: int = 4 * 1024 * 1024,
+) -> list[NativeTypedAtomicOverlayItemV0]: ...
 def verify_and_replay_selection_certificate_v0_native(
     document: NativeDocumentIRV2,
     encoded: bytes,
