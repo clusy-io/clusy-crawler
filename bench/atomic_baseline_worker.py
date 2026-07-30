@@ -7,8 +7,9 @@ import importlib
 import importlib.util
 import json
 import marshal
+import os
+import stat
 import sys
-import sysconfig
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -24,11 +25,12 @@ from claim_guard import (  # type: ignore[import-not-found] # noqa: E402
     write_canonical_stdout,
 )
 
-INPUT_SCHEMA = "clusy.atomic-overlay-claim-baseline-input.2"
-OUTPUT_SCHEMA = "clusy.atomic-overlay-frozen-baseline.2"
+INPUT_SCHEMA = "clusy.atomic-overlay-claim-baseline-input.3"
+OUTPUT_SCHEMA = "clusy.atomic-overlay-frozen-baseline.3"
 EXPECTED_RECORDS = 545
 EXTRACTION_PROFILE = "balanced"
 FIXED_CONCURRENCY = 1
+RUNTIME_SITE = Path("/opt/clusy-claim-runtime/lib/python3.12/site-packages")
 
 
 def _sha256_text(value: str) -> str:
@@ -44,24 +46,43 @@ def _valid_sha256(value: object) -> bool:
 
 
 def _activate_locked_runtime() -> tuple[str, ...]:
-    """Expose only the production image's observed package roots under ``-S``."""
+    """Expose one fixed copied-venv package root despite ``-I -S``.
 
-    candidates = {
-        value
-        for key, value in sysconfig.get_paths().items()
-        if key in {"platlib", "purelib"} and type(value) is str
-    }
-    roots = tuple(sorted(value for value in candidates if Path(value).is_dir()))
-    if not roots:
-        raise WorkerGuardError("production dependency roots are unavailable")
-    for value in reversed(roots):
-        sys.path.insert(1, value)
+    CPython 3.12 intentionally does not activate ``pyvenv.cfg`` when ``-S`` is
+    present.  The claim protocol therefore names and validates the only allowed
+    venv package root instead of consulting ``sysconfig`` from the unactivated
+    interpreter.
+    """
+
+    if sys.version_info[:2] != (3, 12):
+        raise WorkerGuardError("claim runtime requires exact CPython 3.12")
+    components = (
+        Path("/opt/clusy-claim-runtime"),
+        Path("/opt/clusy-claim-runtime/lib"),
+        Path("/opt/clusy-claim-runtime/lib/python3.12"),
+        RUNTIME_SITE,
+    )
+    try:
+        metadata = tuple(os.lstat(path) for path in components)
+    except OSError as error:
+        raise WorkerGuardError(
+            "fixed production dependency root is unavailable"
+        ) from error
+    if any(
+        not stat.S_ISDIR(item.st_mode) or stat.S_ISLNK(item.st_mode)
+        for item in metadata
+    ):
+        raise WorkerGuardError("fixed production dependency root is not canonical")
+    runtime_site = str(RUNTIME_SITE)
+    if runtime_site in sys.path:
+        raise WorkerGuardError("fixed production dependency root was preloaded")
+    sys.path.insert(1, runtime_site)
     for forbidden in ("bench", "datasets", "evaluate", "webmainbench"):
         if importlib.util.find_spec(forbidden) is not None:
             raise WorkerGuardError(
                 f"benchmark/evaluator module is importable in baseline worker: {forbidden}"
             )
-    return roots
+    return (runtime_site,)
 
 
 def _validate_capsule_manifest(value: object) -> dict[str, Any]:

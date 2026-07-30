@@ -7,6 +7,7 @@ on stdin. It emits one frozen decision artifact on stdout.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib
 import sys
@@ -25,11 +26,13 @@ from claim_guard import (  # type: ignore[import-not-found] # noqa: E402
     write_canonical_stdout,
 )
 
-INPUT_SCHEMA = "clusy.atomic-overlay-claim-decision-input.2"
-OUTPUT_SCHEMA = "clusy.atomic-overlay-frozen-decisions.2"
+INPUT_SCHEMA = "clusy.atomic-overlay-claim-decision-input.3"
+OUTPUT_SCHEMA = "clusy.atomic-overlay-frozen-decisions.3"
 EXPECTED_RECORDS = 545
 FIXED_CONCURRENCY = 4
 FIXED_WALL_SECONDS = 180.0
+CLAIM_MAX_CERTIFICATE_BYTES = 64 * 1024
+CLAIM_MAX_TOTAL_CERTIFICATE_BYTES = 256 * 1024
 
 
 def _sha256_text(value: str) -> str:
@@ -94,21 +97,131 @@ def _validate_records(value: object) -> tuple[dict[str, Any], ...]:
     return tuple(records)
 
 
-def _proposal_record(proposal: Any) -> dict[str, Any]:
+def _accepted_replacements(
+    decision: Any,
+    candidate_markdown: str,
+) -> dict[str, str]:
+    """Derive every accepted replacement from the final output and exact spans."""
+
+    candidate = candidate_markdown.encode("utf-8")
+    output = decision.output_markdown.encode("utf-8")
+    accepted = sorted(
+        (proposal for proposal in decision.proposals if proposal.accepted),
+        key=lambda proposal: (
+            proposal.candidate_span_start,
+            proposal.candidate_span_end,
+        ),
+    )
+    replacements: dict[str, str] = {}
+    candidate_cursor = 0
+    output_cursor = 0
+    for proposal in accepted:
+        start = proposal.candidate_span_start
+        end = proposal.candidate_span_end
+        if (
+            type(start) is not int
+            or type(end) is not int
+            or start < candidate_cursor
+            or end <= start
+            or end > len(candidate)
+            or type(proposal.replacement_bytes) is not int
+            or proposal.replacement_bytes <= 0
+        ):
+            raise WorkerGuardError("accepted proposal span is not replayable")
+        unchanged = candidate[candidate_cursor:start]
+        unchanged_end = output_cursor + len(unchanged)
+        if output[output_cursor:unchanged_end] != unchanged:
+            raise WorkerGuardError("accepted output prefix is not byte-identical")
+        replacement_end = unchanged_end + proposal.replacement_bytes
+        replacement = output[unchanged_end:replacement_end]
+        if len(replacement) != proposal.replacement_bytes:
+            raise WorkerGuardError("accepted replacement length is inconsistent")
+        try:
+            replacements[proposal.proposal_id] = replacement.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise WorkerGuardError("accepted replacement is not UTF-8") from error
+        candidate_cursor = end
+        output_cursor = replacement_end
+    if output[output_cursor:] != candidate[candidate_cursor:]:
+        raise WorkerGuardError("accepted output suffix is not byte-identical")
+    if len(replacements) != len(accepted):
+        raise WorkerGuardError("accepted proposal IDs are not unique")
+    return replacements
+
+
+def _certificate_markdown(
+    html: str,
+    proposals: tuple[Any, ...],
+    *,
+    overlay_module: Any,
+    config: Any,
+) -> dict[str, str]:
+    accepted = tuple(proposal for proposal in proposals if proposal.accepted)
+    if not accepted:
+        return {}
+    limits = overlay_module.DocumentIRV2Limits(
+        max_input_bytes=config.max_source_bytes,
+        max_nodes=200_000,
+        max_elements=100_000,
+        max_text_runs=200_000,
+        max_depth=256,
+        max_text_run_bytes=min(config.max_source_bytes, 256 * 1024),
+        max_total_text_bytes=min(8 * 1024 * 1024, config.max_source_bytes * 2),
+        max_math_bytes=min(config.max_source_bytes, 256 * 1024),
+        max_table_columns=config.max_table_columns,
+    )
+    document = overlay_module.extract_document_ir_v2(html, limits=limits)
+    output: dict[str, str] = {}
+    for proposal in accepted:
+        replay = overlay_module.verify_and_replay_local_atomic_selection_certificate_v0(
+            document,
+            proposal.certificate,
+            max_output_bytes=config.max_replacement_bytes,
+        )
+        markdown = replay.markdown
+        if type(markdown) is not str:
+            raise WorkerGuardError("certificate replay did not return exact Markdown")
+        output[proposal.proposal_id] = markdown
+    return output
+
+
+def _proposal_record(
+    proposal: Any,
+    *,
+    replacement_markdown: str | None,
+    certificate_markdown: str | None,
+) -> dict[str, Any]:
     return {
         "accepted": proposal.accepted,
         "atom_kind": proposal.atom_kind,
         "candidate_span_end": proposal.candidate_span_end,
         "candidate_span_start": proposal.candidate_span_start,
-        "certificate_bytes": len(proposal.certificate),
         "certificate_digest": proposal.certificate_digest,
+        "certificate_base64": base64.b64encode(proposal.certificate).decode("ascii"),
+        "certificate_markdown": certificate_markdown,
+        "config_digest": proposal.config_digest,
+        "digest_is_authentication": proposal.digest_is_authentication,
+        "graph_digest": proposal.graph_digest,
+        "growth_bytes": proposal.growth_bytes,
+        "input_bytes": proposal.input_bytes,
+        "input_digest": proposal.input_digest,
         "patch_digest": proposal.patch_digest,
         "proposal_id": proposal.proposal_id,
+        "proposed_output_bytes": proposal.proposed_output_bytes,
         "reason": proposal.reason,
+        "replacement_bytes": proposal.replacement_bytes,
         "replacement_digest": proposal.replacement_digest,
+        "replacement_markdown": replacement_markdown,
+        "schema_version": proposal.schema_version,
         "selected_id": proposal.selected_id,
+        "source_digest": proposal.source_digest,
+        "source_order": proposal.source_order,
+        "source_span_digest": proposal.source_span_digest,
         "source_span_end": proposal.source_span_end,
         "source_span_start": proposal.source_span_start,
+        "structural_score_after": proposal.structural_score_after,
+        "structural_score_before": proposal.structural_score_before,
+        "visible_token_count": proposal.visible_token_count,
         "visible_token_digest": proposal.visible_token_digest,
     }
 
@@ -121,6 +234,7 @@ def _observe(
     proposer: Any,
     verifier: Any,
     monotonic_ns: Any,
+    overlay_module: Any,
 ) -> dict[str, Any]:
     started = monotonic_ns()
     decision = proposer(html, baseline_prediction, config=config)
@@ -144,15 +258,40 @@ def _observe(
         or decision.visible_tokens_identical is not True
     ):
         raise WorkerGuardError("decision/replay integrity failed")
+    replacements = _accepted_replacements(decision, baseline_prediction)
+    certificate_markdown = _certificate_markdown(
+        html,
+        decision.proposals,
+        overlay_module=overlay_module,
+        config=config,
+    )
+    accepted_ids = {
+        proposal.proposal_id for proposal in decision.proposals if proposal.accepted
+    }
+    if set(replacements) != accepted_ids or set(certificate_markdown) != accepted_ids:
+        raise WorkerGuardError("accepted proposal payload inventory mismatch")
     return {
         "accepted": decision.accepted,
+        "applied_proposal_ids": list(decision.applied_proposal_ids),
         "candidate_markdown_sha256": _sha256_text(decision.candidate_markdown),
         "config_digest": decision.config_digest,
         "decision_digest": decision.decision_digest,
+        "digest_is_authentication": decision.digest_is_authentication,
+        "enabled": decision.enabled,
+        "growth_bytes": decision.growth_bytes,
+        "input_bytes": decision.input_bytes,
         "input_digest": decision.input_digest,
+        "output_bytes": decision.output_bytes,
         "output_digest": decision.output_digest,
         "output_markdown": decision.output_markdown,
-        "proposals": [_proposal_record(item) for item in decision.proposals],
+        "proposals": [
+            _proposal_record(
+                item,
+                replacement_markdown=replacements.get(item.proposal_id),
+                certificate_markdown=certificate_markdown.get(item.proposal_id),
+            )
+            for item in decision.proposals
+        ],
         "reason": decision.reason,
         "replay": {
             "decision_digest": replay.decision_digest,
@@ -160,6 +299,8 @@ def _observe(
             "reason": replay.reason,
             "verified": replay.verified,
         },
+        "schema_version": decision.schema_version,
+        "source_digest": decision.source_digest,
         "timing": {
             "decision_elapsed_ns": decision_elapsed_ns,
             "replay_elapsed_ns": replay_elapsed_ns,
@@ -213,7 +354,11 @@ def main() -> int:
         != capsule["native_source_digest"]
     ):
         raise WorkerGuardError("executed Python/native bytes disagree with capsule pins")
-    config = overlay_module.AtomicStructureOverlayV0Config(enabled=True)
+    config = overlay_module.AtomicStructureOverlayV0Config(
+        enabled=True,
+        max_certificate_bytes=CLAIM_MAX_CERTIFICATE_BYTES,
+        max_total_certificate_bytes=CLAIM_MAX_TOTAL_CERTIFICATE_BYTES,
+    )
     config_values = {
         field.name: object.__getattribute__(config, field.name)
         for field in fields(config)
@@ -235,6 +380,7 @@ def main() -> int:
             proposer=proposer,
             verifier=verifier,
             monotonic_ns=monotonic_ns,
+            overlay_module=overlay_module,
         )
         return {
             "baseline_prediction_sha256": _sha256_text(

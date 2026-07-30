@@ -30,6 +30,13 @@ if TYPE_CHECKING:
 CLAIMABLE_CONCURRENCY = 4
 CLAIMABLE_WALL_SECONDS = 180.0
 CLAIMABLE_RUNTIME_ROOT = Path("/opt/clusy-claim-runtime")
+CLAIMABLE_PYTHON_VERSION = (3, 12)
+CLAIMABLE_RUNTIME_SITE = (
+    CLAIMABLE_RUNTIME_ROOT
+    / "lib"
+    / f"python{CLAIMABLE_PYTHON_VERSION[0]}.{CLAIMABLE_PYTHON_VERSION[1]}"
+    / "site-packages"
+)
 _MAX_WORKER_STDERR_BYTES = 1024 * 1024
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _BASE_ENVIRONMENT = MappingProxyType(
@@ -51,7 +58,7 @@ _BASE_ENVIRONMENT = MappingProxyType(
         "OPENAI_API_KEY": "",
         "PARALLEL_EXTRACTION_ENABLED": "false",
         "PATH": "/usr/bin:/bin",
-        "PYTHONHASHSEED": "0",
+        "PWD": "/capsule",
         "PYTHONNOUSERSITE": "1",
         "QUALITY_EXTRACTION_API_KEY": "",
         "QUALITY_EXTRACTION_BASE_URL": "",
@@ -64,6 +71,7 @@ import hashlib, json, os, socket, sys
 assert sys.flags.isolated == 1
 assert sys.flags.no_site == 1
 assert sys.flags.no_user_site == 1
+assert sys.version_info[:2] == (3, 12)
 assert "sitecustomize" not in sys.modules
 assert "usercustomize" not in sys.modules
 parent = int(os.environ["CLUSY_PARENT_NETNS_INODE"])
@@ -173,31 +181,32 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _runtime_paths() -> tuple[Path, Path, Path]:
+def _runtime_paths() -> tuple[Path, Path, Path, Path]:
     if platform.system() != "Linux":
         raise SandboxUnavailableError("claimable sandbox requires Linux")
     env_path = shutil.which("env", path="/usr/bin:/bin")
     bwrap_path = shutil.which("bwrap", path="/usr/bin:/bin")
     runtime_bin = CLAIMABLE_RUNTIME_ROOT / "bin"
     python_candidate = runtime_bin / "python3"
-    runtime_metadata: os.stat_result | None
-    bin_metadata: os.stat_result | None
-    python_metadata: os.stat_result | None
+    runtime_directories = (
+        CLAIMABLE_RUNTIME_ROOT,
+        runtime_bin,
+        CLAIMABLE_RUNTIME_ROOT / "lib",
+        CLAIMABLE_RUNTIME_SITE.parent,
+        CLAIMABLE_RUNTIME_SITE,
+    )
     try:
-        runtime_metadata = os.lstat(CLAIMABLE_RUNTIME_ROOT)
-        bin_metadata = os.lstat(runtime_bin)
+        directory_metadata = tuple(os.lstat(path) for path in runtime_directories)
         python_metadata = os.lstat(python_candidate)
     except OSError:
-        runtime_metadata = None
-        bin_metadata = None
+        directory_metadata = ()
         python_metadata = None
     copied_python = (
-        runtime_metadata is not None
-        and stat.S_ISDIR(runtime_metadata.st_mode)
-        and not stat.S_ISLNK(runtime_metadata.st_mode)
-        and bin_metadata is not None
-        and stat.S_ISDIR(bin_metadata.st_mode)
-        and not stat.S_ISLNK(bin_metadata.st_mode)
+        len(directory_metadata) == len(runtime_directories)
+        and all(
+            stat.S_ISDIR(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode)
+            for metadata in directory_metadata
+        )
         and python_metadata is not None
         and stat.S_ISREG(python_metadata.st_mode)
         and not stat.S_ISLNK(python_metadata.st_mode)
@@ -206,7 +215,8 @@ def _runtime_paths() -> tuple[Path, Path, Path]:
     python_path = str(python_candidate) if copied_python else None
     if not env_path or not bwrap_path or not python_path:
         raise SandboxUnavailableError(
-            "env, bwrap, and /opt/clusy-claim-runtime/bin/python3 are mandatory"
+            "env, bwrap, copied CPython 3.12, and its fixed site-packages "
+            "directory are mandatory"
         )
     paths = [Path(value) for value in (env_path, bwrap_path, python_path)]
     for index, path in enumerate(paths):
@@ -219,7 +229,7 @@ def _runtime_paths() -> tuple[Path, Path, Path]:
             if not resolved.is_file():
                 raise SandboxUnavailableError(f"runtime symlink is invalid: {path}")
             paths[index] = resolved
-    return paths[0], paths[1], paths[2]
+    return paths[0], paths[1], paths[2], CLAIMABLE_RUNTIME_SITE
 
 
 def _sealed_memfd(name: str, content: bytes) -> int:
@@ -355,7 +365,7 @@ def _run_once(
     stdin: bytes,
     timeout_seconds: float,
 ) -> tuple[subprocess.CompletedProcess[bytes], Mapping[str, str], tuple[Path, Path, Path]]:
-    env_path, bwrap_path, python_path = _runtime_paths()
+    env_path, bwrap_path, python_path, _ = _runtime_paths()
     parent_net_inode = os.stat("/proc/self/ns/net").st_ino
     normalized = {
         _canonical_capsule_path(name): content for name, content in capsule.items()

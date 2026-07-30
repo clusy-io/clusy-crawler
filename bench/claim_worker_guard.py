@@ -37,7 +37,7 @@ _EXPECTED_ENVIRONMENT = {
     "OPENAI_API_KEY": "",
     "PARALLEL_EXTRACTION_ENABLED": "false",
     "PATH": "/usr/bin:/bin",
-    "PYTHONHASHSEED": "0",
+    "PWD": "/capsule",
     "PYTHONNOUSERSITE": "1",
     "QUALITY_EXTRACTION_API_KEY": "",
     "QUALITY_EXTRACTION_BASE_URL": "",
@@ -98,6 +98,7 @@ def assert_fresh_interpreter() -> dict[str, Any]:
         or sys.flags.no_site != 1
         or sys.flags.no_user_site != 1
         or sys.dont_write_bytecode is not True
+        or sys.version_info[:2] != (3, 12)
     ):
         raise WorkerGuardError("worker requires python -I -S -B")
     forbidden_loaded = [
@@ -184,10 +185,14 @@ def assert_fresh_interpreter() -> dict[str, Any]:
             "executable_sha256": _sha256_file(Path(sys.executable)),
             "flags": {
                 "dont_write_bytecode": sys.dont_write_bytecode,
+                "hash_randomization": sys.flags.hash_randomization,
                 "isolated": sys.flags.isolated,
                 "no_site": sys.flags.no_site,
                 "no_user_site": sys.flags.no_user_site,
             },
+            "hash_determinism": (
+                "algorithmic ordering; interpreter hash randomization is allowed"
+            ),
             "version": sys.version,
         },
         "preloaded_forbidden_modules": [],

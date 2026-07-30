@@ -92,6 +92,12 @@ pinned dataset
 Baseline and decision workers:
 
 - start as fresh `python -I -S -B` interpreters under `env -i`;
+- require a copied CPython 3.12 executable;
+- give only the baseline worker the single fixed dependency root
+  `/opt/clusy-claim-runtime/lib/python3.12/site-packages`; it explicitly adds
+  that read-only path under `-S` instead of inferring it from `sysconfig`;
+- keep the decision worker capsule/standard-library/native-only, with no
+  `site-packages` path added;
 - run inside bubblewrap with a distinct network namespace and no non-loopback
   IPv4 or IPv6 route;
 - must fail observed IPv4 and IPv6 egress probes;
@@ -104,6 +110,13 @@ Baseline and decision workers:
   imported-module evidence;
 - bind exact executed Python files, the loaded native extension SHA-256, and
   the extension’s packaged native-source digest.
+
+The exact worker environment requires `PWD=/capsule`. Bubblewrap sets it when
+entering the capsule, and both the namespace probe and worker guard compare the
+complete environment rather than a subset. The protocol does not claim a
+fixed interpreter hash seed: `-I` ignores `PYTHONHASHSEED`. Output identity is
+instead independent of hash-table iteration, and fresh randomized-hash
+subprocess tests must remain byte-identical.
 
 If Linux user namespaces, bubblewrap, sealed memfds, read-only remounts, or the
 no-egress proof are unavailable, the launcher refuses claimability. macOS is
@@ -122,6 +135,8 @@ The decision protocol fixes:
 | Decision/replay wall budget | 180 s |
 | Input | unmodified raw HTML |
 | Pages | 545 |
+| Per-certificate bytes | 64 KiB |
+| Per-page certificate total | 256 KiB |
 
 There are no claim-mode CLI overrides. Alternate concurrency or budgets belong
 to the permanently nonclaimable legacy diagnostic runner.
@@ -148,11 +163,41 @@ use paired conservative accounting:
 - baseline and candidate success masks must match for every core metric;
 - text and formula must not regress.
 
-The scorer requires caller-supplied SHA-256 pins for both frozen artifacts. It
-reads and validates both through stable descriptors before importing the
-benchmark harness or touching labels. It then recomputes the raw-HTML
-projection hash from the pinned dataset, so a different 545-row projection
-cannot be substituted.
+The scorer requires caller-supplied SHA-256 pins for the raw-only projection
+and both frozen artifacts. Before importing the benchmark harness or touching
+labels, it reads all three through stable descriptors, closes every row and
+proposal schema, binds the local native replay primitive to the exact worker
+extension SHA-256 and packaged native-source digest, and refuses preloaded
+native modules, non-extension loaders, or replaced primitive functions. It
+locates the exact capsule-relative extension without importing its package,
+stable-reads and hashes those bytes, writes and rehashes a private read-only
+snapshot through link-refusing file primitives, and only then initializes the
+extension. The frozen replay layer has no fallback native import and accepts
+only the built-ins bound from that checked snapshot. It then reconstructs the
+bounded graph from each raw HTML row and independently recomputes:
+
+- raw source, baseline input, fixed config, source-span, certificate,
+  replacement, patch, proposal, visible-token, output, and decision digests;
+- every accepted byte patch and the complete candidate output;
+- the complete `pre`/`table` proposal inventory, local eligibility,
+  source/candidate uniqueness, exact candidate span, protected-region
+  exclusion, aggregate certificate budget, overlap handling, and global
+  decision;
+- certificate wire scope, source identity, selected ID/order/span, graph
+  digest, output length/digest, and canonical encoding against the
+  reconstructed raw-source graph.
+
+Code replacement is the authoritative raw-graph certificate replay exactly.
+Table replacement is derived from that replay’s canonical native table
+fragment, then rendered through the separately frozen GFM escaping contract.
+Serialized `certificate_markdown`, `replacement_markdown`, and
+`output_markdown` are equality diagnostics only; none supplies replay content.
+The scorer retains and scores only its derived output. Rejected proposals carry
+no patch or certificate payload whose preimage cannot be replayed.
+
+Only after all 545 rows pass does the scorer import the official evaluator and
+labels. It then reprojects the pinned dataset and requires that whole-file
+projection SHA-256 to equal the externally supplied pin.
 
 Annotation-scrubbed input remains available only in the permanently
 nonclaimable legacy sensitivity runner. It never participates in claimable
@@ -184,14 +229,14 @@ Install the host prerequisites:
 sudo apt-get update
 sudo apt-get install -y \
   bubblewrap build-essential ca-certificates git pkg-config \
-  python3 python3-venv
+  python3.12 python3.12-venv
 ```
 
 Create a copied, production-only runtime outside the repository. It must not
 contain benchmark, evaluator, dataset, or scorer packages:
 
 ```bash
-sudo /usr/bin/python3 -m venv --copies /opt/clusy-claim-runtime
+sudo /usr/bin/python3.12 -m venv --copies /opt/clusy-claim-runtime
 uv export --frozen --no-dev --no-emit-project --no-emit-local \
   --output-file /tmp/clusy-claim-requirements.txt
 sudo /opt/clusy-claim-runtime/bin/pip install \
@@ -207,8 +252,17 @@ Validate the candidate:
 
 ```bash
 uv sync --frozen --all-groups --all-extras
+uv run pytest -q
 uv run ruff check app bench native/python tests
-uv run mypy --explicit-package-bases app bench native/python/clusy_native
+uv run mypy --explicit-package-bases \
+  app/services/atomic_structure_overlay_v0.py \
+  bench/atomic_baseline_worker.py \
+  bench/atomic_claim_protocol.py \
+  bench/atomic_decision_worker.py \
+  bench/atomic_frozen_replay_v0.py \
+  bench/claim_worker_guard.py \
+  bench/claimable_sandbox.py \
+  bench/score_atomic_frozen_decisions.py
 cargo fmt --manifest-path native/Cargo.toml -- --check
 cargo test --locked --manifest-path native/Cargo.toml
 git status --short
@@ -230,6 +284,9 @@ uv run python bench/export_webmainbench_decision_inputs.py \
   --output /artifacts/decision-inputs.v3.jsonl
 ```
 
+The exporter prints one canonical JSON object. Record its `sha256` value
+out-of-band as `DECISION_INPUTS_SHA256`; do not derive it inside the scorer.
+
 Generate the production baseline in its own sandbox:
 
 ```bash
@@ -250,8 +307,9 @@ uv run python bench/atomic_claim_protocol.py decisions \
 Only after both workers exit, score in a separate process:
 
 Set `BASELINE_SHA256` and `DECISION_SHA256` to the exact artifact hashes printed
-by the two preceding commands; do not derive them by reopening the artifact
-paths inside the scorer.
+by the two preceding commands. Set `DECISION_INPUTS_SHA256` to the exporter
+value recorded before either worker ran. Do not derive any of these pins by
+reopening their paths inside the scorer.
 
 ```bash
 uv run python bench/score_atomic_frozen_decisions.py \
@@ -259,6 +317,8 @@ uv run python bench/score_atomic_frozen_decisions.py \
   --decision-artifact /artifacts/decisions.claim.json \
   --expected-baseline-sha256 "$BASELINE_SHA256" \
   --expected-decision-sha256 "$DECISION_SHA256" \
+  --decision-inputs /artifacts/decision-inputs.v3.jsonl \
+  --expected-decision-inputs-sha256 "$DECISION_INPUTS_SHA256" \
   --dataset /data/WebMainBench_545.jsonl \
   --evaluator-root /opt/WebMainBench \
   --output /artifacts/score.claim.json

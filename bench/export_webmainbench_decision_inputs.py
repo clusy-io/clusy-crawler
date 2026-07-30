@@ -182,10 +182,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"decision-input export error: {error}", file=sys.stderr)
         return 2
     print(
-        f"exported {metadata['output']['records']} closed-schema rows to "
-        f"{metadata['output']['path']}"
+        json.dumps(
+            {
+                "bytes": metadata["output"]["bytes"],
+                "path": metadata["output"]["path"],
+                "process_boundary_required": True,
+                "records": metadata["output"]["records"],
+                "sha256": metadata["output"]["sha256"],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     )
-    print("export process complete; invoke the audit as a new process")
     return 0
 
 

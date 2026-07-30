@@ -48,8 +48,8 @@ from bench.source_provenance import (  # noqa: E402
 )
 
 DECISION_INPUT_SCHEMA = "webmainbench.atomic-structure-overlay-v0-decision-inputs.3"
-BASELINE_ARTIFACT_SCHEMA = "clusy.atomic-overlay-claim-baseline-artifact.2"
-DECISION_ARTIFACT_SCHEMA = "clusy.atomic-overlay-claim-decision-artifact.2"
+BASELINE_ARTIFACT_SCHEMA = "clusy.atomic-overlay-claim-baseline-artifact.3"
+DECISION_ARTIFACT_SCHEMA = "clusy.atomic-overlay-claim-decision-artifact.3"
 EXPECTED_RECORDS = 545
 _GIT_OBJECT_RE = re.compile(r"[0-9a-f]{40}")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -315,10 +315,13 @@ def _validate_execution_evidence(
         or python.get("flags")
         != {
             "dont_write_bytecode": True,
+            "hash_randomization": 1,
             "isolated": 1,
             "no_site": 1,
             "no_user_site": 1,
         }
+        or python.get("hash_determinism")
+        != "algorithmic ordering; interpreter hash randomization is allowed"
         or not isinstance(network, dict)
         or network.get("non_loopback_route_rows") != 0
         or network.get("non_loopback_ipv6_route_rows") != 0
@@ -370,7 +373,7 @@ def run_baseline(decision_inputs: Path, output: Path) -> dict[str, Any]:
             }
             for record in projection
         ],
-        "schema_version": "clusy.atomic-overlay-claim-baseline-input.2",
+        "schema_version": "clusy.atomic-overlay-claim-baseline-input.3",
     }
     execution = run_claimable_worker(
         capsule,
@@ -379,7 +382,7 @@ def run_baseline(decision_inputs: Path, output: Path) -> dict[str, Any]:
     worker_output = _decode_canonical_worker_output(execution.stdout)
     if (
         worker_output.get("schema_version")
-        != "clusy.atomic-overlay-frozen-baseline.2"
+        != "clusy.atomic-overlay-frozen-baseline.3"
         or worker_output.get("capsule") != capsule_manifest
         or worker_output.get("decision_inputs_sha256") != projection_sha256
     ):
@@ -419,7 +422,7 @@ def _load_baseline_artifact(path: Path) -> tuple[dict[str, Any], str]:
         or value.get("claimable") is not True
         or not isinstance(value.get("worker"), dict)
         or value["worker"].get("schema_version")
-        != "clusy.atomic-overlay-frozen-baseline.2"
+        != "clusy.atomic-overlay-frozen-baseline.3"
         or value.get("launcher", {}).get("available") is not True
     ):
         raise ClaimProtocolError("baseline artifact is not claimable")
@@ -475,7 +478,7 @@ def run_decisions(
         "concurrency": CLAIMABLE_CONCURRENCY,
         "decision_inputs_sha256": projection_sha256,
         "records": records,
-        "schema_version": "clusy.atomic-overlay-claim-decision-input.2",
+        "schema_version": "clusy.atomic-overlay-claim-decision-input.3",
         "wall_seconds": CLAIMABLE_WALL_SECONDS,
     }
     execution = run_claimable_worker(
@@ -485,7 +488,7 @@ def run_decisions(
     worker_output = _decode_canonical_worker_output(execution.stdout)
     if (
         worker_output.get("schema_version")
-        != "clusy.atomic-overlay-frozen-decisions.2"
+        != "clusy.atomic-overlay-frozen-decisions.3"
         or worker_output.get("capsule") != capsule_manifest
         or worker_output.get("baseline_sha256") != baseline_sha256
         or worker_output.get("decision_inputs_sha256") != projection_sha256

@@ -975,7 +975,6 @@ def _evaluate_atom(
         return _make_proposal(base, reason="local_visible_token_mismatch")
 
     visible_token_digest = _token_digest(atom_tokens)
-    base = replace(base, source_digest=certificate.source_digest)
     return _make_proposal(
         base,
         accepted=True,
@@ -1127,25 +1126,11 @@ def _reject_proposal(
         config_digest=proposal.config_digest,
         input_bytes=proposal.input_bytes,
     )
-    return _make_proposal(
-        base,
-        accepted=False,
-        reason=reason,
-        candidate_span_start=proposal.candidate_span_start,
-        candidate_span_end=proposal.candidate_span_end,
-        graph_digest=proposal.graph_digest,
-        replacement_digest=proposal.replacement_digest,
-        patch_digest=proposal.patch_digest,
-        visible_token_digest=proposal.visible_token_digest,
-        certificate_digest=proposal.certificate_digest,
-        certificate=proposal.certificate,
-        visible_token_count=proposal.visible_token_count,
-        replacement_bytes=proposal.replacement_bytes,
-        proposed_output_bytes=proposal.proposed_output_bytes,
-        growth_bytes=proposal.growth_bytes,
-        structural_score_before=proposal.structural_score_before,
-        structural_score_after=proposal.structural_score_after,
-    )
+    # A rejected proposal cannot be applied, so do not retain an unactionable
+    # patch/certificate payload.  This keeps the frozen rejection record fully
+    # replayable from its source/input identities instead of carrying digests
+    # whose preimages are no longer part of the final decision.
+    return _make_proposal(base, reason=reason)
 
 
 def _reject_proposal_without_certificate(

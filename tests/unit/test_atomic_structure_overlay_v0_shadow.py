@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import importlib
 import inspect
 import json
 import os
+import stat
+import subprocess
+import sys
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
 
 from bench import atomic_claim_protocol as protocol
 from bench import atomic_structure_overlay_v0_shadow as legacy
+from bench import claimable_sandbox as sandbox
 from bench import generate_atomic_structure_baseline as generator
 from bench import score_atomic_frozen_decisions as scorer
 from bench.claimable_io import (
@@ -25,6 +30,8 @@ from bench.claimable_sandbox import (
     _build_command,
     probe_sandbox,
 )
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class _Metric:
@@ -84,6 +91,9 @@ def test_sandbox_command_is_env_i_fresh_python_and_actual_no_network() -> None:
     assert command[-4:-1] == ["-I", "-S", "-B"]
     assert "--remount-ro" in command
     assert "/capsule" in command
+    assert "PWD" in command
+    assert command[command.index("PWD") + 1] == "/capsule"
+    assert "PYTHONHASHSEED" not in command
     assert not any("dataset" in item or "evaluator" in item for item in command)
 
 
@@ -100,6 +110,43 @@ def test_unavailable_enforceable_sandbox_is_observed_nonclaimable() -> None:
         assert observation.network_probe["non_loopback_ipv6_route_rows"] == 0
         assert observation.network_probe["egress_connect_ex"] != 0
         assert observation.network_probe["ipv6_egress_connect_ex"] != 0
+
+
+def test_claim_runtime_requires_fixed_non_symlinked_python312_site(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def canonical_lstat(path: Path) -> SimpleNamespace:
+        mode = (
+            stat.S_IFREG | 0o755
+            if Path(path) == sandbox.CLAIMABLE_RUNTIME_ROOT / "bin/python3"
+            else stat.S_IFDIR | 0o755
+        )
+        return SimpleNamespace(st_mode=mode, st_nlink=1)
+
+    monkeypatch.setattr(sandbox.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(
+        sandbox.shutil,
+        "which",
+        lambda name, *, path: f"/usr/bin/{name}",
+    )
+    monkeypatch.setattr(sandbox.os, "lstat", canonical_lstat)
+
+    _, _, python_path, runtime_site = sandbox._runtime_paths()  # noqa: SLF001
+
+    assert python_path == sandbox.CLAIMABLE_RUNTIME_ROOT / "bin/python3"
+    assert runtime_site == sandbox.CLAIMABLE_RUNTIME_SITE
+    assert runtime_site == Path(
+        "/opt/clusy-claim-runtime/lib/python3.12/site-packages"
+    )
+
+    def symlinked_site(path: Path) -> SimpleNamespace:
+        if Path(path) == sandbox.CLAIMABLE_RUNTIME_SITE:
+            return SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_nlink=1)
+        return canonical_lstat(path)
+
+    monkeypatch.setattr(sandbox.os, "lstat", symlinked_site)
+    with pytest.raises(sandbox.SandboxUnavailableError, match="mandatory"):
+        sandbox._runtime_paths()  # noqa: SLF001
 
 
 def test_secure_io_rejects_symlink_and_never_replaces_output(tmp_path: Path) -> None:
@@ -203,6 +250,8 @@ def test_worker_sources_exclude_dataset_evaluator_scorer_imports() -> None:
     assert "app.services.extractor" not in decision_source
     assert "app.services.extractor" in baseline_source
     assert "app.services.atomic_structure_overlay_v0" in decision_source
+    assert "import sysconfig" not in baseline_source
+    assert "/opt/clusy-claim-runtime/lib/python3.12/site-packages" in baseline_source
 
 
 def test_scorer_requires_external_artifact_hashes_before_evaluator_import() -> None:
@@ -211,9 +260,142 @@ def test_scorer_requires_external_artifact_hashes_before_evaluator_import() -> N
 
     assert "expected_baseline_sha256" in signature.parameters
     assert "expected_decision_sha256" in signature.parameters
+    assert "expected_decision_inputs_sha256" in signature.parameters
+    assert "decision_inputs_path" in signature.parameters
     assert score_source.index("_read_json_artifact(") < score_source.index(
         'import_module("bench.webmainbench_finegrained_benchmark")'
     )
+    assert score_source.index("_load_decision_inputs(") < score_source.index(
+        'import_module("bench.webmainbench_finegrained_benchmark")'
+    )
+    assert score_source.index("replay_frozen_decision(") < score_source.index(
+        'import_module("bench.webmainbench_finegrained_benchmark")'
+    )
+
+
+def test_scorer_binds_native_replay_binary_before_evaluator_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native = importlib.import_module("clusy_native._native")
+    extension = Path(str(native.__file__))
+    extension_sha256 = __import__("hashlib").sha256(extension.read_bytes()).hexdigest()
+    decisions = {
+        "worker": {
+            "capsule": {
+                "extension_relative_path": f"clusy_native/{extension.name}",
+                "extension_sha256": extension_sha256,
+                "native_source_digest": native.packaged_source_digest(),
+            }
+        }
+    }
+
+    child_source = f"""
+import json, sys
+sys.path[:0] = [{str(ROOT)!r}, {str(extension.parent.parent)!r}]
+from bench import score_atomic_frozen_decisions as scorer
+decisions = {decisions!r}
+assert "clusy_native" not in sys.modules
+identity = scorer._verify_local_native_replay_identity(decisions)
+decisions["worker"]["capsule"]["extension_sha256"] = "0" * 64
+failure = ""
+try:
+    scorer._verify_local_native_replay_identity(decisions)
+except scorer.FrozenScoreError as error:
+    failure = str(error)
+print(json.dumps({{
+    "failure": failure,
+    "identity": identity,
+    "native_loaded_after_verification": any(
+        name == "clusy_native" or name.startswith("clusy_native.")
+        for name in sys.modules
+    ),
+}}, sort_keys=True, separators=(",", ":")))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-I", "-S", "-B", "-c", child_source],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    result = json.loads(completed.stdout)
+
+    assert result["identity"]["extension_sha256"] == extension_sha256
+    assert (
+        result["identity"]["native_source_digest"]
+        == native.packaged_source_digest()
+    )
+    assert result["identity"]["pre_execution_snapshot_verified"] is True
+    assert "pre-execution snapshot" in result["failure"]
+    assert result["native_loaded_after_verification"] is False
+    score_source = inspect.getsource(scorer.score)
+    assert score_source.index(
+        "_verify_local_native_replay_identity("
+    ) < score_source.index(
+        'import_module("bench.webmainbench_finegrained_benchmark")'
+    )
+
+    fake = ModuleType("clusy_native._native")
+    fake.__file__ = str(extension)
+    fake.packaged_source_digest = native.packaged_source_digest  # type: ignore[attr-defined]
+    fake.extract_document_ir_v2_native = (  # type: ignore[attr-defined]
+        native.extract_document_ir_v2_native
+    )
+    fake.create_local_atomic_selection_certificate_v0_native = (  # type: ignore[attr-defined]
+        native.create_local_atomic_selection_certificate_v0_native
+    )
+    fake.verify_and_replay_local_atomic_selection_certificate_v0_native = (  # type: ignore[attr-defined]
+        native.verify_and_replay_local_atomic_selection_certificate_v0_native
+    )
+    monkeypatch.delitem(
+        sys.modules,
+        "bench.webmainbench_finegrained_benchmark",
+        raising=False,
+    )
+    for module_name in tuple(sys.modules):
+        if module_name == "clusy_native" or module_name.startswith(
+            "clusy_native."
+        ):
+            monkeypatch.delitem(sys.modules, module_name)
+    monkeypatch.setitem(sys.modules, "clusy_native._native", fake)
+    with pytest.raises(scorer.FrozenScoreError, match="native module preloaded"):
+        scorer._assert_fresh_score_process()  # noqa: SLF001
+
+
+def test_scorer_projection_requires_external_hash_and_canonical_jsonl(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(scorer, "EXPECTED_RECORDS", 1)
+    projection = tmp_path / "projection.jsonl"
+    record = {
+        "dataset_index": 0,
+        "raw_html": "<main>strict</main>",
+        "schema_version": scorer.DECISION_INPUT_SCHEMA,
+    }
+    content = (
+        json.dumps(
+            record,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        + b"\n"
+    )
+    metadata = write_new_file(projection, content)
+
+    rows, identity = scorer._load_decision_inputs(  # noqa: SLF001
+        projection,
+        expected_sha256=metadata.sha256,
+    )
+
+    assert rows == (record,)
+    assert identity["sha256"] == metadata.sha256
+    with pytest.raises(scorer.FrozenScoreError, match="snapshot-safe"):
+        scorer._load_decision_inputs(  # noqa: SLF001
+            projection,
+            expected_sha256="0" * 64,
+        )
 
 
 def test_conservative_score_counts_every_failure_as_zero_and_requires_mask_parity() -> None:

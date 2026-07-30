@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Score frozen atomic-overlay decisions in a later, label-bearing process.
 
-This process never imports the overlay, extractor, baseline worker, or native
-candidate module. It opens labels/evaluator only after both frozen artifacts
-have passed their closed-schema and cryptographic bindings.
+This process never imports the overlay, extractor, or baseline worker. It
+hash-binds and uses the same native graph/certificate primitive solely for
+independent raw-source replay. It opens labels/evaluator only after both frozen
+artifacts and all replayed outputs have passed their closed-schema and
+cryptographic bindings.
 """
 
 from __future__ import annotations
@@ -11,11 +13,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib
+import inspect
 import json
 import math
+import os
 import re
+import stat
 import sys
-from pathlib import Path
+import tempfile
+from importlib.machinery import EXTENSION_SUFFIXES, ExtensionFileLoader, ModuleSpec
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path, PurePosixPath
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -24,15 +33,20 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from bench.atomic_frozen_replay_v0 import (  # noqa: E402
+    FrozenReplayError,
+    bind_native_replay_primitives,
+    replay_frozen_decision,
+)
 from bench.claimable_io import (  # noqa: E402
     ClaimableIOError,
     read_verified_bytes,
     write_new_file,
 )
 
-BASELINE_SCHEMA = "clusy.atomic-overlay-claim-baseline-artifact.2"
-DECISION_SCHEMA = "clusy.atomic-overlay-claim-decision-artifact.2"
-SCORE_SCHEMA = "clusy.atomic-overlay-frozen-score.2"
+BASELINE_SCHEMA = "clusy.atomic-overlay-claim-baseline-artifact.3"
+DECISION_SCHEMA = "clusy.atomic-overlay-claim-decision-artifact.3"
+SCORE_SCHEMA = "clusy.atomic-overlay-frozen-score.3"
 DECISION_INPUT_SCHEMA = "webmainbench.atomic-structure-overlay-v0-decision-inputs.3"
 EXPECTED_RECORDS = 545
 CORE_METRICS = (
@@ -58,7 +72,7 @@ CLAIM_OVERLAY_CONFIG = {
     "max_atom_tokens": 20_000,
     "max_atoms": 256,
     "max_candidate_bytes": 2 * 1024 * 1024,
-    "max_certificate_bytes": 512 * 1024,
+    "max_certificate_bytes": 64 * 1024,
     "max_code_bytes": 256 * 1024,
     "max_growth_bytes": 256 * 1024,
     "max_growth_ratio_milli": 4_000,
@@ -69,12 +83,57 @@ CLAIM_OVERLAY_CONFIG = {
     "max_table_columns": 64,
     "max_table_rows": 128,
     "max_tokens": 200_000,
-    "max_total_certificate_bytes": 2 * 1024 * 1024,
+    "max_total_certificate_bytes": 256 * 1024,
 }
 
 
 class FrozenScoreError(RuntimeError):
     """Frozen artifacts or official score inputs are not canonical."""
+
+
+def _assert_fresh_score_process() -> None:
+    if "bench.webmainbench_finegrained_benchmark" in sys.modules:
+        raise FrozenScoreError(
+            "scoring requires a fresh process with no evaluator harness preloaded"
+        )
+    if any(
+        name == "clusy_native" or name.startswith("clusy_native.")
+        for name in sys.modules
+    ):
+        raise FrozenScoreError(
+            "scoring requires a fresh process with no native module preloaded"
+        )
+
+
+def _nofollow_temporary_root() -> Path:
+    """Return the system temp directory through a link-free lexical path."""
+
+    candidate = Path(os.path.realpath(tempfile.gettempdir()))
+    if (
+        not candidate.is_absolute()
+        or not candidate.name
+        or any(component in {"", ".", ".."} for component in candidate.parts[1:])
+    ):
+        raise FrozenScoreError(
+            "native replay temporary root is not lexically canonical"
+        )
+    cursor = Path(candidate.anchor)
+    try:
+        for component in candidate.parts[1:]:
+            cursor /= component
+            metadata = os.lstat(cursor)
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or stat.S_ISLNK(metadata.st_mode)
+            ):
+                raise FrozenScoreError(
+                    "native replay temporary root contains a link or non-directory"
+                )
+    except OSError as error:
+        raise FrozenScoreError(
+            "native replay temporary root could not be inspected"
+        ) from error
+    return candidate
 
 
 def _valid_sha256(value: object) -> bool:
@@ -125,6 +184,59 @@ def _read_json_artifact(
     ):
         raise FrozenScoreError(f"artifact schema/canonical encoding mismatch: {path}")
     return value, {
+        "bytes": metadata.bytes,
+        "path": str(metadata.path),
+        "sha256": metadata.sha256,
+    }
+
+
+def _load_decision_inputs(
+    path: Path,
+    *,
+    expected_sha256: str,
+) -> tuple[tuple[dict[str, Any], ...], dict[str, Any]]:
+    """Open the externally pinned raw-only projection before evaluator import."""
+
+    try:
+        content, metadata = read_verified_bytes(
+            path,
+            maximum_bytes=768 * 1024 * 1024,
+            expected_sha256=expected_sha256,
+        )
+    except ClaimableIOError as error:
+        raise FrozenScoreError(
+            f"decision-input projection is not snapshot-safe: {path}"
+        ) from error
+    records: list[dict[str, Any]] = []
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        try:
+            record = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise FrozenScoreError(
+                f"decision-input row {line_number} is invalid"
+            ) from error
+        if (
+            not isinstance(record, dict)
+            or set(record) != {"dataset_index", "raw_html", "schema_version"}
+            or record.get("schema_version") != DECISION_INPUT_SCHEMA
+            or type(record.get("dataset_index")) is not int
+            or record["dataset_index"] != len(records)
+            or type(record.get("raw_html")) is not str
+        ):
+            raise FrozenScoreError(
+                f"decision-input row {line_number} schema is not closed"
+            )
+        try:
+            record["raw_html"].encode("utf-8")
+        except UnicodeEncodeError as error:
+            raise FrozenScoreError(
+                f"decision-input row {line_number} is not strict UTF-8"
+            ) from error
+        records.append(record)
+    canonical = b"".join(_json_bytes(record) + b"\n" for record in records)
+    if len(records) != EXPECTED_RECORDS or canonical != content:
+        raise FrozenScoreError("decision inputs are not exact canonical 545-row JSONL")
+    return tuple(records), {
         "bytes": metadata.bytes,
         "path": str(metadata.path),
         "sha256": metadata.sha256,
@@ -272,7 +384,7 @@ def _validate_claim_envelopes(
             "schema_version",
         }
         or baseline_worker.get("schema_version")
-        != "clusy.atomic-overlay-frozen-baseline.2"
+        != "clusy.atomic-overlay-frozen-baseline.3"
         or baseline_worker.get("decision_inputs_sha256")
         != baseline.get("decision_inputs_sha256")
         or baseline_worker.get("generator", {}).get("input_field") != "raw_html"
@@ -291,7 +403,7 @@ def _validate_claim_envelopes(
             "worker_wall_ns",
         }
         or decision_worker.get("schema_version")
-        != "clusy.atomic-overlay-frozen-decisions.2"
+        != "clusy.atomic-overlay-frozen-decisions.3"
         or decision_worker.get("decision_inputs_sha256")
         != decisions.get("decision_inputs_sha256")
         or decision_worker.get("baseline_sha256")
@@ -333,6 +445,189 @@ def _validate_claim_envelopes(
         != decision_capsule.get("extension_sha256")
     ):
         raise FrozenScoreError("baseline and decision executable identities differ")
+    for artifact, capsule in (
+        (baseline, baseline_capsule),
+        (decisions, decision_capsule),
+    ):
+        extension_relative = capsule.get("extension_relative_path")
+        capsule_hashes = artifact["worker_capsule_sha256"]
+        if (
+            type(extension_relative) is not str
+            or not extension_relative.startswith("clusy_native/_native.")
+            or "/" in extension_relative[len("clusy_native/") :]
+            or capsule_hashes.get(extension_relative)
+            != capsule.get("extension_sha256")
+        ):
+            raise FrozenScoreError(
+                "native extension identity is not bound to the sealed capsule"
+            )
+
+
+def _verify_local_native_replay_identity(
+    decisions: dict[str, Any],
+) -> dict[str, Any]:
+    """Hash a stable extension snapshot before loading and binding its builtins."""
+
+    capsule = decisions["worker"]["capsule"]
+    expected_extension = capsule["extension_sha256"]
+    expected_source = capsule["native_source_digest"]
+    extension_relative = capsule["extension_relative_path"]
+    relative = PurePosixPath(extension_relative)
+    candidates: dict[str, Path] = {}
+    for entry in sys.path:
+        if type(entry) is not str:
+            raise FrozenScoreError("scorer sys.path contains a non-string entry")
+        root = Path.cwd() if entry == "" else Path(entry)
+        candidate = root.joinpath(*relative.parts).absolute()
+        candidate_key = os.path.normcase(os.path.normpath(str(candidate)))
+        if candidate_key in candidates:
+            continue
+        if (
+            candidate.name != relative.name
+            or candidate.parent.name != "clusy_native"
+        ):
+            raise FrozenScoreError(
+                "native replay candidate path is not capsule-relative"
+            )
+        try:
+            os.lstat(candidate)
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        except OSError as error:
+            raise FrozenScoreError(
+                "native replay candidate path could not be inspected"
+            ) from error
+        candidates[candidate_key] = candidate
+    if len(candidates) != 1:
+        raise FrozenScoreError(
+            "native replay requires exactly one unambiguous sys.path candidate"
+        )
+    extension_path = next(iter(candidates.values()))
+    try:
+        extension_bytes, metadata = read_verified_bytes(
+            extension_path,
+            maximum_bytes=256 * 1024 * 1024,
+            expected_sha256=expected_extension,
+        )
+    except ClaimableIOError as error:
+        raise FrozenScoreError(
+            "native replay extension failed pre-execution snapshot verification"
+        ) from error
+
+    native: Any = None
+    packaged_source: Any = None
+    with tempfile.TemporaryDirectory(
+        prefix="clusy-native-replay-",
+        dir=_nofollow_temporary_root(),
+    ) as temporary:
+        snapshot = Path(temporary) / relative.name
+        try:
+            snapshot_metadata = write_new_file(
+                snapshot,
+                extension_bytes,
+                mode=0o400,
+            )
+            if (
+                snapshot_metadata.sha256 != expected_extension
+                or snapshot_metadata.bytes != len(extension_bytes)
+            ):
+                raise FrozenScoreError(
+                    "native replay private snapshot identity differs"
+            )
+            package = ModuleType("clusy_native")
+            package.__package__ = "clusy_native"
+            package.__path__ = [str(snapshot.parent)]
+            package_spec = ModuleSpec(
+                "clusy_native",
+                loader=None,
+                is_package=True,
+            )
+            package_spec.submodule_search_locations = [str(snapshot.parent)]
+            package.__spec__ = package_spec
+            loader = ExtensionFileLoader(
+                "clusy_native._native",
+                str(snapshot),
+            )
+            spec = spec_from_file_location(
+                "clusy_native._native",
+                snapshot,
+                loader=loader,
+            )
+            if spec is None:
+                raise FrozenScoreError(
+                    "verified native replay snapshot has no import spec"
+                )
+            sys.modules["clusy_native"] = package
+            native = module_from_spec(spec)
+            sys.modules["clusy_native._native"] = native
+            loader.exec_module(native)
+            if (
+                spec.name != "clusy_native._native"
+                or not isinstance(spec.loader, ExtensionFileLoader)
+                or type(spec.origin) is not str
+                or native.__file__ != spec.origin
+                or spec.origin != str(snapshot)
+                or not any(
+                    spec.origin.endswith(suffix)
+                    for suffix in EXTENSION_SUFFIXES
+                )
+            ):
+                raise FrozenScoreError(
+                    "local native replay module is not the verified snapshot"
+                )
+            primitives = (
+                native.extract_document_ir_v2_native,
+                native.create_local_atomic_selection_certificate_v0_native,
+                native.verify_and_replay_local_atomic_selection_certificate_v0_native,
+                native.packaged_source_digest,
+            )
+            if not all(
+                inspect.isbuiltin(primitive)
+                and primitive.__module__ == "clusy_native._native"
+                and primitive.__self__ is native
+                for primitive in primitives
+            ):
+                raise FrozenScoreError(
+                    "local native replay primitives are not exact extension builtins"
+                )
+            packaged_source = native.packaged_source_digest()
+            if (
+                metadata.sha256 != expected_extension
+                or packaged_source != expected_source
+                or not _valid_sha256(packaged_source)
+            ):
+                raise FrozenScoreError(
+                    "local native replay primitive differs from frozen worker identity"
+                )
+            bind_native_replay_primitives(native)
+        except (
+            AttributeError,
+            ClaimableIOError,
+            FrozenReplayError,
+            ImportError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            if isinstance(error, FrozenScoreError):
+                raise
+            raise FrozenScoreError(
+                "verified native replay snapshot could not be loaded"
+            ) from error
+        finally:
+            sys.modules.pop("clusy_native._native", None)
+            sys.modules.pop("clusy_native", None)
+    if native is None or not _valid_sha256(packaged_source):
+        raise FrozenScoreError(
+            "native replay primitive did not remain bound after snapshot load"
+        )
+    return {
+        "extension_sha256": metadata.sha256,
+        "native_source_digest": packaged_source,
+        "path": str(metadata.path),
+        "pre_execution_snapshot_verified": True,
+    }
 
 
 def _page_success_mask(
@@ -427,6 +722,8 @@ def score(
     decisions_path: Path,
     expected_baseline_sha256: str,
     expected_decision_sha256: str,
+    decision_inputs_path: Path,
+    expected_decision_inputs_sha256: str,
     dataset_path: Path,
     evaluator_root: Path,
     output: Path,
@@ -434,12 +731,16 @@ def score(
     if (
         _SHA256_RE.fullmatch(expected_baseline_sha256) is None
         or _SHA256_RE.fullmatch(expected_decision_sha256) is None
+        or _SHA256_RE.fullmatch(expected_decision_inputs_sha256) is None
     ):
-        raise FrozenScoreError("exact baseline and decision SHA-256 pins are required")
-    if "bench.webmainbench_finegrained_benchmark" in sys.modules:
         raise FrozenScoreError(
-            "scoring requires a fresh process with no evaluator harness preloaded"
+            "exact baseline, decision, and raw-projection SHA-256 pins are required"
         )
+    _assert_fresh_score_process()
+    projection_rows, projection_identity = _load_decision_inputs(
+        decision_inputs_path,
+        expected_sha256=expected_decision_inputs_sha256,
+    )
     baseline, baseline_identity = _read_json_artifact(
         baseline_path,
         maximum_bytes=512 * 1024 * 1024,
@@ -453,10 +754,12 @@ def score(
         expected_sha256=expected_decision_sha256,
     )
     _validate_claim_envelopes(baseline, decisions)
+    native_replay_identity = _verify_local_native_replay_identity(decisions)
     if (
         decisions.get("baseline_artifact_sha256") != baseline_identity["sha256"]
         or decisions.get("decision_inputs_sha256")
         != baseline.get("decision_inputs_sha256")
+        or decisions.get("decision_inputs_sha256") != projection_identity["sha256"]
         or decisions.get("protocol", {}).get("concurrency") != 4
         or decisions.get("protocol", {}).get("wall_seconds") != 180.0
         or decisions.get("protocol", {}).get("labels_available") is not False
@@ -474,11 +777,93 @@ def score(
     ):
         raise FrozenScoreError("frozen artifacts do not contain exactly 545 rows")
 
-    # Only exact, in-memory artifact snapshots exist before this import. This is
-    # the first evaluator-harness import and label access in the scorer process.
+    # Derive every candidate from the externally pinned raw-only projection and
+    # frozen baseline before the evaluator or labels can enter this process.
+    replayed_rows: list[tuple[str, str]] = []
+    replay_receipts: list[dict[str, Any]] = []
+    baseline_generation_all_success = True
+    for index, (baseline_row, decision_row, projection_row) in enumerate(
+        zip(baseline_rows, decision_rows, projection_rows, strict=True)
+    ):
+        if (
+            not isinstance(baseline_row, dict)
+            or set(baseline_row) != {"dataset_index", "generation", "prediction"}
+            or not isinstance(decision_row, dict)
+            or set(decision_row)
+            != {
+                "baseline_prediction_sha256",
+                "dataset_index",
+                "decision",
+                "raw_html_sha256",
+            }
+            or baseline_row.get("dataset_index") != index
+            or decision_row.get("dataset_index") != index
+            or projection_row["dataset_index"] != index
+            or type(baseline_row.get("prediction")) is not str
+        ):
+            raise FrozenScoreError(f"frozen/projection row alignment failed: {index}")
+        generation = baseline_row["generation"]
+        if (
+            not isinstance(generation, dict)
+            or set(generation) != {"error_type", "strategy", "success"}
+            or type(generation.get("success")) is not bool
+            or type(generation.get("strategy")) is not str
+            or (
+                generation.get("error_type") is not None
+                and type(generation.get("error_type")) is not str
+            )
+            or (generation["success"] is True) != (generation.get("error_type") is None)
+        ):
+            raise FrozenScoreError(f"frozen baseline generation is invalid: {index}")
+        try:
+            prediction_bytes = baseline_row["prediction"].encode("utf-8")
+            raw_html_bytes = projection_row["raw_html"].encode("utf-8")
+        except UnicodeEncodeError as error:
+            raise FrozenScoreError(
+                f"frozen/projection row is not strict UTF-8: {index}"
+            ) from error
+        if (
+            decision_row.get("baseline_prediction_sha256")
+            != hashlib.sha256(prediction_bytes).hexdigest()
+            or decision_row.get("raw_html_sha256")
+            != hashlib.sha256(raw_html_bytes).hexdigest()
+        ):
+            raise FrozenScoreError(f"frozen row byte identity failed: {index}")
+        try:
+            replay = replay_frozen_decision(
+                projection_row["raw_html"],
+                baseline_row["prediction"],
+                decision_row["decision"],
+                config=CLAIM_OVERLAY_CONFIG,
+            )
+        except FrozenReplayError as error:
+            raise FrozenScoreError(
+                f"independent frozen decision replay failed: {index}: {error}"
+            ) from error
+        replayed_rows.append((baseline_row["prediction"], replay.output_markdown))
+        replay_receipts.append(
+            {
+                "applied_proposal_ids": replay.applied_proposal_ids,
+                "dataset_index": index,
+                "decision_digest": replay.decision_digest,
+                "input_digest": replay.input_digest,
+                "output_digest": replay.output_digest,
+                "proposal_ids": replay.proposal_ids,
+                "source_digest": replay.source_digest,
+                "visible_token_digest": replay.visible_token_digest,
+            }
+        )
+        baseline_generation_all_success = (
+            baseline_generation_all_success and generation["success"]
+        )
+
+    # This is the first evaluator-harness import and label access. The only
+    # candidate strings retained for scoring are independently replayed above.
     fine = importlib.import_module("bench.webmainbench_finegrained_benchmark")
     if tuple(fine.CORE_METRICS) != CORE_METRICS:
-        raise FrozenScoreError("official metric inventory disagrees with claim protocol")
+        raise FrozenScoreError(
+            "official metric inventory disagrees with claim protocol"
+        )
     try:
         dataset_rows, dataset_identity = _load_dataset_snapshot(
             dataset_path,
@@ -490,10 +875,7 @@ def score(
         )
     except fine.BenchmarkError as error:
         raise FrozenScoreError(f"official score input failed: {error}") from error
-    if (
-        dataset_identity["decision_inputs_sha256"]
-        != baseline.get("decision_inputs_sha256")
-    ):
+    if dataset_identity["decision_inputs_sha256"] != projection_identity["sha256"]:
         raise FrozenScoreError(
             "frozen decisions do not bind the raw-HTML projection of the pinned dataset"
         )
@@ -501,101 +883,20 @@ def score(
     candidate_calculator = calculator_type({"use_llm": False})
     baseline_results: list[dict[str, Any]] = []
     candidate_results: list[dict[str, Any]] = []
-    baseline_generation_all_success = True
-    for index, (baseline_row, decision_row, dataset_row) in enumerate(
-        zip(baseline_rows, decision_rows, dataset_rows, strict=True)
+    for index, ((baseline_prediction, candidate_prediction), dataset_row) in enumerate(
+        zip(replayed_rows, dataset_rows, strict=True)
     ):
         if (
-            not isinstance(baseline_row, dict)
-            or not isinstance(decision_row, dict)
-            or set(baseline_row)
-            != {"dataset_index", "generation", "prediction"}
-            or set(decision_row)
-            != {
-                "baseline_prediction_sha256",
-                "dataset_index",
-                "decision",
-                "raw_html_sha256",
-            }
-            or baseline_row.get("dataset_index") != index
-            or decision_row.get("dataset_index") != index
-            or dataset_row["dataset_index"] != index
-            or type(baseline_row.get("prediction")) is not str
-        ):
-            raise FrozenScoreError(f"frozen/dataset row alignment failed: {index}")
-        generation = baseline_row["generation"]
-        observation = decision_row["decision"]
-        if (
-            not isinstance(generation, dict)
-            or set(generation) != {"error_type", "strategy", "success"}
-            or type(generation.get("success")) is not bool
-            or (generation["success"] is True)
-            != (generation.get("error_type") is None)
-            or not isinstance(observation, dict)
-            or set(observation)
-            != {
-                "accepted",
-                "candidate_markdown_sha256",
-                "config_digest",
-                "decision_digest",
-                "input_digest",
-                "output_digest",
-                "output_markdown",
-                "proposals",
-                "reason",
-                "replay",
-                "timing",
-                "visible_token_digest",
-                "visible_tokens_identical",
-            }
-            or type(observation.get("accepted")) is not bool
-            or type(observation.get("output_markdown")) is not str
-            or not all(
-                _valid_sha256(observation.get(name))
-                for name in (
-                    "candidate_markdown_sha256",
-                    "config_digest",
-                    "decision_digest",
-                    "input_digest",
-                    "output_digest",
-                    "visible_token_digest",
-                )
-            )
-            or not isinstance(observation.get("proposals"), list)
-            or observation.get("visible_tokens_identical") is not True
-            or not isinstance(observation.get("replay"), dict)
-            or set(observation["replay"])
-            != {"decision_digest", "output_digest", "reason", "verified"}
-            or observation["replay"].get("verified") is not True
-            or observation["replay"].get("decision_digest")
-            != observation["decision_digest"]
-            or observation["replay"].get("output_digest")
-            != observation["output_digest"]
-            or not isinstance(observation.get("timing"), dict)
-            or set(observation["timing"])
-            != {"decision_elapsed_ns", "replay_elapsed_ns"}
-            or not all(
-                type(value) is int and value >= 0
-                for value in observation["timing"].values()
-            )
-            or (
-                observation.get("accepted") is False
-                and observation["output_markdown"] != baseline_row["prediction"]
-            )
-            or decision_row.get("baseline_prediction_sha256")
+            dataset_row["dataset_index"] != index
+            or dataset_row["raw_html_sha256"]
             != hashlib.sha256(
-                baseline_row["prediction"].encode("utf-8")
+                projection_rows[index]["raw_html"].encode("utf-8")
             ).hexdigest()
-            or decision_row.get("raw_html_sha256")
-            != dataset_row["raw_html_sha256"]
         ):
-            raise FrozenScoreError(f"frozen decision integrity failed: {index}")
-        baseline_generation_all_success = (
-            baseline_generation_all_success and generation["success"]
-        )
+            raise FrozenScoreError(f"pinned dataset/projection mismatch: {index}")
         baseline_results.append(
             baseline_calculator.calculate_all(
-                predicted_content=baseline_row["prediction"],
+                predicted_content=baseline_prediction,
                 groundtruth_content=dataset_row["reference"],
                 predicted_content_list=None,
                 groundtruth_content_list=None,
@@ -603,7 +904,7 @@ def score(
         )
         candidate_results.append(
             candidate_calculator.calculate_all(
-                predicted_content=observation["output_markdown"],
+                predicted_content=candidate_prediction,
                 groundtruth_content=dataset_row["reference"],
                 predicted_content_list=None,
                 groundtruth_content_list=None,
@@ -659,6 +960,7 @@ def score(
     document = {
         "artifacts": {
             "baseline": baseline_identity,
+            "decision_inputs": projection_identity,
             "decisions": decisions_identity,
         },
         "baseline": baseline_aggregate,
@@ -671,6 +973,12 @@ def score(
             "checks": checks,
             "passed": all(checks.values()),
             "thresholds": QUALITY_THRESHOLDS,
+        },
+        "independent_frozen_replay": {
+            "completed_before_evaluator_import": True,
+            "native_replay_identity": native_replay_identity,
+            "records": len(replay_receipts),
+            "sha256": hashlib.sha256(_json_bytes(replay_receipts)).hexdigest(),
         },
         "label_access_phase": "later separate scorer process over frozen artifacts",
         "official_aggregate_diagnostic": {
@@ -694,6 +1002,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--decision-artifact", required=True, type=Path)
     parser.add_argument("--expected-baseline-sha256", required=True)
     parser.add_argument("--expected-decision-sha256", required=True)
+    parser.add_argument("--decision-inputs", required=True, type=Path)
+    parser.add_argument("--expected-decision-inputs-sha256", required=True)
     parser.add_argument("--dataset", required=True, type=Path)
     parser.add_argument("--evaluator-root", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -708,6 +1018,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.decision_artifact,
             args.expected_baseline_sha256,
             args.expected_decision_sha256,
+            args.decision_inputs,
+            args.expected_decision_inputs_sha256,
             args.dataset,
             args.evaluator_root,
             args.output,
