@@ -153,6 +153,20 @@ class RedisCache:
                 self._retry_after = time.monotonic() + cooldown
                 return False
 
+    def write_available(self) -> bool:
+        """Return whether a cache write is not known to be unavailable.
+
+        This advisory gate deliberately does not connect or ping: `set` remains
+        the authoritative, concurrency-safe operation.  That preserves the
+        existing connection/recovery ordering while allowing callers to skip
+        expensive value construction when Redis is disabled or inside an
+        explicit failure cooldown.  A concurrent failure after this check can
+        only cause redundant value construction; `set` still fails closed.
+        """
+        if not settings.redis_url:
+            return False
+        return self._redis is not None or time.monotonic() >= self._retry_after
+
     async def get(self, key: str) -> bytes | None:
         if not await self._ensure_client():
             return None

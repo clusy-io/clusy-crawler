@@ -167,10 +167,29 @@ async def _read_cached_result(
 
 async def _store_cached_result(cache: Any, cache_key: str, result: CrawlResult) -> None:
     """Persist the canonical cacheable projection of a successful crawl."""
-    import orjson
-
     if result.error:
         return
+
+    # Redis exposes a conservative, concurrency-safe readiness gate so the
+    # disabled and failure-cooldown paths do not pay for a deep Pydantic copy
+    # and JSON encoding that cannot be stored.  Test and embedding caches that
+    # predate the gate retain their existing eager-set behavior.
+    write_available = getattr(cache, "write_available", None)
+    if write_available is not None:
+        try:
+            if not write_available():
+                return
+        except Exception as e:
+            # Cache availability must never determine crawl success.  A broken
+            # readiness implementation fails closed and never constructs the
+            # cache projection.
+            logger.warning(
+                "cache_write_readiness_failed",
+                error_type=type(e).__name__,
+            )
+            return
+
+    import orjson
 
     cached_result = result.model_copy(deep=True)
     # HTML can be many megabytes. It remains available to concurrent

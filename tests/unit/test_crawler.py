@@ -598,6 +598,138 @@ async def test_recursive_policy_flight_never_joins_concurrent_flat_flight(monkey
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("max_age", [None, 0])
+async def test_unconfigured_redis_skips_cache_projection_and_serialization(
+    monkeypatch,
+    max_age,
+):
+    import redis.asyncio as aioredis
+
+    from app.cache import RedisCache
+    from app.services import crawler as crawler_module
+
+    url = "https://cache-disabled.example/page"
+    cache = RedisCache()
+
+    async def fake_uncached(**kwargs):
+        return CrawlResult(
+            url=kwargs["url"],
+            markdown="live content",
+            metadata=ExtractionMetadata(source_url=kwargs["url"]),
+        )
+
+    def serialization_must_not_run(*_args, **_kwargs):
+        raise AssertionError("disabled Redis must not serialize a cache value")
+
+    def connection_must_not_run(*_args, **_kwargs):
+        raise AssertionError("disabled Redis must not construct a client")
+
+    monkeypatch.setattr(settings, "redis_url", "")
+    monkeypatch.setattr(crawler_module, "get_cache", lambda: cache)
+    monkeypatch.setattr(crawler_module, "_crawl_uncached", fake_uncached)
+    monkeypatch.setattr(orjson, "dumps", serialization_must_not_run)
+    monkeypatch.setattr(aioredis, "from_url", connection_must_not_run)
+
+    result = await crawler_module._crawl_single_url(url, max_age=max_age)
+
+    assert result.markdown == "live content"
+    assert result.cached is False
+
+
+@pytest.mark.anyio
+async def test_available_cache_preserves_projection_and_write(monkeypatch):
+    from app.services import crawler as crawler_module
+
+    result = CrawlResult(
+        url="https://cache-enabled.example/page",
+        markdown="live content",
+        html="<html>not persisted</html>",
+        metadata=ExtractionMetadata(
+            source_url="https://cache-enabled.example/page",
+            stage_timings_ms={"total": 12.5},
+        ),
+    )
+    gated_stored: list[bytes] = []
+    legacy_stored: list[bytes] = []
+
+    class AvailableCache:
+        def write_available(self):
+            return True
+
+        async def set(self, _key, value):
+            gated_stored.append(value)
+
+    class LegacyCache:
+        async def set(self, _key, value):
+            legacy_stored.append(value)
+
+    monkeypatch.setattr(crawler_module.time_module, "time", lambda: 123.5)
+    await crawler_module._store_cached_result(LegacyCache(), "key", result)
+    await crawler_module._store_cached_result(AvailableCache(), "key", result)
+
+    assert len(legacy_stored) == len(gated_stored) == 1
+    assert gated_stored[0] == legacy_stored[0]
+    envelope = orjson.loads(gated_stored[0])
+    cached = envelope["r"]
+    assert cached["markdown"] == "live content"
+    assert cached["html"] is None
+    assert cached["cached"] is False
+    assert cached["metadata"]["stage_timings_ms"] == {}
+    assert cached["metadata"]["cache_status"] == "live"
+    assert result.html == "<html>not persisted</html>"
+    assert result.metadata is not None
+    assert result.metadata.stage_timings_ms == {"total": 12.5}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("readiness_mode", ["unavailable", "error"])
+async def test_unavailable_cache_readiness_fails_closed_before_projection(
+    monkeypatch,
+    readiness_mode,
+):
+    from app.services import crawler as crawler_module
+
+    class UnavailableCache:
+        def write_available(self):
+            if readiness_mode == "error":
+                raise OSError("readiness failed")
+            return False
+
+        async def set(self, _key, _value):
+            raise AssertionError("unavailable cache must not receive a value")
+
+    def projection_must_not_run(self, *, deep=False, update=None):
+        raise AssertionError("unavailable cache must not project a cache value")
+
+    monkeypatch.setattr(CrawlResult, "model_copy", projection_must_not_run)
+
+    await crawler_module._store_cached_result(
+        UnavailableCache(),
+        "key",
+        CrawlResult(url="https://cache-unavailable.example/page", markdown="live"),
+    )
+
+
+@pytest.mark.anyio
+async def test_cache_write_cancellation_is_not_swallowed():
+    from app.services import crawler as crawler_module
+
+    class CancellingCache:
+        def write_available(self):
+            return True
+
+        async def set(self, _key, _value):
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await crawler_module._store_cached_result(
+            CancellingCache(),
+            "key",
+            CrawlResult(url="https://cache-cancel.example/page", markdown="live"),
+        )
+
+
+@pytest.mark.anyio
 async def test_optional_github_raw_policy_denial_falls_back_to_fetched_html(
     monkeypatch,
 ):

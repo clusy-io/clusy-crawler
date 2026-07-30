@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
 
 import pytest
@@ -549,6 +550,14 @@ class TestRedisCache:
     def test_noop_when_no_redis_url(self, monkeypatch):
         monkeypatch.setattr("app.config.settings.redis_url", "")
         cache = RedisCache()
+        real_import = builtins.__import__
+
+        def import_without_redis(name, *args, **kwargs):
+            if name == "redis" or name.startswith("redis."):
+                raise AssertionError("disabled cache must not import Redis")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", import_without_redis)
 
         async def exercise():
             ok = await cache._ensure_client()
@@ -591,6 +600,67 @@ class TestRedisCache:
 
         assert await cache._ensure_client() is False
         assert calls == 1
+
+    @pytest.mark.anyio
+    async def test_write_availability_preserves_failure_and_recovery_order(
+        self,
+        monkeypatch,
+    ):
+        import redis.asyncio as aioredis
+
+        now = 100.0
+        calls = 0
+
+        class FailedClient:
+            async def ping(self):
+                raise OSError("black hole")
+
+            async def aclose(self):
+                pass
+
+        class HealthyClient:
+            def __init__(self):
+                self.values = []
+
+            async def ping(self):
+                return True
+
+            async def setex(self, key, ttl, value):
+                self.values.append((key, ttl, value))
+
+        healthy = HealthyClient()
+
+        def fake_from_url(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return FailedClient() if calls == 1 else healthy
+
+        monkeypatch.setattr(settings, "redis_url", "redis://cache.invalid/0")
+        monkeypatch.setattr(settings, "cache_failure_cooldown_s", 5.0)
+        monkeypatch.setattr("app.cache.time.monotonic", lambda: now)
+        monkeypatch.setattr(aioredis, "from_url", fake_from_url)
+        cache = RedisCache()
+
+        # An untried configured cache preserves the original set -> connect
+        # ordering instead of moving network I/O ahead of value construction.
+        assert cache.write_available() is True
+        await cache.set("first", b"value")
+        assert calls == 1
+        assert healthy.values == []
+
+        assert cache.write_available() is False
+        await cache.set("cooldown", b"value")
+        assert calls == 1
+
+        now = 105.0
+        assert cache.write_available() is True
+        await cache.set("recovered", b"value")
+        assert calls == 2
+        assert len(healthy.values) == 1
+        assert healthy.values[0][0] == "recovered"
+        assert healthy.values[0][2] == b"value"
+        assert cache._failure_count == 0
+        assert cache._retry_after == 0.0
 
     @pytest.mark.anyio
     async def test_oversized_entry_is_not_sent_to_redis(self, monkeypatch):
