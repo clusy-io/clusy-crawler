@@ -1535,6 +1535,7 @@ def _extract_links(html: str, base_url: str) -> list[str]:
 
     seen: set[str] = set()
     out: list[str] = []
+    output_chars = 0
     for m in re.finditer(r'<a\b[^>]*\bhref=["\']([^"\'#]+)["\']', html, re.IGNORECASE):
         href = m.group(1).strip()
         if (
@@ -1549,7 +1550,8 @@ def _extract_links(html: str, base_url: str) -> list[str]:
         if absolute not in seen:
             seen.add(absolute)
             out.append(absolute)
-            if sum(len(link) for link in out) > 256_000:
+            output_chars += len(absolute)
+            if output_chars > 256_000:
                 out.pop()
                 break
         if len(out) >= 1000:

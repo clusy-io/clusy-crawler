@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
+from urllib.parse import urljoin, urlparse
 
 import orjson
 import pytest
@@ -32,6 +34,141 @@ def test_extract_links_absolutizes_and_filters():
     assert all(not link.startswith(("mailto:", "javascript:")) for link in links)
     # de-duplicated
     assert links.count("https://example.com/docs/intro") == 1
+
+
+def _reference_extract_links(html: str, base_url: str) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for match in re.finditer(
+        r'<a\b[^>]*\bhref=["\']([^"\'#]+)["\']',
+        html,
+        re.IGNORECASE,
+    ):
+        href = match.group(1).strip()
+        if (
+            not href
+            or len(href) > 4096
+            or href.startswith(("javascript:", "mailto:", "tel:", "data:"))
+        ):
+            continue
+        absolute = urljoin(base_url, href)
+        if urlparse(absolute).scheme not in ("http", "https"):
+            continue
+        if absolute not in seen:
+            seen.add(absolute)
+            out.append(absolute)
+            if sum(len(link) for link in out) > 256_000:
+                out.pop()
+                break
+        if len(out) >= 1000:
+            break
+    return out
+
+
+def _link_outcome(html: str, base_url: str, extractor):
+    try:
+        return ("ok", extractor(html, base_url))
+    except Exception as exc:
+        return ("error", type(exc).__qualname__, str(exc))
+
+
+def test_extract_links_exact_budget_and_count_boundaries():
+    prefix = "https://links.example/"
+    padding = "x" * (256 - len(prefix) - 4)
+    links_256 = [f"{prefix}{padding}{index:04d}" for index in range(1000)]
+    assert all(len(link) == 256 for link in links_256)
+    exact_html = "".join(f'<a href="{link}">link</a>' for link in links_256)
+
+    exact = _extract_links(exact_html, "https://base.example/root")
+    assert exact == links_256
+    assert len(exact) == 1000
+    assert sum(map(len, exact)) == 256_000
+
+    links_257 = [f"{prefix}{padding}y{index:04d}" for index in range(1000)]
+    over_html = "".join(f'<a href="{link}">link</a>' for link in links_257)
+    over = _extract_links(over_html, "https://base.example/root")
+    assert over == links_257[:996]
+    assert sum(map(len, over)) == 255_972
+
+
+def test_extract_links_matches_quadratic_reference_on_adversarial_cases():
+    cases = [
+        (
+            """
+            <a href="/alpha">relative</a>
+            <a href="/alpha">duplicate</a>
+            <a href=" HTTPS://EXAMPLE.COM/Mixed ">mixed</a>
+            <a href="//cdn.example/路径?q=é">unicode</a>
+            <a href="?query=one%20two">query</a>
+            <a href="#fragment">fragment only</a>
+            <a href="javascript:alert(1)">script</a>
+            <a href="mailto:test@example.com">mail</a>
+            <a href="https://example.com/a#kept-as-part-of-unquoted-text">hash</a>
+            """,
+            "https://example.com/root/page",
+        ),
+        ('<a href="/relative">broken base</a>', "http://[::1"),
+        (
+            '<a href="https://[::1/path">broken absolute</a>',
+            "https://example.com/",
+        ),
+        (
+            f'<a href="{"/" + ("x" * 4095)}">max</a>'
+            f'<a href="{"/" + ("x" * 4096)}">too long</a>',
+            "https://example.com/",
+        ),
+    ]
+    for html, base_url in cases:
+        assert _link_outcome(html, base_url, _extract_links) == _link_outcome(
+            html,
+            base_url,
+            _reference_extract_links,
+        )
+
+
+def test_extract_links_deterministic_differential_fuzz():
+    fragments = (
+        "/relative",
+        "../up",
+        "https://other.example/path",
+        "//cdn.example/asset",
+        "?q=value",
+        "#fragment",
+        "javascript:void(0)",
+        "mailto:test@example.com",
+        "tel:+12025550123",
+        "data:text/plain,hello",
+        "/路径/é",
+        "/space in path",
+        "",
+    )
+    bases = (
+        "https://example.com/root/page",
+        "http://example.test:8080/a/b",
+        "https://例え.テスト/基準",
+        "http://[::1",
+    )
+    state = 0xD1FF_E2AC_7A11
+    for case_index in range(512):
+        anchor_count = 1 + state % 1100
+        state = (state * 6364136223846793005 + 1442695040888963407) & ((1 << 64) - 1)
+        anchors: list[str] = []
+        for anchor_index in range(anchor_count):
+            fragment = fragments[(state + anchor_index) % len(fragments)]
+            if anchor_index % 17 == 0:
+                fragment = f"/item/{case_index}/{anchor_index}/" + ("x" * (state % 300))
+            quote = "'" if state & 1 else '"'
+            anchors.append(f"<a data-i={anchor_index} href={quote}{fragment}{quote}>x</a>")
+            state = (
+                state * 6364136223846793005 + 1442695040888963407
+            ) & ((1 << 64) - 1)
+        html = "".join(anchors)
+        base_url = bases[state % len(bases)]
+        assert _link_outcome(html, base_url, _extract_links) == _link_outcome(
+            html,
+            base_url,
+            _reference_extract_links,
+        )
 
 
 # ── format projection ───────────────────────────────────────────────
