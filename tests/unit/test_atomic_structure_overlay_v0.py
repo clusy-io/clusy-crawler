@@ -764,6 +764,56 @@ def test_batch_bridge_preserves_locked_legacy_decisions_and_output(
     assert batch.decision_digest == legacy.decision_digest
 
 
+def test_batch_bridge_restarts_aggregate_limited_tail_without_policy_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    atoms: list[str] = []
+    candidate_atoms: list[str] = []
+    for index in range(10):
+        text = f"unique_code_{index} = {index}\nprint(unique_code_{index})"
+        atoms.append(f'<pre><code class="language-python">{text}</code></pre>')
+        candidate_atoms.append(text)
+    html = _document("".join(atoms))
+    candidate = "\n\n".join(candidate_atoms)
+    config = _enabled()
+    original_create = overlay_module.create_local_atomic_selection_batch_v0
+    create_calls = 0
+
+    def counted_create(*args: object, **kwargs: object) -> object:
+        nonlocal create_calls
+        create_calls += 1
+        return original_create(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        overlay_module,
+        "LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_OUTPUT_BYTES",
+        160,
+    )
+    monkeypatch.setattr(
+        overlay_module,
+        "create_local_atomic_selection_batch_v0",
+        counted_create,
+    )
+
+    batch = overlay_module._propose_atomic_structure_overlay_v0(
+        html,
+        candidate,
+        config=config,
+        use_batch_certificate_bridge=True,
+    )
+    legacy = overlay_module._propose_atomic_structure_overlay_v0(
+        html,
+        candidate,
+        config=config,
+        use_batch_certificate_bridge=False,
+    )
+
+    assert create_calls > 1
+    assert batch == legacy
+    assert batch.accepted
+    assert len(batch.applied_proposal_ids) == len(atoms)
+
+
 @pytest.mark.parametrize(
     "candidate",
     [

@@ -61,6 +61,12 @@ _HARD_MAX_TABLE_COLUMNS = 256
 _HARD_MAX_TABLE_CELLS = 65_536
 _HARD_MAX_GROWTH_BYTES = 4 * 1024 * 1024
 _HARD_MAX_GROWTH_RATIO_MILLI = 20_000
+_AGGREGATE_BATCH_REJECTION_REASONS = frozenset(
+    {
+        "aggregate_certificate_byte_budget",
+        "aggregate_output_byte_budget",
+    }
+)
 
 _UNTRUSTED_LANDMARK_TAGS = frozenset({"aside", "footer", "header", "nav"})
 _UNTRUSTED_LANDMARK_ROLES = frozenset(
@@ -245,6 +251,91 @@ def _canonical_config(
             "max_growth_ratio_milli",
         ),
     )
+
+
+def _create_complete_local_atomic_batch(
+    document: NativeDocumentIRV2,
+    selected_ids: tuple[str, ...],
+    *,
+    max_output_bytes: int,
+) -> tuple[LocalAtomicBatchItemV0, ...]:
+    """Create every item without letting an internal batch cap change policy."""
+
+    pending_ids = selected_ids
+    output: list[LocalAtomicBatchItemV0] = []
+    while pending_ids:
+        items = create_local_atomic_selection_batch_v0(
+            document,
+            pending_ids,
+            max_output_bytes=max_output_bytes,
+            max_total_certificate_bytes=(
+                LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_CERTIFICATE_BYTES
+            ),
+            max_total_output_bytes=(
+                LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_OUTPUT_BYTES
+            ),
+        )
+        aggregate_offset = _first_aggregate_batch_rejection(items)
+        if aggregate_offset is None:
+            output.extend(items)
+            break
+        if aggregate_offset == 0:
+            raise RuntimeError("one local atomic item cannot fit the aggregate batch cap")
+        output.extend(items[:aggregate_offset])
+        pending_ids = pending_ids[aggregate_offset:]
+    if len(output) != len(selected_ids):
+        raise RuntimeError("complete local atomic create batch cardinality mismatch")
+    return tuple(output)
+
+
+def _verify_complete_local_atomic_batch(
+    document: NativeDocumentIRV2,
+    selected_ids: tuple[str, ...],
+    certificates: tuple[bytes, ...],
+    *,
+    max_output_bytes: int,
+) -> tuple[LocalAtomicBatchItemV0, ...]:
+    """Verify every item, restarting only a cap-rejected deterministic tail."""
+
+    if len(selected_ids) != len(certificates):
+        raise ValueError("local atomic verification IDs and certificates differ")
+    pending_ids = selected_ids
+    pending_certificates = certificates
+    output: list[LocalAtomicBatchItemV0] = []
+    while pending_ids:
+        items = verify_and_replay_local_atomic_selection_batch_v0(
+            document,
+            pending_ids,
+            pending_certificates,
+            max_output_bytes=max_output_bytes,
+            max_total_certificate_bytes=(
+                LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_CERTIFICATE_BYTES
+            ),
+            max_total_output_bytes=(
+                LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_OUTPUT_BYTES
+            ),
+        )
+        aggregate_offset = _first_aggregate_batch_rejection(items)
+        if aggregate_offset is None:
+            output.extend(items)
+            break
+        if aggregate_offset == 0:
+            raise RuntimeError("one local atomic replay cannot fit the aggregate batch cap")
+        output.extend(items[:aggregate_offset])
+        pending_ids = pending_ids[aggregate_offset:]
+        pending_certificates = pending_certificates[aggregate_offset:]
+    if len(output) != len(selected_ids):
+        raise RuntimeError("complete local atomic replay batch cardinality mismatch")
+    return tuple(output)
+
+
+def _first_aggregate_batch_rejection(
+    items: tuple[LocalAtomicBatchItemV0, ...],
+) -> int | None:
+    for index, item in enumerate(items):
+        if not item.accepted and item.reason in _AGGREGATE_BATCH_REJECTION_REASONS:
+            return index
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -586,16 +677,10 @@ def _propose_atomic_structure_overlay_v0(
     batch_certificate_items: dict[str, LocalAtomicBatchItemV0] = {}
     if use_batch_certificate_bridge and atoms:
         try:
-            created_items = create_local_atomic_selection_batch_v0(
+            created_items = _create_complete_local_atomic_batch(
                 document,
-                (atom.element.id for atom in atoms),
+                tuple(atom.element.id for atom in atoms),
                 max_output_bytes=config.max_replacement_bytes,
-                max_total_certificate_bytes=(
-                    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_CERTIFICATE_BYTES
-                ),
-                max_total_output_bytes=(
-                    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_OUTPUT_BYTES
-                ),
             )
             batch_certificate_items = {
                 item.selected_id: item for item in created_items
@@ -665,17 +750,11 @@ def _propose_atomic_structure_overlay_v0(
     replay_items_by_id: dict[str, LocalAtomicBatchItemV0] = {}
     if use_batch_certificate_bridge:
         try:
-            replay_items = verify_and_replay_local_atomic_selection_batch_v0(
+            replay_items = _verify_complete_local_atomic_batch(
                 document,
-                (proposal.selected_id for proposal in accepted_proposals),
-                (proposal.certificate for proposal in accepted_proposals),
+                tuple(proposal.selected_id for proposal in accepted_proposals),
+                tuple(proposal.certificate for proposal in accepted_proposals),
                 max_output_bytes=config.max_replacement_bytes,
-                max_total_certificate_bytes=(
-                    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_CERTIFICATE_BYTES
-                ),
-                max_total_output_bytes=(
-                    LOCAL_ATOMIC_SELECTION_BATCH_V0_MAX_TOTAL_OUTPUT_BYTES
-                ),
             )
         except (TypeError, ValueError, RuntimeError):
             return _global_rejection(

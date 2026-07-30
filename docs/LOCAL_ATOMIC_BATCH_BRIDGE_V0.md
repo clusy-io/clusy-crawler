@@ -35,6 +35,10 @@ that request index. It does not discard valid siblings. Duplicate IDs,
 unbounded inputs, invalid batch shape, or a globally invalid graph fail the
 batch boundary. Native and Python checks both enforce atom-count, per-record,
 aggregate certificate, per-atom output, and aggregate output limits.
+If an aggregate native limit would reject a deterministic tail, the overlay
+continues that tail in a fresh bounded batch. Aggregate implementation limits
+therefore bound peak work without changing the legacy per-atom eligibility
+surface.
 
 Certificate digests are deterministic replay identities. They are not
 signatures, authorization tokens, or proof that a source is trustworthy.
@@ -43,11 +47,12 @@ signatures, authorization tokens, or proof that a source is trustworthy.
 
 The default-disabled overlay now:
 
-1. creates certificates for all enumerated `pre` and `table` roots in one
-   native batch;
+1. creates certificates for all enumerated `pre` and `table` roots in one or
+   more bounded native batches;
 2. preserves every existing eligibility, candidate-alignment, token-identity,
    growth, overlap, and decision-record gate;
-3. verifies all ultimately accepted certificates in one native batch;
+3. verifies all ultimately accepted certificates in one or more bounded native
+   batches;
 4. applies verified replacements in reverse candidate-byte order.
 
 The per-atom legacy bridge remains available only through the private research
