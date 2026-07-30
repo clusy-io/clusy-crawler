@@ -318,6 +318,11 @@ async def test_verified_model_assisted_outputs_use_versioned_cache(
             model_assisted=True,
             quality_attempted=True,
             quality_succeeded=True,
+            source_selection_schema="quality-source-selection.v0",
+            source_selection_receipt_sha256="a" * 64,
+            source_selection_item_count=3,
+            source_selection_selected_count=2,
+            source_selection_replay_verified=True,
         )
 
     monkeypatch.setattr(crawler_mod, "extract_content_async", quality_extract)

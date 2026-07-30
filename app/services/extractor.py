@@ -70,6 +70,11 @@ class ExtractionResult:
     source_coverage_score: float | None = None
     output_grounding_score: float | None = None
     completeness_reasons: tuple[str, ...] = ()
+    source_selection_schema: str = ""
+    source_selection_receipt_sha256: str = ""
+    source_selection_item_count: int = 0
+    source_selection_selected_count: int = 0
+    source_selection_replay_verified: bool = False
 
 
 def _count_words(text: str) -> int:
@@ -1689,6 +1694,22 @@ async def _try_quality_result(
         return None
     if quality is None:
         return None
+    from app.services.source_selection_receipt_v0 import (
+        verify_quality_source_selection_receipt_v0,
+    )
+
+    receipt = quality.selection_receipt
+    if not verify_quality_source_selection_receipt_v0(
+        receipt,
+        raw_html=html_content,
+    ):
+        logger.warning(
+            "quality_extraction_fallback",
+            reason="verification_failed",
+            verification="source_selection_receipt",
+        )
+        return None
+    assert receipt is not None
     rejection_reason = _quality_rejection_reason(
         quality.text,
         html_content,
@@ -1726,6 +1747,11 @@ async def _try_quality_result(
             if deterministic is not None and deterministic.page_type
             else page_type
         ),
+        source_selection_schema=receipt.schema_version,
+        source_selection_receipt_sha256=receipt.receipt_sha256,
+        source_selection_item_count=receipt.item_count,
+        source_selection_selected_count=receipt.selected_count,
+        source_selection_replay_verified=receipt.replay_verified,
     )
     before_truncation = result.text
     result.text = _truncate_at_boundary(before_truncation)

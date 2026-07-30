@@ -19,7 +19,7 @@ logger = structlog.get_logger()
 # semantics change. Keeping the version in both the readable prefix and the
 # hashed payload prevents a rolling deployment from serving results produced by
 # an incompatible crawler revision.
-CACHE_SCHEMA_VERSION = "v10"
+CACHE_SCHEMA_VERSION = "v11"
 
 # These are the runtime settings that can change the canonical crawl result
 # while the source revision (GIT_SHA) remains constant. Keep the declaration

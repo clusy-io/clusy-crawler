@@ -47,6 +47,9 @@ class TestHealth:
         assert isinstance(data["quality_dependency_available"], bool)
         assert isinstance(data["quality_backend_enabled"], bool)
         assert data["quality_backend_revision"] == ""
+        assert data["quality_source_selection_schema"] == (
+            "quality-source-selection.v0"
+        )
         assert isinstance(data["playwright_enabled"], bool)
 
     @pytest.mark.anyio

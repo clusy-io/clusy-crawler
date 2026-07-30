@@ -227,6 +227,27 @@ def _result_is_stable_for_cache(result: CrawlResult) -> bool:
             # Fail closed if an adapter returns a model strategy but forgets
             # the explicit V2 success provenance.
             return False
+        from app.services.source_selection_receipt_v0 import (
+            SOURCE_SELECTION_RECEIPT_V0_SCHEMA,
+        )
+
+        if not (
+            metadata.source_selection_replay_verified
+            and metadata.source_selection_schema
+            == SOURCE_SELECTION_RECEIPT_V0_SCHEMA
+            and len(metadata.source_selection_receipt_sha256) == 64
+            and all(
+                character in "0123456789abcdef"
+                for character in metadata.source_selection_receipt_sha256
+            )
+            and metadata.source_selection_item_count >= 1
+            and 1
+            <= metadata.source_selection_selected_count
+            <= metadata.source_selection_item_count
+        ):
+            # Model-assisted Markdown is cacheable only when it came from a
+            # complete, independently replayed source-pointer selection.
+            return False
         # Temperature-zero is insufficient identity by itself. Persist model
         # output only when the operator binds the exact immutable backend build;
         # the revision is also part of the cache key and health fingerprint.
@@ -789,6 +810,17 @@ async def _crawl_uncached(
             source_coverage_score=extraction.source_coverage_score,
             output_grounding_score=extraction.output_grounding_score,
             completeness_reasons=list(extraction.completeness_reasons),
+            source_selection_schema=extraction.source_selection_schema,
+            source_selection_receipt_sha256=(
+                extraction.source_selection_receipt_sha256
+            ),
+            source_selection_item_count=extraction.source_selection_item_count,
+            source_selection_selected_count=(
+                extraction.source_selection_selected_count
+            ),
+            source_selection_replay_verified=(
+                extraction.source_selection_replay_verified
+            ),
         )
 
         return finalize(

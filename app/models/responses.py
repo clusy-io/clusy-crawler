@@ -56,6 +56,14 @@ class ExtractionMetadata(BaseModel):
     source_coverage_score: float | None = Field(default=None, ge=0, le=1)
     output_grounding_score: float | None = Field(default=None, ge=0, le=1)
     completeness_reasons: list[str] = Field(default_factory=list)
+    source_selection_schema: str = ""
+    source_selection_receipt_sha256: str = Field(
+        default="",
+        pattern=r"^(?:|[0-9a-f]{64})$",
+    )
+    source_selection_item_count: int = Field(default=0, ge=0)
+    source_selection_selected_count: int = Field(default=0, ge=0)
+    source_selection_replay_verified: bool = False
     stage_timings_ms: dict[str, float] = Field(default_factory=dict)
     cache_status: Literal["live", "hit"] = "live"
     cache_age_ms: float | None = Field(default=None, ge=0)
@@ -128,4 +136,5 @@ class VersionResponse(BaseModel):
     quality_dependency_available: bool = False
     quality_backend_enabled: bool = False
     quality_backend_revision: str = ""
+    quality_source_selection_schema: str = ""
     playwright_enabled: bool = False

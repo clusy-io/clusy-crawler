@@ -13,6 +13,10 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar
 import structlog
 
 from app.config import settings
+from app.services.source_selection_receipt_v0 import (
+    QualitySourceSelectionReceiptV0,
+    build_quality_source_selection_receipt_v0,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -77,6 +81,7 @@ class QualityExtractionConfig:
 class QualityExtraction:
     text: str
     strategy: str = QUALITY_STRATEGY
+    selection_receipt: QualitySourceSelectionReceiptV0 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,7 +444,7 @@ class QualityExtractor:
         runtime: _OfficialRuntime,
         html_content: str,
         url: str,
-    ) -> str:
+    ) -> QualityExtraction:
         extractor = runtime.extractor
         if extractor is None:
             extractor = self._initialize_runtime(runtime)
@@ -461,7 +466,37 @@ class QualityExtractor:
             raise ValueError("MinerU output is empty")
         if len(text) > self._config.max_output_chars:
             raise ValueError("MinerU output exceeds the configured limit")
-        return text
+        process_data = getattr(case, "process_data", None)
+        simplified_html = getattr(process_data, "simpled_html", None)
+        mapped_html = getattr(process_data, "map_html", None)
+        generate_output = getattr(case, "generate_output", None)
+        raw_model_response = getattr(generate_output, "response", None)
+        parse_result = getattr(case, "parse_result", None)
+        item_labels = getattr(parse_result, "item_label", None)
+        selected_html = getattr(output_data, "main_html", None)
+        if (
+            type(simplified_html) is not str
+            or type(mapped_html) is not str
+            or type(raw_model_response) is not str
+            or type(selected_html) is not str
+        ):
+            raise ValueError("MinerU source-selection artifacts are not text")
+        assert isinstance(simplified_html, str)
+        assert isinstance(mapped_html, str)
+        assert isinstance(raw_model_response, str)
+        assert isinstance(selected_html, str)
+        receipt = build_quality_source_selection_receipt_v0(
+            raw_html=html_content,
+            raw_model_response=raw_model_response,
+            response_format=self._config.response_format,
+            simplified_html=simplified_html,
+            mapped_html=mapped_html,
+            item_labels=item_labels,
+            selected_html=selected_html,
+            upstream_revision=MINERU_HTML_REVISION,
+            prompt_profile=self._config.prompt_profile,
+        )
+        return QualityExtraction(text=text, selection_receipt=receipt)
 
     async def extract(self, html_content: str, url: str = "") -> QualityExtraction | None:
         if not self._config.enabled or self._dependency_unavailable or self._closed:
@@ -523,7 +558,9 @@ class QualityExtractor:
             logger.warning("quality_extraction_fallback", reason="worker_start_failed")
             return None
 
-        def release_when_worker_really_finishes(done: asyncio.Future[str]) -> None:
+        def release_when_worker_really_finishes(
+            done: asyncio.Future[QualityExtraction],
+        ) -> None:
             # Consume a late exception after a timeout/cancellation to avoid an
             # unhandled-future warning. Never include its message in telemetry.
             if not done.cancelled():
@@ -535,7 +572,7 @@ class QualityExtractor:
         worker.add_done_callback(release_when_worker_really_finishes)
 
         try:
-            text = await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 asyncio.shield(worker),
                 timeout=max(0.0, deadline - loop.time()),
             )
@@ -563,7 +600,7 @@ class QualityExtractor:
             return None
 
         self._record_success()
-        return QualityExtraction(text=text)
+        return result
 
     async def aclose(self) -> None:
         """Drain workers and close every reusable client on its owning loop."""

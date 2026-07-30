@@ -19,6 +19,9 @@ from app.services.quality_extractor import (
     QualityExtractor,
     _OfficialBindings,
 )
+from app.services.source_selection_receipt_v0 import (
+    build_quality_source_selection_receipt_v0,
+)
 
 
 def _configure_quality_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -104,13 +107,53 @@ def _bindings(
     )
 
 
-def _success(text: str = "# Main\n\nBody") -> list[object]:
+def _success(
+    text: str = "# Main\n\nBody",
+    *,
+    raw_model_response: str = '{"1":"main"}',
+) -> list[object]:
+    mapped_html = (
+        '<html><body><article _item_id="1">'
+        "source-backed model selection"
+        "</article></body></html>"
+    )
     return [
         SimpleNamespace(
             error=None,
-            output_data=SimpleNamespace(main_content=text),
+            generate_output=SimpleNamespace(response=raw_model_response),
+            process_data=SimpleNamespace(
+                simpled_html=mapped_html,
+                map_html=mapped_html,
+            ),
+            parse_result=SimpleNamespace(item_label={"1": "main"}),
+            output_data=SimpleNamespace(
+                main_content=text,
+                main_html=mapped_html,
+            ),
         )
     ]
+
+
+def _verified_quality(text: str, raw_html: str) -> QualityExtraction:
+    mapped_html = (
+        '<html><body><main _item_id="1">'
+        "source-backed test selection"
+        "</main></body></html>"
+    )
+    return QualityExtraction(
+        text=text,
+        selection_receipt=build_quality_source_selection_receipt_v0(
+            raw_html=raw_html,
+            raw_model_response='{"1":"main"}',
+            response_format="json",
+            simplified_html=mapped_html,
+            mapped_html=mapped_html,
+            item_labels={"1": "main"},
+            selected_html=mapped_html,
+            upstream_revision=quality_module.MINERU_HTML_REVISION,
+            prompt_profile="openai_json",
+        ),
+    )
 
 
 def test_quality_runtime_configuration_rejects_unknown_prompt_contract() -> None:
@@ -134,10 +177,11 @@ async def test_official_pipeline_success_uses_empty_fallback_and_clear_strategy(
 
     result = await extractor.extract("<article>paper</article>", "https://example.test/p")
 
-    assert result == QualityExtraction(
-        text="# Paper\n\nUseful content",
-        strategy=QUALITY_STRATEGY,
-    )
+    assert result is not None
+    assert result.text == "# Paper\n\nUseful content"
+    assert result.strategy == QUALITY_STRATEGY
+    assert result.selection_receipt is not None
+    assert result.selection_receipt.replay_verified is True
     assert captured_inputs[0].url == "https://example.test/p"
     mineru_config = captured_init[0]["config"]
     assert mineru_config.kwargs == {
@@ -157,7 +201,10 @@ async def test_compact_profile_uses_official_0_5b_prompt_contract() -> None:
     extractor = QualityExtractor(
         _config(prompt_profile="mineru_compact"),
         bindings_loader=lambda: _bindings(
-            lambda _: _success("# Compact\n\nUseful compact model content"),
+            lambda _: _success(
+                "# Compact\n\nUseful compact model content",
+                raw_model_response="1main",
+            ),
             init_capture=captured_init,
         ),
     )
@@ -671,12 +718,13 @@ async def test_async_integration_returns_quality_result(
 ) -> None:
     _configure_quality_backend(monkeypatch)
 
-    async def quality_result(_: str, __: str) -> QualityExtraction:
-        return QualityExtraction(
-            text=(
+    async def quality_result(raw_html: str, _: str) -> QualityExtraction:
+        return _verified_quality(
+            (
                 "# Neural\n\nSelected body with grounded words for the useful "
                 "page content."
-            )
+            ),
+            raw_html,
         )
 
     monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
@@ -696,6 +744,48 @@ async def test_async_integration_returns_quality_result(
     assert result.title == "Neural"
     assert result.description == "Useful description"
     assert result.language == "en"
+    assert result.source_selection_schema == "quality-source-selection.v0"
+    assert len(result.source_selection_receipt_sha256) == 64
+    assert result.source_selection_item_count == 1
+    assert result.source_selection_selected_count == 1
+    assert result.source_selection_replay_verified is True
+
+
+@pytest.mark.asyncio
+async def test_quality_integration_rejects_text_without_source_selection_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_quality_backend(monkeypatch)
+
+    async def unproven_quality(_: str, __: str) -> QualityExtraction:
+        return QualityExtraction(
+            text=(
+                "Grounded source words are still insufficient without a "
+                "replayable source-pointer receipt."
+            )
+        )
+
+    monkeypatch.setattr(
+        quality_module,
+        "extract_quality_content",
+        unproven_quality,
+    )
+    html = (
+        "<html><body><main>Grounded source words are still insufficient "
+        "without a replayable source-pointer receipt.</main></body></html>"
+    )
+
+    result = await extract_content_async(
+        html,
+        "https://example.test/unproven-quality",
+        extraction_profile="quality",
+    )
+
+    assert result.strategy != QUALITY_STRATEGY
+    assert result.model_assisted is False
+    assert result.quality_attempted is True
+    assert result.quality_succeeded is False
+    assert result.source_selection_replay_verified is False
 
 
 @pytest.mark.asyncio
@@ -710,8 +800,8 @@ async def test_quality_output_is_capped_before_completeness_annotation(
     )
     body = " ".join(f"groundedword{index}" for index in range(80))
 
-    async def quality_result(_: str, __: str) -> QualityExtraction:
-        return QualityExtraction(text=body)
+    async def quality_result(raw_html: str, _: str) -> QualityExtraction:
+        return _verified_quality(body, raw_html)
 
     monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
     result = await extract_content_async(
@@ -738,8 +828,8 @@ async def test_quality_verifier_accepts_grounded_cjk_without_space_boundaries(
 
     text = "# 架构\n\n复用连接能够降低重复抓取请求的延迟并保持正文结构完整。"
 
-    async def quality_result(_: str, __: str) -> QualityExtraction:
-        return QualityExtraction(text=text)
+    async def quality_result(raw_html: str, _: str) -> QualityExtraction:
+        return _verified_quality(text, raw_html)
 
     monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
     result = await extract_content_async(
@@ -1138,17 +1228,18 @@ async def test_adaptive_structural_risk_escalates_after_deterministic_candidate(
     )
     calls = 0
 
-    async def quality_result(_: str, __: str) -> QualityExtraction:
+    async def quality_result(raw_html: str, _: str) -> QualityExtraction:
         nonlocal calls
         assert events == ["deterministic", "deterministic"]
         events.append("quality")
         calls += 1
-        return QualityExtraction(
-            text=(
+        return _verified_quality(
+            (
                 "# Architecture\n\nReusable connections reduce latency for "
                 "repeated extraction requests while preserving ordered "
                 "structural content."
-            )
+            ),
+            raw_html,
         )
 
     monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
@@ -1312,8 +1403,8 @@ async def test_adaptive_verifier_rejects_unsafe_assisted_output_without_metadata
         lambda *_args: candidate,
     )
 
-    async def quality_result(*_args: object) -> QualityExtraction:
-        return QualityExtraction(text=assisted_text)
+    async def quality_result(raw_html: str, _: str) -> QualityExtraction:
+        return _verified_quality(assisted_text, raw_html)
 
     monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
     html = """
@@ -1365,8 +1456,8 @@ async def test_adaptive_verifier_rejects_grounded_fragment_of_trusted_article(
 
     fragment = " ".join(article_words[:24])
 
-    async def quality_result(*_args: object) -> QualityExtraction:
-        return QualityExtraction(text=fragment)
+    async def quality_result(raw_html: str, _: str) -> QualityExtraction:
+        return _verified_quality(fragment, raw_html)
 
     monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
     html = (
@@ -1408,8 +1499,8 @@ async def test_quality_profile_requires_complete_deterministic_comparator(
         lambda *_args: candidate,
     )
 
-    async def quality_result(*_args: object) -> QualityExtraction:
-        return QualityExtraction(text=" ".join(article_words[:24]))
+    async def quality_result(raw_html: str, _: str) -> QualityExtraction:
+        return _verified_quality(" ".join(article_words[:24]), raw_html)
 
     monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
     html = "<html><body><article>" + " ".join(article_words) + "</article></body></html>"
@@ -1446,8 +1537,8 @@ async def test_adaptive_verifier_allows_short_grounded_cleanup_for_noisy_product
     useful_words = [f"detail{index}" for index in range(24)]
     assisted = " ".join(useful_words)
 
-    async def quality_result(*_args: object) -> QualityExtraction:
-        return QualityExtraction(text=assisted)
+    async def quality_result(raw_html: str, _: str) -> QualityExtraction:
+        return _verified_quality(assisted, raw_html)
 
     monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
     html = (

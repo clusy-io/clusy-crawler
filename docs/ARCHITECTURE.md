@@ -93,16 +93,23 @@ extraction. Candidate comparison is bounded and deterministic.
 
 `adaptive` and `quality` preserve the deterministic result when the optional
 backend is absent, saturated, times out, trips its circuit breaker, returns an
-invalid response, or fails verification. Model-assisted output is checked
-against source-token coverage and ordering thresholds; this is bounded
-heuristic grounding, not a token-level source identity guarantee.
+invalid response, or loses the verification comparison. The pinned MinerU
+adapter classifies source-derived `_item_id` blocks rather than generating page
+text. Clusy strictly validates and binds the exact raw JSON or compact response,
+requires it to agree with complete parsed labels, and independently replays the
+selected DOM into a
+[`quality-source-selection.v0`](QUALITY_SOURCE_SELECTION.md) receipt before
+accepting its deterministic serialization. Bounded source-token coverage and
+ordering remain additional checks. The receipt binds a parser-repaired mapped
+DOM; it is not yet an original-byte span certificate.
 
 ### 5. Projection and output
 
-Markdown is present in every successful crawl result. A caller may also request
-HTML, discovered links, or schema-constrained JSON. Result metadata records
-route, model-assistance state, completeness coverage, truncation, cache state,
-and stage timings.
+Markdown is always present in a successful crawl result. Callers may request
+source HTML, discovered links, or schema-constrained JSON. The response records
+the extraction route, reasons, model-assistance state, verified source-selection
+identity and counts when applicable, completeness coverage, truncation, cache
+state, and per-stage timings.
 
 Output is bounded twice:
 

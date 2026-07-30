@@ -111,12 +111,19 @@ The main design boundaries are:
 
 - **Fetch once, escalate deliberately.** Ordinary pages stay on the static
   path. Rendering is conditional or explicit.
-- **Keep a deterministic fallback.** Optional quality backends cannot remove
-  the known local candidate.
+- **Deterministic result first.** Optional quality backends cannot remove the
+  known local fallback.
+- **Source-derived structure.** Deterministic paths replay source text. The
+  pinned quality model labels source-derived item IDs; Clusy independently
+  validates the exact raw response, replays that selection, and binds both in a
+  versioned receipt before applying grounding and completeness checks. Any
+  failure falls back locally.
 - **Separate extraction from discovery.** Main-content selection and the crawl
-  frontier are independent state machines.
-- **Return provenance.** Results report route, truncation, completeness, cache,
-  render, and per-stage timing state.
+  frontier are independent state machines; indexing and ranking remain outside
+  this service.
+- **Return provenance.** Results report route, verified source-selection
+  identity when applicable, truncation, completeness, cache, render, and
+  per-stage timing state.
 - **Bound every request dimension.** URL count, depth, pages, bodies, output,
   retries, deadlines, and concurrency are capped.
 
@@ -168,6 +175,10 @@ queue.
 
 If the optional quality backend is absent, saturated, unavailable, invalid, or
 slower than its deadline, the deterministic candidate remains authoritative.
+The quality lane is disabled unless its base URL, API key, and model are all
+configured. Successful model output is not persisted in Redis unless an
+immutable backend revision is supplied and its source-selection receipt was
+independently replayed.
 
 ## API
 

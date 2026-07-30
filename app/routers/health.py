@@ -21,6 +21,9 @@ from app.services.extractor import (
 )
 from app.services.quality_extractor import quality_dependency_available
 from app.services.rendering.manager import render_manager_is_ready as renderer_is_ready
+from app.services.source_selection_receipt_v0 import (
+    SOURCE_SELECTION_RECEIPT_V0_SCHEMA,
+)
 
 router = APIRouter(tags=["health"])
 _LOCAL_FINGERPRINT_HMAC_KEY = secrets.token_bytes(32)
@@ -217,6 +220,7 @@ def _serving_config_payload() -> dict[str, object]:
         "quality_api_key_present": bool(settings.quality_extraction_api_key),
         "quality_backend_configured": settings.quality_backend_configured(),
         "quality_dependency_available": quality_dependency_available(),
+        "quality_source_selection_schema": SOURCE_SELECTION_RECEIPT_V0_SCHEMA,
         "redis_configured": bool(settings.redis_url.strip()),
         "crawler_api_token_present": bool(settings.crawler_api_token),
         "serving_fingerprint_key_present": bool(
@@ -302,6 +306,7 @@ async def version() -> dict[str, str | bool]:
         "quality_backend_revision": (
             settings.quality_extraction_backend_revision
         ),
+        "quality_source_selection_schema": SOURCE_SELECTION_RECEIPT_V0_SCHEMA,
         "playwright_enabled": settings.playwright_enabled,
     }
 
