@@ -18,6 +18,7 @@ does not establish another.
 
 | Protocol | Status | Purpose |
 | --- | --- | --- |
+| [`evidence/selection-atom-catalog-e5958b5/PROTOCOL.md`](evidence/selection-atom-catalog-e5958b5/PROTOCOL.md) | HTML-only diagnostic | Measure default-off source-map/catalog representation coverage and local mechanism cost without labels or scoring |
 | [`WEBMAINBENCH_IR_LABEL_ORACLE.md`](WEBMAINBENCH_IR_LABEL_ORACLE.md) | Label oracle; not claimable | Estimate the ceiling and failure modes of ordered source-backed IR |
 | [`lattice_reference/README.md`](lattice_reference/README.md) | Research only | Test an exact typed source-span decoder |
 | [`focused_frontier_v0/PROTOCOL.md`](focused_frontier_v0/PROTOCOL.md) | Synthetic only | Exercise pluggable frontier priority without network access |

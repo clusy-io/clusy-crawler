@@ -102,6 +102,71 @@ class NativeIRTextRunV2:
     source_end: Final[int | None]
     source_span_reliable: Final[bool]
 
+class NativeOrderedSourceTextSpanV2:
+    schema_version: Final[Literal["ordered-source-text-span.v2"]]
+    text_run_id: Final[str]
+    order: Final[int]
+    source_order: Final[int]
+    parent_id: Final[str]
+    decoded_text: Final[str]
+    decoded_bytes: Final[int]
+    decoded_text_sha256: Final[str]
+    raw_source_start: Final[int]
+    raw_source_end: Final[int]
+    raw_source_bytes: Final[int]
+    raw_fragment: Final[str]
+    raw_fragment_sha256: Final[str]
+    decoding_mode: Final[Literal["data", "rcdata", "raw_text", "script_data"]]
+    transform_kind: Final[
+        Literal[
+            "identity",
+            "html_character_reference",
+            "newline_normalization",
+            "tokenizer_normalization",
+            "mixed",
+        ]
+    ]
+    transformed: Final[bool]
+    tokenizer_error_count: Final[int]
+    decode_verified: Final[bool]
+    certificate_sha256: Final[str]
+    digest_is_authentication: Final[Literal[False]]
+
+class NativeOrderedSourceTextMapV2:
+    spans: Final[list[NativeOrderedSourceTextSpanV2]]
+    schema_version: Final[Literal["ordered-source-text-map.v2"]]
+    document_schema_version: Final[str]
+    accepted: Final[bool]
+    reason: Final[str]
+    source_digest: Final[str]
+    map_digest: Final[str]
+    input_bytes: Final[int]
+    parsed_bytes: Final[int]
+    source_complete: Final[bool]
+    source_mapping_complete: Final[bool]
+    parse_error_count: Final[int]
+    document_truncated: Final[bool]
+    truncation_reasons: Final[list[str]]
+    candidate_text_run_count: Final[int]
+    mapped_text_run_count: Final[int]
+    source_event_count: Final[int]
+    source_text_token_count: Final[int]
+    skipped_source_text_token_count: Final[int]
+    skipped_dom_text_run_count: Final[int]
+    max_stack_depth_seen: Final[int]
+    total_raw_bytes: Final[int]
+    transformed_span_count: Final[int]
+    character_reference_span_count: Final[int]
+    tokenizer_error_count: Final[int]
+    max_source_bytes: Final[int]
+    max_source_events: Final[int]
+    max_text_runs: Final[int]
+    max_raw_fragment_bytes: Final[int]
+    max_total_raw_bytes: Final[int]
+    max_stack_depth: Final[int]
+    deterministic: Final[Literal[True]]
+    digest_is_authentication: Final[Literal[False]]
+
 class NativeIRTableV2:
     id: Final[str]
     node_id: Final[str]
@@ -323,6 +388,15 @@ def extract_document_ir_v2_native(
     max_math_bytes: int = 256 * 1024,
     max_table_columns: int = 1_024,
 ) -> NativeDocumentIRV2: ...
+def map_ordered_source_text_v2_native(
+    document: NativeDocumentIRV2,
+    max_source_bytes: int = 4 * 1024 * 1024,
+    max_source_events: int = 500_000,
+    max_text_runs: int = 200_000,
+    max_raw_fragment_bytes: int = 1024 * 1024,
+    max_total_raw_bytes: int = 8 * 1024 * 1024,
+    max_stack_depth: int = 256,
+) -> NativeOrderedSourceTextMapV2: ...
 def create_selection_certificate_v0_native(
     document: NativeDocumentIRV2,
     selected_ids: list[str],

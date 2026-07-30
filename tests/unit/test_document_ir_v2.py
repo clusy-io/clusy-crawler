@@ -100,6 +100,23 @@ def test_v2_selection_is_closed_under_ancestors_and_never_broadens_unknown_ids()
     assert reconstruct_document_ir_v2(result, selected_ids=[]).markdown == ""
 
 
+def test_v2_direct_table_cell_selection_retains_its_complete_text_subtree() -> None:
+    result = extract_document_ir_v2(
+        "<table><tr><td>alpha <strong>beta</strong></td><td>drop</td></tr></table>"
+    )
+    selected_cell = result.table_cells[0]
+
+    reconstructed = reconstruct_document_ir_v2(
+        result,
+        selected_ids=[selected_cell.node_id],
+    )
+
+    assert reconstructed.missing_ids == []
+    assert reconstructed.selected_ids == [selected_cell.node_id]
+    assert ">alpha beta</td>" in reconstructed.markdown
+    assert "drop" not in reconstructed.markdown
+
+
 def test_v2_limit_provenance_is_utf8_safe_and_v1_is_unchanged() -> None:
     html = "<main><p>" + ("é" * 100) + "</p><table><tr><td colspan=99>x</td></tr></table></main>"
     limits = DocumentIRV2Limits(

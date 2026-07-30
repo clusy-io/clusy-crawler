@@ -5,6 +5,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 mod selection_certificate_v0;
+mod source_text_mapper_v2;
 
 const SCHEMA_VERSION: &str = "ordered-dom-ir.v2";
 const SERIALIZATION_CONTRACT: &str = "ordered-dom-ir.v2.markdown.1";
@@ -656,6 +657,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<NativeDocumentIRV2>()?;
     module.add_function(wrap_pyfunction!(extract_document_ir_v2_native, module)?)?;
     selection_certificate_v0::register(module)?;
+    source_text_mapper_v2::register(module)?;
     Ok(())
 }
 
@@ -2316,7 +2318,14 @@ fn render_table(context: &RenderContext<'_>, table_index: usize, force_full: boo
             let Some(cell_index) = context.graph.element_by_id.get(&cell.node_id).copied() else {
                 continue;
             };
-            let text = selected_descendant_text(context, cell_index, force_full, false);
+            // A directly selected cell owns its complete subtree, just like
+            // every other selected element. The table renderer is special
+            // because it renders cells itself rather than recursing through
+            // `render_event`, so propagate that selected-element closure
+            // explicitly. Text-run-only selections remain narrow.
+            let cell_force_full =
+                force_full || context.selected.contains(&EventRef::Element(cell_index));
+            let text = selected_descendant_text(context, cell_index, cell_force_full, false);
             output.push_str(&format!(
                 "<{tag}{attributes}>{}</{tag}>\n",
                 escape_html_text(text.trim())

@@ -165,9 +165,35 @@ ordered elements, text runs, source spans, lists, tables, code, math, and
 deterministic selected serialization. Selection certificates bind source,
 graph, selection, and output identities for replay.
 
-These are research surfaces. They are default-off and are not imported by the
-production extraction cascade. A digest proves deterministic identity, not
-source trust, authorization, or authenticity.
+The opt-in `ordered-source-text-map.v2` adds exact raw-source provenance for
+retained text. A bounded source-order scanner decodes named/numeric character
+references and tokenizer newline behavior, then pairs each non-ignorable DOM
+text run by direct parent, decoded identity, and order. Accepted spans carry
+the exact raw UTF-8 fragment, byte offsets, raw/decoded digests, transform
+classification, and a deterministic certificate. Repeated same-parent text is
+paired in order rather than guessed by substring search.
+
+The map is all-or-nothing. It rejects non-whitespace reorder, foster parenting,
+structural repair, malformed crossing, and optional-end ambiguity whenever
+they violate retained explicit-element mapping or the direct-parent,
+decoded-identity, and order bijection. Standards-defined implicit structure
+such as an inserted `tbody` remains eligible when that contract stays exact.
+Incomplete/truncated source and every source/event/run/fragment/stack budget
+failure reject the map. Parser-reparented whitespace is omitted only when both
+sides are exact HTML whitespace outside a whitespace-preserving context;
+omission counts and identities are digest-bound.
+
+`selection-atom-catalog.v1` consumes only an accepted map and emits disjoint
+lexical atoms plus typed closure metadata. Every atom source span must be
+contained by its closure span. `text_run_id` is the narrow lexical replay
+pointer; `selection_id` identifies a typed closure owner whose use still
+requires the ledger's verified replay policy and a downstream decision about
+grouped atoms or enclosing structure.
+
+These APIs are research surfaces. Catalog construction is default-off; the
+mapper and catalog are not invoked by serving decisions or wired into serving
+API behavior. They do not change the crawler response schema. A digest proves
+deterministic identity, not source trust, authorization, or authenticity.
 
 ## Failure behavior
 

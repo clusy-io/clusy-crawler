@@ -97,6 +97,7 @@ version = "0.1.0"
 dependencies = [
  "dom_query",
  "glob",
+ "html5ever",
  "pyo3",
  "rs-trafilatura 0.1.0",
  "rs-trafilatura 0.2.2",

@@ -1,0 +1,401 @@
+{
+  "claim_boundary": {
+    "end_to_end_crawler_latency": false,
+    "production_default_changed": false,
+    "representation_coverage_only": true,
+    "sota_claim": false,
+    "vendor_latency_comparison": false,
+    "wmb_quality_score": false
+  },
+  "cold_probe": {
+    "accepted": true,
+    "atom_count": 33,
+    "catalog_digest": "a5f87ebf418998a4f4c2cb77c8e6dbbd84db2dcf6a3e60fa7a3f46a4bea7c685",
+    "kind_counts": {
+      "code": 14,
+      "list_item": 5,
+      "math": 0,
+      "table_cell": 0,
+      "text": 14
+    },
+    "latency_ms": 9.450667,
+    "reason": "accepted",
+    "row": 1,
+    "source_html_bytes": 763532,
+    "transformed_span_count": 1
+  },
+  "coverage_comparison": {
+    "accepted_page_delta": 461,
+    "coverage_percentage_point_delta": 84.58715596330275,
+    "denominator_pages": 545,
+    "legacy_pre_mapper_development_observation": {
+      "accepted_pages": 76,
+      "coverage_ratio": 0.13944954128440368,
+      "exact_executable_or_source_artifact_retained": false,
+      "performance_comparison_permitted": false,
+      "reason_counts": {
+        "accepted": 76,
+        "incomplete_source_mapping": 7,
+        "truncated_ir": 1,
+        "unreliable_text_mapping": 461
+      }
+    },
+    "metric": "all-or-nothing selection-atom representation coverage",
+    "ordered_mapper_catalog": {
+      "accepted_pages": 537,
+      "coverage_ratio": 0.9853211009174312,
+      "reason_counts": {
+        "accepted": 537,
+        "incomplete_source_mapping": 7,
+        "truncated_ir": 1
+      }
+    },
+    "quality_or_sota_inference_permitted": false
+  },
+  "environment": {
+    "logical_cpu_count": 12,
+    "machine": "arm64",
+    "physical_memory_bytes": 25769803776,
+    "platform": "macOS-26.6-arm64-arm-64bit-Mach-O",
+    "processor": "arm",
+    "python": "3.13.5 | packaged by Anaconda, Inc. | (main, Jun 12 2025, 11:23:37) [Clang 14.0.6 ]",
+    "python_executable": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/bin/python",
+    "python_implementation": "CPython",
+    "release": "25.6.0",
+    "system": "Darwin",
+    "version": "Darwin Kernel Version 25.6.0: Fri May 15 02:00:17 PDT 2026; root:xnu-12377.160.49.0.1~42/RELEASE_ARM64_T6041"
+  },
+  "input": {
+    "jsonl_bytes": 88727247,
+    "jsonl_sha256": "e5958b541d844cf011e66e214bf64abb742aec6922e3c32321e2abaf7cf2c735",
+    "labels_present_or_read": false,
+    "records": 545,
+    "required_keys": [
+      "html",
+      "html_sha256",
+      "row",
+      "track_id",
+      "url"
+    ]
+  },
+  "input_identity_before_and_after_match": true,
+  "pooled": {
+    "catalog_call_seconds": 35.021392612,
+    "observations": 1635,
+    "pages_per_catalog_call_second": 46.68575056720534,
+    "per_page_ms": {
+      "max": 1220.335042,
+      "p50_nearest_rank": 11.618834,
+      "p95_nearest_rank": 53.0505
+    },
+    "source_html_bytes_per_catalog_call_second": 7233852.371512884
+  },
+  "protocol": {
+    "cold_method": "One fixed first-row call after imports, source fingerprinting, and input SHA-256 validation, but before any prior catalog invocation in the process. Process startup/import latency is excluded.",
+    "concurrency": 1,
+    "direction": "forward",
+    "excluded_from_timed_region": [
+      "process startup and imports",
+      "JSONL disk read and JSON parsing",
+      "per-row HTML SHA-256 validation",
+      "network, rendering, scoring, serialization, and vendor APIs"
+    ],
+    "legacy_comparator": "unavailable: the pre-mapper catalog was an uncommitted development snapshot and no exact executable/source artifact was retained",
+    "measured_command": ".venv/bin/python bench/selection_atom_catalog_representability.py /Users/julin/ClusyV2/webclient/node_modules/.clusy-modal-l40s/inputs/inference-input.jsonl --runs 3 --warmup-pages 16 --output /Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/bench/evidence/selection-atom-catalog-e5958b5/report.json",
+    "percentile": "nearest rank over individual page calls",
+    "relative_reproduction_command": ".venv/bin/python bench/selection_atom_catalog_representability.py <frozen-input.jsonl> --runs 3 --warmup-pages 16 --output <report.json>",
+    "runs": 3,
+    "throughput_denominator": "sum of catalog-call wall nanoseconds only",
+    "timed_region": "build_selection_atom_catalog_v1(html, enabled config), including ordered-dom-ir.v2 extraction, ordered-source-text-map.v2, validation, atom construction, and digests",
+    "warm_method": "After the cold probe, call the first 16 rows as unmeasured warm-up, then stream 3 complete forward sweeps. Each page call is timed separately.",
+    "warmup_pages": 16
+  },
+  "recorded_end_utc": "2026-07-30T21:32:11Z",
+  "recorded_start_utc": "2026-07-30T21:31:34Z",
+  "resources": {
+    "additional_peak_above_import_and_warmup_bytes": 260915200,
+    "measurement": "process lifetime ru_maxrss; peak-ish, not allocator attribution",
+    "peak_rss_bytes_after_all_runs": 560087040,
+    "peak_rss_bytes_after_cold_probe": 55836672,
+    "peak_rss_bytes_after_import_and_warmup": 299171840,
+    "peak_rss_bytes_after_import_source_and_input_hash": 40665088
+  },
+  "runs": [
+    {
+      "accepted": 537,
+      "atom_count": 183549,
+      "kind_counts": {
+        "code": 12637,
+        "list_item": 68784,
+        "math": 3047,
+        "table_cell": 33104,
+        "text": 65977
+      },
+      "output_commitment_sha256": "4882a299fbd467fc8612362b784ad4704fe93f944d7255d91fa200d62783cf61",
+      "pages": 545,
+      "reason_counts": {
+        "accepted": 537,
+        "incomplete_source_mapping": 7,
+        "truncated_ir": 1
+      },
+      "resources": {
+        "peak_rss_bytes_after_run": 460505088,
+        "system_cpu_seconds_delta": 0.7305900000000001,
+        "user_cpu_seconds_delta": 11.288953
+      },
+      "run": 1,
+      "source_html_bytes": 84446528,
+      "timing": {
+        "catalog_call_seconds": 11.878656801,
+        "loop_wall_seconds_including_jsonl_read_and_validation": 12.228112,
+        "pages_per_catalog_call_second": 45.880608315421604,
+        "per_page_ms": {
+          "max": 1200.456041,
+          "p50_nearest_rank": 11.897292,
+          "p95_nearest_rank": 54.013166
+        },
+        "source_html_bytes_per_catalog_call_second": 7109097.384890428
+      },
+      "transformed_span_count": 12399
+    },
+    {
+      "accepted": 537,
+      "atom_count": 183549,
+      "kind_counts": {
+        "code": 12637,
+        "list_item": 68784,
+        "math": 3047,
+        "table_cell": 33104,
+        "text": 65977
+      },
+      "output_commitment_sha256": "4882a299fbd467fc8612362b784ad4704fe93f944d7255d91fa200d62783cf61",
+      "pages": 545,
+      "reason_counts": {
+        "accepted": 537,
+        "incomplete_source_mapping": 7,
+        "truncated_ir": 1
+      },
+      "resources": {
+        "peak_rss_bytes_after_run": 460505088,
+        "system_cpu_seconds_delta": 0.5882310000000002,
+        "user_cpu_seconds_delta": 11.366581999999998
+      },
+      "run": 2,
+      "source_html_bytes": 84446528,
+      "timing": {
+        "catalog_call_seconds": 11.716832804,
+        "loop_wall_seconds_including_jsonl_read_and_validation": 12.031190084,
+        "pages_per_catalog_call_second": 46.51427643602996,
+        "per_page_ms": {
+          "max": 1220.335042,
+          "p50_nearest_rank": 11.405167,
+          "p95_nearest_rank": 51.990416
+        },
+        "source_html_bytes_per_catalog_call_second": 7207282.83936687
+      },
+      "transformed_span_count": 12399
+    },
+    {
+      "accepted": 537,
+      "atom_count": 183549,
+      "kind_counts": {
+        "code": 12637,
+        "list_item": 68784,
+        "math": 3047,
+        "table_cell": 33104,
+        "text": 65977
+      },
+      "output_commitment_sha256": "4882a299fbd467fc8612362b784ad4704fe93f944d7255d91fa200d62783cf61",
+      "pages": 545,
+      "reason_counts": {
+        "accepted": 537,
+        "incomplete_source_mapping": 7,
+        "truncated_ir": 1
+      },
+      "resources": {
+        "peak_rss_bytes_after_run": 560087040,
+        "system_cpu_seconds_delta": 0.5674739999999998,
+        "user_cpu_seconds_delta": 11.122495000000004
+      },
+      "run": 3,
+      "source_html_bytes": 84446528,
+      "timing": {
+        "catalog_call_seconds": 11.425903007,
+        "loop_wall_seconds_including_jsonl_read_and_validation": 11.73882275,
+        "pages_per_catalog_call_second": 47.69863700629259,
+        "per_page_ms": {
+          "max": 1145.588,
+          "p50_nearest_rank": 11.261042,
+          "p95_nearest_rank": 50.281833
+        },
+        "source_html_bytes_per_catalog_call_second": 7390796.854153621
+      },
+      "transformed_span_count": 12399
+    }
+  ],
+  "schema": "clusy.selection-atom-catalog-mechanism-measurement.v1",
+  "source_identity": {
+    "benchmark_callable": {
+      "module": "clusy_native.selection_atom_catalog_v1",
+      "package_reexport_is_module_entrypoint": true,
+      "qualname": "build_selection_atom_catalog_v1"
+    },
+    "executed_python_modules": {
+      "clusy_native": {
+        "bytes": 4449,
+        "installed_relative": "__init__.py",
+        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/__init__.py",
+        "repository_bytes_match": true,
+        "repository_relative": "native/python/clusy_native/__init__.py",
+        "sha256": "eac8fb5bfb89a272fedaad7b58d847dd2741676a2b514e163e395ae2e1bd8a9c"
+      },
+      "clusy_native.document_ir": {
+        "bytes": 1515,
+        "installed_relative": "document_ir.py",
+        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/document_ir.py",
+        "repository_bytes_match": true,
+        "repository_relative": "native/python/clusy_native/document_ir.py",
+        "sha256": "ab698ad5080c3ae0cf7a1b01a4a9ba9934e3d790f3d643ce57b552e37efd50a1"
+      },
+      "clusy_native.document_ir_v2": {
+        "bytes": 2385,
+        "installed_relative": "document_ir_v2.py",
+        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/document_ir_v2.py",
+        "repository_bytes_match": true,
+        "repository_relative": "native/python/clusy_native/document_ir_v2.py",
+        "sha256": "9775506cf8f2d7cacc5d45d694b9a38deb842583ab054c8ff9988bd28e3f11c1"
+      },
+      "clusy_native.local_atomic_batch_v0": {
+        "bytes": 9933,
+        "installed_relative": "local_atomic_batch_v0.py",
+        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/local_atomic_batch_v0.py",
+        "repository_bytes_match": true,
+        "repository_relative": "native/python/clusy_native/local_atomic_batch_v0.py",
+        "sha256": "da5247b52eb2293bae927ff847e667e49160bb03dc31ebadb53118dfb8fb9d53"
+      },
+      "clusy_native.selection_atom_catalog_v1": {
+        "bytes": 47608,
+        "installed_relative": "selection_atom_catalog_v1.py",
+        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/selection_atom_catalog_v1.py",
+        "repository_bytes_match": true,
+        "repository_relative": "native/python/clusy_native/selection_atom_catalog_v1.py",
+        "sha256": "d51d9b203a23e93ee61fd7b240a6f4d8ffb48c472026050969ad3d67b8b59244"
+      },
+      "clusy_native.selection_certificate_v0": {
+        "bytes": 4462,
+        "installed_relative": "selection_certificate_v0.py",
+        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/selection_certificate_v0.py",
+        "repository_bytes_match": true,
+        "repository_relative": "native/python/clusy_native/selection_certificate_v0.py",
+        "sha256": "abc2a3146b66de24a9dfddd652287ef0bbbded2bc4362593e4c01cd03dadd24f"
+      },
+      "clusy_native.source_text_mapper_v2": {
+        "bytes": 4597,
+        "installed_relative": "source_text_mapper_v2.py",
+        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/source_text_mapper_v2.py",
+        "repository_bytes_match": true,
+        "repository_relative": "native/python/clusy_native/source_text_mapper_v2.py",
+        "sha256": "35f93b89c5f0fc265451d209be55b4f1495d7d35204bc9121977d721afa71190"
+      }
+    },
+    "executed_repository_modules": {
+      "benchmark_runner": {
+        "bytes": 24854,
+        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/bench/selection_atom_catalog_representability.py",
+        "repository_bytes_match": true,
+        "repository_relative": "bench/selection_atom_catalog_representability.py",
+        "sha256": "f04f4d8ae3e2ed09cbe39198667137d9c9ad506293ce4bffcd372e9ec4cbd70f"
+      },
+      "provenance_helper": {
+        "bytes": 9661,
+        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/bench/source_provenance.py",
+        "repository_bytes_match": true,
+        "repository_relative": "bench/source_provenance.py",
+        "sha256": "6d05da10f2aee3874acd59347636090faa894370ceaf7d2129a319e2df59eb89"
+      }
+    },
+    "native_extension_bytes": 8924624,
+    "native_extension_path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/_native.abi3.so",
+    "native_extension_sha256": "73257bdcf8066265680a9f78b935384b7043187bd4a7f322d6c8c9b1acb9c867",
+    "native_source_binding": {
+      "current_sha256": "e874ba9aa5f25daef7259bddd989342161a54d589519b0c7fe175b96c6329166",
+      "files": 132,
+      "inventory": "native/source-inventory-v1.txt",
+      "matched": true,
+      "packaged_sha256": "e874ba9aa5f25daef7259bddd989342161a54d589519b0c7fe175b96c6329166",
+      "schema": "clusy-native-source-inventory-v1"
+    },
+    "python_package_path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/__init__.py",
+    "relevant_files": {
+      "bench/selection_atom_catalog_representability.py": {
+        "bytes": 24854,
+        "sha256": "f04f4d8ae3e2ed09cbe39198667137d9c9ad506293ce4bffcd372e9ec4cbd70f"
+      },
+      "bench/source_provenance.py": {
+        "bytes": 9661,
+        "sha256": "6d05da10f2aee3874acd59347636090faa894370ceaf7d2129a319e2df59eb89"
+      },
+      "native/Cargo.lock": {
+        "bytes": 35604,
+        "sha256": "d16307ed18b185b77e075b212534a419566c70a87b1200c1adcd4236c813bdd8"
+      },
+      "native/python/clusy_native/__init__.py": {
+        "bytes": 4449,
+        "sha256": "eac8fb5bfb89a272fedaad7b58d847dd2741676a2b514e163e395ae2e1bd8a9c"
+      },
+      "native/python/clusy_native/document_ir.py": {
+        "bytes": 1515,
+        "sha256": "ab698ad5080c3ae0cf7a1b01a4a9ba9934e3d790f3d643ce57b552e37efd50a1"
+      },
+      "native/python/clusy_native/document_ir_v2.py": {
+        "bytes": 2385,
+        "sha256": "9775506cf8f2d7cacc5d45d694b9a38deb842583ab054c8ff9988bd28e3f11c1"
+      },
+      "native/python/clusy_native/local_atomic_batch_v0.py": {
+        "bytes": 9933,
+        "sha256": "da5247b52eb2293bae927ff847e667e49160bb03dc31ebadb53118dfb8fb9d53"
+      },
+      "native/python/clusy_native/selection_atom_catalog_v1.py": {
+        "bytes": 47608,
+        "sha256": "d51d9b203a23e93ee61fd7b240a6f4d8ffb48c472026050969ad3d67b8b59244"
+      },
+      "native/python/clusy_native/selection_certificate_v0.py": {
+        "bytes": 4462,
+        "sha256": "abc2a3146b66de24a9dfddd652287ef0bbbded2bc4362593e4c01cd03dadd24f"
+      },
+      "native/python/clusy_native/source_text_mapper_v2.py": {
+        "bytes": 4597,
+        "sha256": "35f93b89c5f0fc265451d209be55b4f1495d7d35204bc9121977d721afa71190"
+      },
+      "native/src/document_ir_v2/selection_certificate_v0.rs": {
+        "bytes": 178837,
+        "sha256": "825452d57ab9834dd8dff6922ebd64732a2d7aa7c0851c5aee2d581f74e1bf7b"
+      },
+      "native/src/document_ir_v2/source_text_mapper_v2.rs": {
+        "bytes": 58550,
+        "sha256": "21551eb97a8d28d65af2578b67c25a93ceb7b43bd5d24de2795b3078c8dd0bc0"
+      }
+    }
+  },
+  "source_identity_before_and_after_match": true,
+  "stable_results": {
+    "accepted": 537,
+    "atom_count": 183549,
+    "kind_counts": {
+      "code": 12637,
+      "list_item": 68784,
+      "math": 3047,
+      "table_cell": 33104,
+      "text": 65977
+    },
+    "output_commitment_sha256": "4882a299fbd467fc8612362b784ad4704fe93f944d7255d91fa200d62783cf61",
+    "pages": 545,
+    "reason_counts": {
+      "accepted": 537,
+      "incomplete_source_mapping": 7,
+      "truncated_ir": 1
+    },
+    "source_html_bytes": 84446528,
+    "transformed_span_count": 12399
+  }
+}

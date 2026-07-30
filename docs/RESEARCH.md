@@ -83,6 +83,42 @@ Every transform consumes one representation version and emits another with an
 explicit loss record. Reconstructed DOM text must not silently become
 equivalent to original source bytes.
 
+### Current source-map and atom-catalog diagnostic
+
+The additive `ordered-source-text-map.v2` maps retained DOM text back to exact
+raw UTF-8 source fragments without literal substring guessing. It decodes HTML
+character references and tokenizer newline behavior, pairs repeated siblings
+by source order, binds raw offsets and digests, and rejects the complete map
+when non-whitespace parser reorder/repair violates retained explicit-element
+mapping or the direct-parent/order/text bijection, or on any resource limit.
+Standards-defined implicit structure remains eligible when that contract stays
+exact. The opt-in
+`selection-atom-catalog.v1` uses that map to expose lexical text, code, table
+cell, list-item, and math atoms.
+
+On the frozen 545-page HTML-only projection with SHA-256
+`e5958b541d844cf011e66e214bf64abb742aec6922e3c32321e2abaf7cf2c735`,
+the catalog accepted `537 / 545` pages (`98.532110%`). The earlier pre-mapper
+development observation accepted `76 / 545` (`13.944954%`), so observed
+representation coverage increased by `461` pages (`84.587156` percentage
+points). The remaining failures were seven incomplete source mappings and one
+truncated IR. Accepted pages contained `183,549` atoms: `65,977` text,
+`68,784` list item, `33,104` table cell, `12,637` code, and `3,047` math.
+There were `12,399` transformed raw spans.
+
+The final three-sweep local mechanism diagnostic measured p50/p95 catalog-call
+wall time of `11.618834 / 53.050500 ms`, `46.685751` pages/s, and
+`7,233,852.37` source HTML bytes/s. Process-lifetime peak RSS was
+`560,087,040` bytes. These rates are machine-local decoded-HTML-to-catalog
+diagnostics, not HTTP, rendering, crawler-service, or vendor latency.
+
+This is representation coverage, not a WebMainBench quality score. No labels
+or scorer were used, the pre-mapper executable snapshot was not retained for a
+performance A/B, and no quality, SOTA, vendor, production, or deployment claim
+follows. The APIs remain disabled by default. The complete protocol and
+source/binary-bound result are
+[`selection-atom-catalog-e5958b5`](../bench/evidence/selection-atom-catalog-e5958b5/PROTOCOL.md).
+
 ## Source-backed candidate lattice
 
 A single extractor misses different content families. The EACL 2026 study
