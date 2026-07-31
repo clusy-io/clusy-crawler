@@ -1,0 +1,20 @@
+{
+  "artifact_status": "SYNTHETIC_ONLY / NOT_CLAIMABLE",
+  "claimable": false,
+  "constant_priority": 10,
+  "corpus_records": 28,
+  "corpus_sha256": "f3c62e880f137525942f456430468c72b520d9aff4af2750acc72bc6eb603ed8",
+  "fixture_label": "SYNTHETIC_REGRESSION_ONLY",
+  "query_terms": [
+    "benchmark",
+    "crawler",
+    "research",
+    "retrieval"
+  ],
+  "recall_threshold_denominator": 10,
+  "recall_threshold_numerator": 9,
+  "schema": "clusy.focused-frontier.fixture-manifest.v0",
+  "seed": 20260729,
+  "seed_node_id": "n000",
+  "target_count": 6
+}

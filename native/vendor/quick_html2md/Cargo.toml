@@ -1,0 +1,21 @@
+[package]
+name = "quick_html2md"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "Fast HTML to Markdown conversion with GFM support"
+license = "MIT OR Apache-2.0"
+keywords = ["html", "markdown", "converter", "gfm"]
+categories = ["parser-implementations", "text-processing", "web-programming"]
+
+[features]
+default = []
+url = ["dep:url"]
+
+[dependencies]
+dom_query = "0.24"
+url = { version = "2.5", optional = true }

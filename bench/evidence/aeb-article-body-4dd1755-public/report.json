@@ -1,0 +1,95 @@
+{
+  "archive_status": {
+    "current_registry_member": false,
+    "original_record_status": "Verified",
+    "publication_authorized": false,
+    "reason": "Superseded by the current Trafilatura 2.1.0 evidence record"
+  },
+  "claim_binding": {
+    "id": "aeb.article-body.4dd1755-public.2026-07-29",
+    "kind": "benchmark_result",
+    "protocol_sha256": "f74626255c500fcd863f3218ab1c7ce9b4c525137913f3f98cd0d08bdacf3819",
+    "raw_archive_sha256": "16b79ccd4fd87a689bfa9ee34f7119c4d34511fe926afa38eb1b45e24d393bbb",
+    "raw_manifest_sha256": "2f7b61af148387c93ff6381fee5fad663a1a4e731d79d653568da4a656784fc1",
+    "recorded_at_utc": "2026-07-29T11:03:11Z",
+    "scope": {
+      "comparators": [
+        {
+          "name": "Trafilatura",
+          "version": "2.0.0"
+        },
+        {
+          "name": "rs-trafilatura",
+          "version": "9261e08"
+        }
+      ],
+      "dataset": "Article Extraction Benchmark",
+      "dataset_revision": "4a3bc979f76c0df73cb95fe272e2fc1b96f9f010",
+      "dataset_sha256": "512e9a9498912047a966e22f47302e849dfa45dca1f555d97588317dac7e5a3d",
+      "execution_boundary": "in-memory decoded HTML to production ExtractionResult; closed-loop concurrency 2",
+      "limitations": [
+        "Article-body extraction only; not crawling, rendering, or general-web evaluation",
+        "The public benchmark fixtures were fetched with JavaScript disabled",
+        "Throughput is local Apple M4 Pro extraction throughput, not HTTP-service throughput",
+        "The result is bound to the recorded source commit and does not establish current production state"
+      ],
+      "output_contract": "exact production article_body output with identity prediction transform and the pinned official evaluator",
+      "pages": 181,
+      "profile": "article_body",
+      "split": "full",
+      "task": "article-body extraction",
+      "vendors": [
+        "Clusy"
+      ]
+    },
+    "source": {
+      "clean": true,
+      "commit": "4dd1755e9b425c80193982bc6609c06444cf30d5",
+      "repository": "clusy-io/clusy-crawler",
+      "runtime_source_sha256": "c4c19bd36359e61e4098b55e812b099a48c90f66a9c5a202b544f5d0d28829f0",
+      "tree": "6278cefeb65b9f7c1811b154af9ce9c9581718a7"
+    },
+    "status": "Archived"
+  },
+  "dataset": {
+    "commit": "4a3bc979f76c0df73cb95fe272e2fc1b96f9f010",
+    "evaluator_sha256": "c01bf1cc7989700273ab1ba6d30fcdedc22fdb4301e7b4c1ac20635bb7632ea8",
+    "ground_truth_sha256": "512e9a9498912047a966e22f47302e849dfa45dca1f555d97588317dac7e5a3d",
+    "pages": 181,
+    "public_ground_truth": true,
+    "tree": "258fee1bb38bcb642afec48cb80e51bd1594c259"
+  },
+  "metrics": {
+    "f1": "0.9721267477263196",
+    "f1_delta_ci95_high_vs_trafilatura_2": "0.025342138101853845",
+    "f1_delta_ci95_low_vs_trafilatura_2": "0.005345924297968711",
+    "f1_delta_vs_trafilatura_2": "0.014624227231978204",
+    "pages_per_second": "142.30575017398746",
+    "precision": "0.9551471924829309",
+    "recall": "0.9897209165735447"
+  },
+  "permissions": {
+    "scoped_sota": false,
+    "scoped_superiority": false,
+    "vendor_superiority": false
+  },
+  "protocol": {
+    "bootstrap_samples": 10000,
+    "concurrency": 2,
+    "page_order": "deterministic shuffle",
+    "prediction_transform": "identity-production-output-v1",
+    "seed": 20260727,
+    "warmup_pages": 5
+  },
+  "raw_evidence": {
+    "archive_sha256": "16b79ccd4fd87a689bfa9ee34f7119c4d34511fe926afa38eb1b45e24d393bbb",
+    "manifest_sha256": "2f7b61af148387c93ff6381fee5fad663a1a4e731d79d653568da4a656784fc1",
+    "retention": "external_retained"
+  },
+  "schema": "clusy.aeb.article-body.compact-evidence.v1",
+  "verification": {
+    "artifact_complete": true,
+    "claimable": false,
+    "source_stable": true
+  }
+}

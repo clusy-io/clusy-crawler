@@ -1,0 +1,29 @@
+[package]
+name = "clusy-native"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+dom_query = "=0.24.0"
+# Keep source-text decoding on the exact tokenizer already used transitively by
+# dom_query's DOM builder. This is a direct dependency only so the versioned
+# source mapper can invoke the same HTML character-reference state machine.
+html5ever = "=0.36.1"
+pyo3 = { version = "=0.27.2", features = ["abi3-py312", "extension-module"] }
+rs-trafilatura-broad = { package = "rs-trafilatura", version = "=0.2.2", path = "vendor/rs-trafilatura-broad" }
+# Keep the pinned article-oriented backend alongside the multi-type backend.
+# The explicit article_body profile uses the former; general extraction uses
+# the latter for page classification and non-article Markdown.
+rs-trafilatura-article = { package = "rs-trafilatura", path = "vendor/rs-trafilatura" }
+sha2 = "=0.10.9"
+
+[build-dependencies]
+glob = "=0.3.2"
+sha2 = "=0.10.9"

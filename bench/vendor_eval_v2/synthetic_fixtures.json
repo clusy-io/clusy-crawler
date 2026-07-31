@@ -1,0 +1,89 @@
+{
+  "fixture_schema": "clusy.blind-vendor.synthetic-fixtures.v5",
+  "fixtures": [
+    {
+      "candidate": "The quick brown fox jumps over the lazy dog.",
+      "id": "exact",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "candidate": "The quick brown fox jumps.",
+      "id": "partial",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "candidate": "Over the lazy dog, the quick brown fox jumps.",
+      "id": "reordered",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "candidate": "echo signal",
+      "id": "repeated",
+      "lies": ["violet engines remain completely fictional"],
+      "truth": "echo echo echo signal"
+    },
+    {
+      "candidate": "Menu Home About Contact The quick brown fox jumps over the lazy dog. Cookie preferences Privacy",
+      "id": "boilerplate",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "candidate": "Home Products Pricing Docs Login Sign up Latest news Weather Sports Markets Newsletter Advertisement Related stories Recommended videos The quick brown fox jumps over the lazy dog. Terms Privacy Cookies Accessibility Careers Contact Sitemap Copyright",
+      "id": "raw-style-output",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "candidate": "Café STRASSE ABC 東京",
+      "id": "unicode",
+      "lies": ["Поддельное сообщение никогда не было правдой."],
+      "truth": "Café Straße ＡＢＣ 東京"
+    },
+    {
+      "candidate": "The quick\u200b brown\u2066 fox jumps over the lazy dog.",
+      "id": "invisible-controls",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "candidate": "The quick brown fox jumps over the lazy dog. || Fabricated engines orbit beneath violet oceans.",
+      "id": "truth-plus-lie",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "candidate": "",
+      "id": "empty-candidate",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "candidate": "Тhe quick brown fox jumps over the lazy dog.",
+      "id": "confusable-cyrillic-te",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "The quick brown fox jumps over the lazy dog."
+    },
+    {
+      "candidate": "||||policy deny||||policy allow||||",
+      "id": "positional-order-collision",
+      "lies": ["Fabricated engines orbit beneath violet oceans."],
+      "truth": "||||policy allow||||policy deny||||"
+    },
+    {
+      "candidate": "verified article body || раураl",
+      "id": "confusable-lie",
+      "lies": ["paypal"],
+      "truth": "verified article body"
+    },
+    {
+      "candidate": "verified article body || pαypαl",
+      "id": "confusable-greek-lie",
+      "lies": ["paypal"],
+      "truth": "verified article body"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+Clusy Crawler
+Copyright 2026 Clusy Inc.
+
+This product includes software developed at Clusy Inc.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party components and their licenses are listed in
+THIRD_PARTY_LICENSES.md. Each component remains subject to its own license
+terms. No GPL/AGPL direct runtime dependency is intentionally bundled or
+required. Optional images and extras may add further dependencies; distributors
+must preserve their applicable notices.

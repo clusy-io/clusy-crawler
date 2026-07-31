@@ -1,0 +1,2 @@
+# Preserve the byte-pinned upstream Unicode security data verbatim.
+bench/vendor_eval_v2/confusables-16.0.0.txt -whitespace

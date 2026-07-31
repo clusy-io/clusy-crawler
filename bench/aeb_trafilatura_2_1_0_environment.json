@@ -1,0 +1,181 @@
+{
+  "interpreter": {
+    "cache_tag": "cpython-313",
+    "implementation": "cpython",
+    "machine": "arm64",
+    "platform": "darwin",
+    "python_version": "3.13.5"
+  },
+  "packages": [
+    {
+      "distribution_inventory_sha256": "43e061ffeebf6c93ba899db954eb086687a856202ca33082e5c6514f39389edc",
+      "files": 1118,
+      "metadata_sha256": "11399bc03a6b81fd20e8b82823392052a8db969a8ef150382b0cf5996afcf41a",
+      "name": "babel",
+      "record_sha256": "775ecaff4b49b80b979f886f527c08d7b229f51cad8a51fbe6cc3e746a8fe9c1",
+      "version": "2.18.0",
+      "wheel_metadata_sha256": "c14c80f0e6ae95195b7f032d990b2f367806af140702f90a72f466762ce5262d"
+    },
+    {
+      "distribution_inventory_sha256": "5cd2da8daeb0375688ed150f376b9aa125865fc68bcefb3960fb1f31ed07c234",
+      "files": 11,
+      "metadata_sha256": "ef5af1638fbb23676ac3c5777dfcfc2cd9c348fe4172ed5ba3d277655b248090",
+      "name": "certifi",
+      "record_sha256": "7f6dbe6bc71253f31d899345b018363980a866f9934883a467509ce76ad7c111",
+      "version": "2026.7.22",
+      "wheel_metadata_sha256": "2b6eb4118ce7cd7b09601406aa623c553c4476265836f0d9c16f5c061f7efcc0"
+    },
+    {
+      "distribution_inventory_sha256": "7b6e886fd4fdd0d7ab3345c57700637e59151e2ae9f136c45ca939f75a312c32",
+      "files": 21,
+      "metadata_sha256": "0dd3de17609b0db64bd1d4643c5bd0dd35b5eb3c5be77f8b17bc190f2f4a2ac0",
+      "name": "charset-normalizer",
+      "record_sha256": "508f5d6ef1426c8892273e1f638f51d4444686cf893224c86e2444f943a914aa",
+      "version": "3.4.9",
+      "wheel_metadata_sha256": "53e52e7d260e95238d81243854d902859bd836a2d45790a60f516171ee889428"
+    },
+    {
+      "distribution_inventory_sha256": "828ff708b8f883539d6b8d731d20fccbb0242cabacfe3254a5fe81f8d2841ae4",
+      "files": 17,
+      "metadata_sha256": "5718703ee7dfd2c92b9e84c71f49f868c42d53f178e270fadf009398d3b4c32d",
+      "name": "courlan",
+      "record_sha256": "dd43875e6fab0961e800899bf3e3aa25f0637a577f226d22d6f55aee63037956",
+      "version": "1.4.0",
+      "wheel_metadata_sha256": "69e6228a0d35958183cc1812f07c565ce837b95eb51bd8a33acba9fa4f68d6c9"
+    },
+    {
+      "distribution_inventory_sha256": "6f4d16e6a1af5681c130f52e622e5bba9abf5fbe99015a80ec5428aff6bf4352",
+      "files": 256,
+      "metadata_sha256": "64b84db28512339b91a13b525ad32ea7ea9a38778c8ffc34ca402cf5bf76b592",
+      "name": "dateparser",
+      "record_sha256": "dfba24a15bbb2233f4f8e9b8546cd6f0f00537b791a9d5086f0ae08e2284f877",
+      "version": "1.4.1",
+      "wheel_metadata_sha256": "69e6228a0d35958183cc1812f07c565ce837b95eb51bd8a33acba9fa4f68d6c9"
+    },
+    {
+      "distribution_inventory_sha256": "c0bf1947e362271755db8f0962cbc4147a3c8700b7cd61835a3ea0ecf26a47ba",
+      "files": 14,
+      "metadata_sha256": "ee0ccd11d654cc2f079607676beb239425704bcfe12d137a09218412fe37ba98",
+      "name": "htmldate",
+      "record_sha256": "51d67d891c0e028f632a5a6931935dd3cd2cbf47af764999f811571113872c08",
+      "version": "1.10.0",
+      "wheel_metadata_sha256": "69e6228a0d35958183cc1812f07c565ce837b95eb51bd8a33acba9fa4f68d6c9"
+    },
+    {
+      "distribution_inventory_sha256": "997cf8927c46b6652fb40c438accabba7fa9efc54cae0975cbd6ee848d4d5695",
+      "files": 110,
+      "metadata_sha256": "05033e0331b2cf0d98a7217aec46e74398ac79485e25c06533e2367d2255b184",
+      "name": "justext",
+      "record_sha256": "e241ebb64a6dfdc424c6abcdf970898ef571da9f11b41a494e46282952737e32",
+      "version": "3.0.2",
+      "wheel_metadata_sha256": "dc77de7ac74dee3b211cfccdf0727c51e15194477a029a65aa77736cf4ef3e5f"
+    },
+    {
+      "distribution_inventory_sha256": "9b1f9ca3e2f44c9df7dd89cc8fc5d28088df52768c9fa721c958bc975e117c20",
+      "files": 173,
+      "metadata_sha256": "a9bbc00470881cf133707920044995ffd6063723e203ca68d65e2f2a25886bc7",
+      "name": "lxml",
+      "record_sha256": "9f4eda5779d12faf0720ca5aff8bc45862fbe906ababca2bf60843ba68895973",
+      "version": "6.1.1",
+      "wheel_metadata_sha256": "56f7510563f26eb720f4da41c431ab7c2376e4bc67bbe27e069e9995bf17a079"
+    },
+    {
+      "distribution_inventory_sha256": "01220f33d100af4e784a7e0dd828154c548fb28362bc1bf1a68ffaeea6f013ee",
+      "files": 9,
+      "metadata_sha256": "06bc1b778a8554c7af6ceaf5d52815cc5c98cb08d57fff7eec4a3d715b2e7972",
+      "name": "lxml-html-clean",
+      "record_sha256": "2c6781f1ad357c9da4900047f4e8509dc90f37462297cb9e915845b4bcb5f4c7",
+      "version": "0.4.5",
+      "wheel_metadata_sha256": "69e6228a0d35958183cc1812f07c565ce837b95eb51bd8a33acba9fa4f68d6c9"
+    },
+    {
+      "distribution_inventory_sha256": "d07ccbe887de1b0c7b8a2fbda753b31a91e3f9e95d0fa3121d634a115f366d1f",
+      "files": 24,
+      "metadata_sha256": "a9d436da322be808332f98d88325998e87cb693a678a9969feb4cfad729a6e93",
+      "name": "python-dateutil",
+      "record_sha256": "4552ca66dbb4649e636811dffda9aad2f5048f887fce8f73fb8f4230a52c0813",
+      "version": "2.9.0.post0",
+      "wheel_metadata_sha256": "f86fedd281ae13b503d03ad2a55667ab584730157d0c3d97912e6fed7a664e79"
+    },
+    {
+      "distribution_inventory_sha256": "595ec430fed7fcb9256e6a5bcb138e492033fdecf3a1be2dc21c7b3a9b64a777",
+      "files": 615,
+      "metadata_sha256": "25ef8a562377a28d8c6bd8c5c9e80d761d0e22ac4a7bed24e512f589644ed33d",
+      "name": "pytz",
+      "record_sha256": "4566b4235c339845e71279daa17cdecfe36f14a0ac50d544f148866c361c5b53",
+      "version": "2026.3.post1",
+      "wheel_metadata_sha256": "f86fedd281ae13b503d03ad2a55667ab584730157d0c3d97912e6fed7a664e79"
+    },
+    {
+      "distribution_inventory_sha256": "aaaa5df6a9af8a662e62426f73b435a069a4abbad7ca7db931ce615e5835019d",
+      "files": 9,
+      "metadata_sha256": "fd895ec7522cd0bbab71ee4826442162f3f408a5f8d92e759f4ddf1be60dcf73",
+      "name": "regex",
+      "record_sha256": "f6c405eb87ff9be704a20d95e5fd66eb6001811231af9725f8734d271a2d085b",
+      "version": "2026.7.19",
+      "wheel_metadata_sha256": "23b0baa0f53dfd85d4c2979653e1c230ffbed4c184359c77d6bd8ee28cc25bf5"
+    },
+    {
+      "distribution_inventory_sha256": "0b285a20791cbbd18973bb7674748869d682f0efa555d1bf36d130e89bcc2f54",
+      "files": 5,
+      "metadata_sha256": "562042078c2752549f6d8a7c86dbc5dd708088a7be6d80672ec7b07100b72468",
+      "name": "six",
+      "record_sha256": "84404bbfe6ec539b19f20edb8798cf015138d7dcf2882b1d4cf8d9d8d9257c02",
+      "version": "1.17.0",
+      "wheel_metadata_sha256": "a7178d5f925db427b9f0f51260ff6ea6673b8dd44f82f4f41a6f646f5487955c"
+    },
+    {
+      "distribution_inventory_sha256": "7b219305efa5989351983765670abee24b1064a001afd01755ce3831d1c9d694",
+      "files": 27,
+      "metadata_sha256": "1f8aa17edf7c1aed94f8d14c8a199f98a141610cf01370e009a1949cad5cea25",
+      "name": "tld",
+      "record_sha256": "2c279c87ac42c59288855e542ef26030e901955ca35736569e373ba837c01dfe",
+      "version": "0.13.2",
+      "wheel_metadata_sha256": "b82ec39d78eda0acb6dc23545d1abaa212ec9bc15b4b60bf1027d8633a991d56"
+    },
+    {
+      "distribution_inventory_sha256": "35bf6a576686f81295aa76a8782e48a61aaa889a7318d065649b459b0c6383aa",
+      "files": 29,
+      "metadata_sha256": "259c02daaccbde01d9a06ed942eaeb71833ab353228b058ea0b1574525a48ba8",
+      "name": "trafilatura",
+      "record_sha256": "9120037e011653c8b68b828b896ecf90bda30136df2a73578b40f0376c39f5c7",
+      "version": "2.1.0",
+      "wheel_metadata_sha256": "69e6228a0d35958183cc1812f07c565ce837b95eb51bd8a33acba9fa4f68d6c9"
+    },
+    {
+      "distribution_inventory_sha256": "c7f80222b3a24ed05a8cba8186efe921d1d5c1195ec28dcb064412cf9e274329",
+      "files": 10,
+      "metadata_sha256": "f6cde6f73645cd3fb9491119e58a845cabc1e761e01afc83c02d8df2ad6191d1",
+      "name": "tzlocal",
+      "record_sha256": "934ce4e15e1591a07e5ee24cd10d122aad0de0ca5963fc6e7fb5d0d47f8bdab5",
+      "version": "5.4.4",
+      "wheel_metadata_sha256": "69e6228a0d35958183cc1812f07c565ce837b95eb51bd8a33acba9fa4f68d6c9"
+    },
+    {
+      "distribution_inventory_sha256": "940ad06a4a63a1d749f33ccdf85492504546dd4bd2f890449c5334d31669c342",
+      "files": 41,
+      "metadata_sha256": "66147856d30bbb6bed01c6ce3326d0f48d84ed5f286ac177633a1486b82eace5",
+      "name": "urllib3",
+      "record_sha256": "a063bb7196839f9128ebbc67eade17a6f34534aef62210ffa4938dfbf72aea55",
+      "version": "2.7.0",
+      "wheel_metadata_sha256": "41c708c5adba6e097513ab8ccb9f1d7865a2fb469e22491a9e01dcc64da459fc"
+    }
+  ],
+  "schema": "clusy.aeb.current-oss.environment-manifest.v1",
+  "schema_version": 1,
+  "site_packages": {
+    "bytes": 62410479,
+    "files": 2632,
+    "inventory_sha256": "aee2445e609f5d85d2c7ccf19a64c7ba398d49e21e930b1b488760473782a762"
+  },
+  "trafilatura_wheel": {
+    "filename": "trafilatura-2.1.0-py3-none-any.whl",
+    "sha256": "0eded5207a806445ddebbe36eae30b9035fe6a2f233c36f6fe82663fca8b9d30",
+    "source": "https://pypi.org/simple"
+  },
+  "venv": {
+    "builder": "uv",
+    "builder_version": "0.11.6",
+    "include_system_site_packages": false
+  }
+}

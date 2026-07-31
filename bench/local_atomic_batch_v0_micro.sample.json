@@ -1,0 +1,44 @@
+{
+  "atoms": 48,
+  "candidate_bytes": 1715,
+  "claim_scope": "synthetic local mechanism benchmark; not quality/SOTA evidence",
+  "exact_certificate_replay_and_overlay_decision_identity": true,
+  "graph_elements": 1267,
+  "graph_text_runs": 1120,
+  "iterations": 11,
+  "native_bridge": {
+    "batch": {
+      "median_ns": 16880500,
+      "p95_ns": 17456292
+    },
+    "batch_graph_clones_per_iteration": 2,
+    "legacy": {
+      "median_ns": 299800875,
+      "p95_ns": 306769708
+    },
+    "legacy_graph_clones_per_iteration": 96,
+    "median_speedup": 17.760189271644798
+  },
+  "overlay_proposal": {
+    "batch": {
+      "median_ns": 50870625,
+      "p95_ns": 51585666
+    },
+    "batch_graph_clones_per_iteration": 2,
+    "legacy": {
+      "median_ns": 485016083,
+      "p95_ns": 488174583
+    },
+    "legacy_graph_clones_per_iteration": 144,
+    "median_speedup": 9.534305564360572
+  },
+  "runtime": {
+    "architecture": "arm64",
+    "darwin_kernel": "25.6.0",
+    "python": "3.13.5",
+    "rustc": "1.85.0"
+  },
+  "schema_version": "local-atomic-selection-batch-v0.micro.1",
+  "source_bytes": 54412,
+  "warmups": 3
+}

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "clusy-native"
+version = "0.1.0"
+description = "Native extraction backend for Clusy Crawler"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+
+[tool.maturin]
+python-source = "python"
+module-name = "clusy_native._native"
+features = ["pyo3/extension-module"]
+
+# uv otherwise keys this local path dependency only from pyproject.toml and can
+# reinstall a cached wheel after Rust or vendored extraction sources change.
+# Keep this list exactly aligned with source-inventory-v1.txt; a unit test
+# fails closed if either declaration drifts.
+[tool.uv]
+cache-keys = [
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+    { file = "pyproject.toml" },
+    { file = "build.rs" },
+    { file = "source-inventory-v1.txt" },
+    { file = "src/**/*.rs" },
+    { file = "python/**/*.py" },
+    { file = "python/**/*.pyi" },
+    { file = "python/**/py.typed" },
+    { file = "vendor/NOTICE.md" },
+    { file = "vendor/*/Cargo.toml" },
+    { file = "vendor/*/Cargo.toml.orig" },
+    { file = "vendor/rs-trafilatura-broad/Cargo.lock" },
+    { file = "vendor/*/.cargo_vcs_info.json" },
+    { file = "vendor/*/rust-toolchain.toml" },
+    { file = "vendor/*/LICENSE-*" },
+    { file = "vendor/*/src/**/*.rs" },
+]

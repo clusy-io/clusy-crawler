@@ -1,0 +1,890 @@
+from __future__ import annotations
+
+import asyncio
+import re
+import time
+from urllib.parse import urljoin, urlparse
+
+import orjson
+import pytest
+
+from app.cache import make_cache_key
+from app.config import settings
+from app.models.responses import CrawlResult
+from app.services import crawler as crawler_mod
+from app.services import fetcher as fetcher_mod
+from app.services.crawler import _extract_links, _project_formats
+from app.services.fetcher import FetchResult
+from app.services.site_map import _same_site
+
+# ── link extraction ─────────────────────────────────────────────────
+
+
+def test_extract_links_absolutizes_and_filters():
+    html = """
+    <a href="/docs/intro">a</a>
+    <a href="https://other.com/x">b</a>
+    <a href="mailto:x@y.com">c</a>
+    <a href="javascript:void(0)">d</a>
+    <a href="/docs/intro">dup</a>
+    """
+    links = _extract_links(html, "https://example.com/page")
+    assert "https://example.com/docs/intro" in links
+    assert "https://other.com/x" in links
+    assert all(not link.startswith(("mailto:", "javascript:")) for link in links)
+    # de-duplicated
+    assert links.count("https://example.com/docs/intro") == 1
+
+
+def _reference_extract_links(html: str, base_url: str) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for match in re.finditer(
+        r'<a\b[^>]*\bhref=["\']([^"\'#]+)["\']',
+        html,
+        re.IGNORECASE,
+    ):
+        href = match.group(1).strip()
+        if (
+            not href
+            or len(href) > 4096
+            or href.startswith(("javascript:", "mailto:", "tel:", "data:"))
+        ):
+            continue
+        absolute = urljoin(base_url, href)
+        if urlparse(absolute).scheme not in ("http", "https"):
+            continue
+        if absolute not in seen:
+            seen.add(absolute)
+            out.append(absolute)
+            if sum(len(link) for link in out) > 256_000:
+                out.pop()
+                break
+        if len(out) >= 1000:
+            break
+    return out
+
+
+def _link_outcome(html: str, base_url: str, extractor):
+    try:
+        return ("ok", extractor(html, base_url))
+    except Exception as exc:
+        return ("error", type(exc).__qualname__, str(exc))
+
+
+def test_extract_links_exact_budget_and_count_boundaries():
+    prefix = "https://links.example/"
+    padding = "x" * (256 - len(prefix) - 4)
+    links_256 = [f"{prefix}{padding}{index:04d}" for index in range(1000)]
+    assert all(len(link) == 256 for link in links_256)
+    exact_html = "".join(f'<a href="{link}">link</a>' for link in links_256)
+
+    exact = _extract_links(exact_html, "https://base.example/root")
+    assert exact == links_256
+    assert len(exact) == 1000
+    assert sum(map(len, exact)) == 256_000
+
+    links_257 = [f"{prefix}{padding}y{index:04d}" for index in range(1000)]
+    over_html = "".join(f'<a href="{link}">link</a>' for link in links_257)
+    over = _extract_links(over_html, "https://base.example/root")
+    assert over == links_257[:996]
+    assert sum(map(len, over)) == 255_972
+
+
+def test_extract_links_matches_quadratic_reference_on_adversarial_cases():
+    cases = [
+        (
+            """
+            <a href="/alpha">relative</a>
+            <a href="/alpha">duplicate</a>
+            <a href=" HTTPS://EXAMPLE.COM/Mixed ">mixed</a>
+            <a href="//cdn.example/路径?q=é">unicode</a>
+            <a href="?query=one%20two">query</a>
+            <a href="#fragment">fragment only</a>
+            <a href="javascript:alert(1)">script</a>
+            <a href="mailto:test@example.com">mail</a>
+            <a href="https://example.com/a#kept-as-part-of-unquoted-text">hash</a>
+            """,
+            "https://example.com/root/page",
+        ),
+        ('<a href="/relative">broken base</a>', "http://[::1"),
+        (
+            '<a href="https://[::1/path">broken absolute</a>',
+            "https://example.com/",
+        ),
+        (
+            f'<a href="{"/" + ("x" * 4095)}">max</a>'
+            f'<a href="{"/" + ("x" * 4096)}">too long</a>',
+            "https://example.com/",
+        ),
+    ]
+    for html, base_url in cases:
+        assert _link_outcome(html, base_url, _extract_links) == _link_outcome(
+            html,
+            base_url,
+            _reference_extract_links,
+        )
+
+
+def test_extract_links_deterministic_differential_fuzz():
+    fragments = (
+        "/relative",
+        "../up",
+        "https://other.example/path",
+        "//cdn.example/asset",
+        "?q=value",
+        "#fragment",
+        "javascript:void(0)",
+        "mailto:test@example.com",
+        "tel:+12025550123",
+        "data:text/plain,hello",
+        "/路径/é",
+        "/space in path",
+        "",
+    )
+    bases = (
+        "https://example.com/root/page",
+        "http://example.test:8080/a/b",
+        "https://例え.テスト/基準",
+        "http://[::1",
+    )
+    state = 0xD1FF_E2AC_7A11
+    for case_index in range(512):
+        anchor_count = 1 + state % 1100
+        state = (state * 6364136223846793005 + 1442695040888963407) & ((1 << 64) - 1)
+        anchors: list[str] = []
+        for anchor_index in range(anchor_count):
+            fragment = fragments[(state + anchor_index) % len(fragments)]
+            if anchor_index % 17 == 0:
+                fragment = f"/item/{case_index}/{anchor_index}/" + ("x" * (state % 300))
+            quote = "'" if state & 1 else '"'
+            anchors.append(f"<a data-i={anchor_index} href={quote}{fragment}{quote}>x</a>")
+            state = (
+                state * 6364136223846793005 + 1442695040888963407
+            ) & ((1 << 64) - 1)
+        html = "".join(anchors)
+        base_url = bases[state % len(bases)]
+        assert _link_outcome(html, base_url, _extract_links) == _link_outcome(
+            html,
+            base_url,
+            _reference_extract_links,
+        )
+
+
+# ── format projection ───────────────────────────────────────────────
+
+
+def test_project_formats_drops_unrequested_fields():
+    r = CrawlResult(url="u", markdown="m", html="<html>", links=["a"])
+    _project_formats(r, ["markdown"])
+    assert r.html is None and r.links is None
+
+    r2 = CrawlResult(url="u", markdown="m", html="<html>", links=["a"])
+    _project_formats(r2, ["markdown", "html", "links"])
+    assert r2.html == "<html>" and r2.links == ["a"]
+
+
+# ── same-site map filter ─────────────────────────────────────────────
+
+
+def test_same_site():
+    assert _same_site("example.com", "https://example.com/a")
+    assert _same_site("example.com", "https://docs.example.com/a")
+    assert not _same_site("example.com", "https://evil.com/a")
+
+
+# ── max_age cache behavior ───────────────────────────────────────────
+
+
+class _MemCache:
+    """Minimal in-memory cache that actually stores values (unlike the Noop)."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, bytes] = {}
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def set(self, key, value, ttl=None):
+        self.store[key] = value
+
+
+@pytest.fixture
+def mem_cache(monkeypatch):
+    cache = _MemCache()
+    monkeypatch.setattr("app.cache._cache", cache)
+    return cache
+
+
+@pytest.fixture
+def stub_fetch(monkeypatch):
+    calls = {"n": 0}
+
+    async def _fetch(url, js_render=False, wait_for_selector=None):
+        calls["n"] += 1
+        return FetchResult(
+            html="<html><head><title>T</title></head><body>"
+            + "<p>"
+            + " ".join(["word"] * 80)
+            + '</p><a href="/source">source</a></body></html>',
+            status_code=200,
+            content_type="text/html",
+        )
+
+    monkeypatch.setattr(fetcher_mod, "fetch_url", _fetch)
+    monkeypatch.setattr("app.config.settings.js_render_mode", "never")
+    monkeypatch.setattr(crawler_mod, "_crawl_semaphore", None)
+    return calls
+
+
+async def test_second_call_is_cached(mem_cache, stub_fetch):
+    r1 = (await crawler_mod.crawl_urls(["https://ex.com/a"]))[0]
+    assert r1.cached is False
+    assert r1.metadata is not None
+    assert r1.metadata.cache_status == "live"
+    r2 = (await crawler_mod.crawl_urls(["https://ex.com/a"]))[0]
+    assert r2.cached is True
+    assert r2.metadata is not None
+    assert r2.metadata.cache_status == "hit"
+    assert r2.metadata.cache_age_ms is not None
+    assert r2.metadata.cache_lookup_ms is not None
+    assert stub_fetch["n"] == 1  # second served from cache, no re-fetch
+
+
+async def test_cache_hit_replaces_persisted_live_stage_timings(mem_cache, stub_fetch):
+    await crawler_mod.crawl_urls(["https://ex.com/cache-timing"])
+    key = next(iter(mem_cache.store))
+    envelope = orjson.loads(mem_cache.store[key])
+    assert envelope["r"]["metadata"]["stage_timings_ms"] == {}
+    envelope["r"]["metadata"]["stage_timings_ms"] = {
+        "queue": 101.0,
+        "fetch": 102.0,
+        "render": 103.0,
+        "extraction": 104.0,
+        "total": 999.0,
+    }
+    mem_cache.store[key] = orjson.dumps(envelope)
+
+    result = (
+        await crawler_mod.crawl_urls(["https://ex.com/cache-timing"])
+    )[0]
+
+    assert result.cached is True
+    assert result.metadata is not None
+    assert result.metadata.cache_status == "hit"
+    assert result.metadata.stage_timings_ms["queue"] == 0
+    assert result.metadata.stage_timings_ms["fetch"] == 0
+    assert result.metadata.stage_timings_ms["render"] == 0
+    assert result.metadata.stage_timings_ms["extraction"] == 0
+    assert result.metadata.stage_timings_ms["total"] == (
+        result.metadata.cache_lookup_ms
+    )
+
+
+async def test_max_age_zero_bypasses_cache(mem_cache, stub_fetch):
+    await crawler_mod.crawl_urls(["https://ex.com/a"])
+    r2 = (await crawler_mod.crawl_urls(["https://ex.com/a"], max_age=0))[0]
+    assert r2.cached is False
+    assert stub_fetch["n"] == 2  # forced re-fetch
+
+
+async def test_cold_no_store_never_resolves_persistent_cache(stub_fetch, monkeypatch):
+    def cache_must_not_be_resolved():
+        raise AssertionError("cold no-store request must not resolve persistent cache")
+
+    monkeypatch.setattr(crawler_mod, "get_cache", cache_must_not_be_resolved)
+
+    result = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/no-store"],
+            max_age=0,
+            store_in_cache=False,
+        )
+    )[0]
+
+    assert result.error is None
+    assert result.cached is False
+    assert result.metadata is not None
+    assert result.metadata.cache_policy == "no_store"
+    assert result.metadata.cache_read_permitted is False
+    assert result.metadata.cache_write_permitted is False
+    assert result.metadata.cache_policy_revision == "crawl-cache-policy.v1"
+    assert stub_fetch["n"] == 1
+
+
+async def test_no_store_can_read_when_freshness_allows_but_never_writes(
+    stub_fetch,
+    monkeypatch,
+):
+    calls: list[str] = []
+
+    class RecordingCache:
+        async def get(self, _key):
+            calls.append("get")
+            return None
+
+        async def set(self, _key, _value):
+            calls.append("set")
+
+    monkeypatch.setattr(crawler_mod, "get_cache", lambda: RecordingCache())
+
+    result = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/read-only-cache"],
+            max_age=60,
+            store_in_cache=False,
+        )
+    )[0]
+
+    assert calls == ["get"]
+    assert result.metadata is not None
+    assert result.metadata.cache_policy == "no_store"
+    assert result.metadata.cache_read_permitted is True
+    assert result.metadata.cache_write_permitted is False
+
+
+async def test_stale_entry_triggers_recrawl(mem_cache, stub_fetch):
+    await crawler_mod.crawl_urls(["https://ex.com/a"])
+    # Age the stored entry well past the freshness bar.
+    key = next(iter(mem_cache.store))
+    env = orjson.loads(mem_cache.store[key])
+    env["t"] = time.time() - 9999
+    mem_cache.store[key] = orjson.dumps(env)
+    r = (await crawler_mod.crawl_urls(["https://ex.com/a"], max_age=10))[0]
+    assert r.cached is False
+    assert stub_fetch["n"] == 2  # stale → re-crawled
+
+
+@pytest.mark.parametrize("profile", ["adaptive", "quality"])
+async def test_verified_model_assisted_outputs_use_versioned_cache(
+    profile,
+    mem_cache,
+    stub_fetch,
+    monkeypatch,
+):
+    from app.services.extractor import ExtractionResult
+
+    async def quality_extract(*_args, **_kwargs):
+        return ExtractionResult(
+            text="# Model output\n\nFresh content",
+            word_count=5,
+            strategy="mineru-html-v1.1-openai",
+            route="quality_model",
+            model_assisted=True,
+            quality_attempted=True,
+            quality_succeeded=True,
+            source_selection_schema="quality-source-selection.v0",
+            source_selection_receipt_sha256="a" * 64,
+            source_selection_item_count=3,
+            source_selection_selected_count=2,
+            source_selection_replay_verified=True,
+        )
+
+    monkeypatch.setattr(crawler_mod, "extract_content_async", quality_extract)
+    monkeypatch.setattr(
+        settings,
+        "quality_extraction_backend_revision",
+        "model-build@sha256:abc123",
+    )
+
+    first = (
+        await crawler_mod.crawl_urls(
+            [f"https://ex.com/{profile}"],
+            extraction_profile=profile,
+        )
+    )[0]
+    second = (
+        await crawler_mod.crawl_urls(
+            [f"https://ex.com/{profile}"],
+            extraction_profile=profile,
+        )
+    )[0]
+
+    assert first.cached is False
+    assert second.cached is True
+    assert stub_fetch["n"] == 1
+    assert len(mem_cache.store) == 1
+
+
+async def test_unversioned_model_assisted_output_is_not_persisted(
+    mem_cache,
+    stub_fetch,
+    monkeypatch,
+):
+    from app.services.extractor import ExtractionResult
+
+    async def quality_extract(*_args, **_kwargs):
+        return ExtractionResult(
+            text="# Unversioned model output",
+            word_count=4,
+            strategy="mineru-html-v1.1-openai",
+            route="quality_model",
+            model_assisted=True,
+            quality_attempted=True,
+            quality_succeeded=True,
+        )
+
+    monkeypatch.setattr(crawler_mod, "extract_content_async", quality_extract)
+    monkeypatch.setattr(settings, "quality_extraction_backend_revision", "")
+
+    first = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/unversioned-quality"],
+            extraction_profile="quality",
+        )
+    )[0]
+    second = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/unversioned-quality"],
+            extraction_profile="quality",
+        )
+    )[0]
+
+    assert first.cached is False
+    assert second.cached is False
+    assert stub_fetch["n"] == 2
+    assert mem_cache.store == {}
+
+
+async def test_cached_canonical_result_can_project_links(mem_cache, stub_fetch):
+    first = (await crawler_mod.crawl_urls(["https://ex.com/a"]))[0]
+    assert first.links is None
+    cached_envelope = orjson.loads(next(iter(mem_cache.store.values())))
+    assert cached_envelope["r"]["html"] is None
+    assert cached_envelope["r"]["links"] == ["https://ex.com/source"]
+
+    second = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/a"],
+            formats=["markdown", "links"],
+        )
+    )[0]
+
+    assert second.cached is True
+    assert second.links == ["https://ex.com/source"]
+    assert stub_fetch["n"] == 1
+
+
+async def test_corrupt_cache_entry_is_treated_as_miss(mem_cache, stub_fetch):
+    url = "https://ex.com/corrupt"
+    key = make_cache_key(url, False, None, word_count_threshold=10)
+    mem_cache.store[key] = b"{definitely-not-json"
+
+    result = (await crawler_mod.crawl_urls([url]))[0]
+
+    assert result.error is None
+    assert result.cached is False
+    assert stub_fetch["n"] == 1
+    # The successful live crawl replaces the invalid entry.
+    assert orjson.loads(mem_cache.store[key])["r"]["markdown"]
+
+
+async def test_simultaneous_identical_crawls_are_singleflight(mem_cache, monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = {"n": 0}
+    html = (
+        "<html><head><title>T</title></head><body>"
+        "<p>" + " ".join(["word"] * 80) + '</p><a href="/source">source</a></body></html>'
+    )
+
+    async def blocking_fetch(url, js_render=False, wait_for_selector=None):
+        calls["n"] += 1
+        started.set()
+        await release.wait()
+        return FetchResult(
+            html=html,
+            status_code=200,
+            content_type="text/html",
+        )
+
+    monkeypatch.setattr(fetcher_mod, "fetch_url", blocking_fetch)
+    monkeypatch.setattr("app.config.settings.js_render_mode", "never")
+    monkeypatch.setattr(crawler_mod, "_crawl_semaphore", None)
+    monkeypatch.setattr(crawler_mod, "_singleflight_tasks", {})
+    monkeypatch.setattr(crawler_mod, "_singleflight_lock", None)
+    monkeypatch.setattr(crawler_mod, "_singleflight_loop", None)
+
+    tasks = [
+        asyncio.create_task(
+            crawler_mod._crawl_single_url(
+                "https://singleflight.example/a",
+                formats=["markdown", "links"] if i == 0 else ["markdown"],
+                max_age=0,
+            )
+        )
+        for i in range(8)
+    ]
+    await asyncio.wait_for(started.wait(), timeout=1)
+    await asyncio.sleep(0)
+    release.set()
+    results = await asyncio.gather(*tasks)
+
+    assert calls["n"] == 1
+    assert results[0].links == ["https://singleflight.example/source"]
+    assert all(result.markdown for result in results)
+    assert all(result.links is None for result in results[1:])
+
+
+async def test_no_store_request_cannot_join_cache_writing_singleflight(
+    mem_cache,
+    monkeypatch,
+):
+    both_started = asyncio.Event()
+    release = asyncio.Event()
+    calls = {"n": 0}
+    html = (
+        "<html><head><title>T</title></head><body><p>"
+        + " ".join(["word"] * 80)
+        + "</p></body></html>"
+    )
+
+    async def blocking_fetch(url, js_render=False, wait_for_selector=None):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            both_started.set()
+        await release.wait()
+        return FetchResult(
+            html=html,
+            status_code=200,
+            content_type="text/html",
+        )
+
+    monkeypatch.setattr(fetcher_mod, "fetch_url", blocking_fetch)
+    monkeypatch.setattr("app.config.settings.js_render_mode", "never")
+    monkeypatch.setattr(crawler_mod, "_crawl_semaphore", None)
+    monkeypatch.setattr(crawler_mod, "_singleflight_tasks", {})
+    monkeypatch.setattr(crawler_mod, "_singleflight_lock", None)
+    monkeypatch.setattr(crawler_mod, "_singleflight_loop", None)
+
+    cache_writing = asyncio.create_task(
+        crawler_mod._crawl_single_url(
+            "https://singleflight.example/cache-policy",
+            max_age=0,
+        )
+    )
+    no_store = asyncio.create_task(
+        crawler_mod._crawl_single_url(
+            "https://singleflight.example/cache-policy",
+            max_age=0,
+            store_in_cache=False,
+        )
+    )
+    await asyncio.wait_for(both_started.wait(), timeout=1)
+    release.set()
+    writing_result, no_store_result = await asyncio.gather(cache_writing, no_store)
+
+    assert calls["n"] == 2
+    assert len(mem_cache.store) == 1
+    assert writing_result.metadata is not None
+    assert writing_result.metadata.cache_write_permitted is True
+    assert no_store_result.metadata is not None
+    assert no_store_result.metadata.cache_policy == "no_store"
+    assert no_store_result.metadata.cache_read_permitted is False
+    assert no_store_result.metadata.cache_write_permitted is False
+
+
+async def test_cancelled_singleflight_waiter_does_not_cancel_other_waiters(
+    mem_cache,
+    monkeypatch,
+):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def blocking_fetch(url, js_render=False, wait_for_selector=None):
+        started.set()
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return FetchResult(
+            html="<html><body><main>" + ("useful content " * 40) + "</main></body></html>",
+            status_code=200,
+            content_type="text/html",
+        )
+
+    monkeypatch.setattr(fetcher_mod, "fetch_url", blocking_fetch)
+    monkeypatch.setattr(crawler_mod, "_singleflight_tasks", {})
+    monkeypatch.setattr(crawler_mod, "_singleflight_lock", None)
+    monkeypatch.setattr(crawler_mod, "_singleflight_loop", None)
+    monkeypatch.setattr(crawler_mod, "_accepting_crawls", True)
+
+    first = asyncio.create_task(
+        crawler_mod._crawl_single_url(
+            "https://singleflight.example/cancel-one",
+            max_age=0,
+        )
+    )
+    second = asyncio.create_task(
+        crawler_mod._crawl_single_url(
+            "https://singleflight.example/cancel-one",
+            max_age=0,
+        )
+    )
+    await started.wait()
+    await asyncio.sleep(0)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    assert not cancelled.is_set()
+
+    release.set()
+    result = await second
+    assert result.error is None
+    assert result.markdown
+
+
+async def test_last_cancelled_singleflight_waiter_cancels_underlying_work(
+    mem_cache,
+    monkeypatch,
+):
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def blocking_fetch(url, js_render=False, wait_for_selector=None):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(fetcher_mod, "fetch_url", blocking_fetch)
+    monkeypatch.setattr(crawler_mod, "_singleflight_tasks", {})
+    monkeypatch.setattr(crawler_mod, "_singleflight_lock", None)
+    monkeypatch.setattr(crawler_mod, "_singleflight_loop", None)
+    monkeypatch.setattr(crawler_mod, "_accepting_crawls", True)
+
+    waiter = asyncio.create_task(
+        crawler_mod._crawl_single_url(
+            "https://singleflight.example/cancel-last",
+            max_age=0,
+        )
+    )
+    await started.wait()
+    waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    await asyncio.wait_for(cancelled.wait(), timeout=1)
+
+
+async def test_pdf_result_is_cached(mem_cache, monkeypatch):
+    calls = {"fetch": 0, "extract": 0}
+
+    async def fetch_pdf(url, js_render=False, wait_for_selector=None):
+        calls["fetch"] += 1
+        return FetchResult(
+            status_code=200,
+            content_type="application/pdf",
+            raw_bytes=b"%PDF-fake",
+        )
+
+    class Paper:
+        title = "Cached Paper"
+        word_count = 42
+
+        def to_markdown(self):
+            return "# Cached Paper\n\nBody"
+
+    def extract_pdf(contents, url):
+        calls["extract"] += 1
+        return Paper()
+
+    monkeypatch.setattr(fetcher_mod, "fetch_url", fetch_pdf)
+    monkeypatch.setattr("app.services.academic.extract_pdf", extract_pdf)
+    monkeypatch.setattr("app.config.settings.js_render_mode", "never")
+    monkeypatch.setattr(crawler_mod, "_crawl_semaphore", None)
+
+    first = (await crawler_mod.crawl_urls(["https://ex.com/paper.pdf"]))[0]
+    second = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/paper.pdf"],
+            formats=["markdown", "links"],
+        )
+    )[0]
+
+    assert first.cached is False
+    assert second.cached is True
+    assert second.links == []
+    assert second.metadata is not None
+    assert second.metadata.extraction_strategy == "pypdfium2+academic"
+    assert calls == {"fetch": 1, "extract": 1}
+
+
+async def test_academic_html_result_is_cached_with_links(mem_cache, monkeypatch):
+    from app.services.extractor import ExtractionResult
+
+    calls = {"fetch": 0, "academic": 0}
+    html = (
+        '<html><head><meta name="citation_title" content="Structured Paper">'
+        '<meta name="citation_author" content="Researcher"></head>'
+        "<body><article><p>"
+        + " ".join(["research"] * 300)
+        + '</p><a href="/dataset">dataset</a></article></body></html>'
+    )
+
+    async def fetch_paper(url, js_render=False, wait_for_selector=None):
+        calls["fetch"] += 1
+        return FetchResult(
+            html=html,
+            status_code=200,
+            content_type="text/html",
+        )
+
+    async def extract_page(html_content, url, extraction_profile="balanced"):
+        assert extraction_profile == "balanced"
+        return ExtractionResult(text="research " * 300, word_count=300, strategy="test")
+
+    class Paper:
+        title = "Structured Paper"
+        abstract = "Abstract"
+        sections = []
+        word_count = 300
+
+        def to_markdown(self):
+            return "# Structured Paper\n\nBody"
+
+    def extract_long_html(html_content, url):
+        calls["academic"] += 1
+        return Paper()
+
+    monkeypatch.setattr(fetcher_mod, "fetch_url", fetch_paper)
+    monkeypatch.setattr(crawler_mod, "extract_content_async", extract_page)
+    monkeypatch.setattr("app.services.academic.extract_long_html", extract_long_html)
+    monkeypatch.setattr("app.config.settings.js_render_mode", "never")
+    monkeypatch.setattr(crawler_mod, "_crawl_semaphore", None)
+
+    url = "https://ex.com/paper/123"
+    first = (await crawler_mod.crawl_urls([url]))[0]
+    second = (
+        await crawler_mod.crawl_urls(
+            [url],
+            formats=["markdown", "links"],
+        )
+    )[0]
+
+    assert first.cached is False
+    assert second.cached is True
+    assert second.links == ["https://ex.com/dataset"]
+    assert second.metadata is not None
+    assert second.metadata.extraction_strategy == "academic-html"
+    assert calls == {"fetch": 1, "academic": 1}
+
+
+# ── structured (LLM) extraction ─────────────────────────────────────
+
+
+def test_ensure_strict_recurses():
+    from app.services.structured import _ensure_strict
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "tags": {
+                "type": "array",
+                "items": {"type": "object", "properties": {"name": {"type": "string"}}},
+            },
+        },
+    }
+    strict = _ensure_strict(schema)
+    assert strict["additionalProperties"] is False
+    assert strict["properties"]["tags"]["items"]["additionalProperties"] is False
+
+
+@pytest.fixture
+def reset_llm_client(monkeypatch):
+    import app.services.structured as s
+
+    monkeypatch.setattr(s, "_client", None)
+    monkeypatch.setattr(s, "_client_init", False)
+    return s
+
+
+async def test_extract_structured_no_key_is_graceful(reset_llm_client, monkeypatch):
+    monkeypatch.setattr("app.config.settings.anthropic_api_key", "")
+    out = await reset_llm_client.extract_structured("some content", {"type": "object"})
+    assert "error" in out and "ANTHROPIC_API_KEY" in out["error"]
+
+
+async def test_extract_structured_parses_schema_output(reset_llm_client, monkeypatch):
+    captured = {}
+
+    class _Block:
+        type = "text"
+        text = '{"title": "Hello", "price": 9.99}'
+
+    class _Resp:
+        content = [_Block()]
+
+    class _Messages:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return _Resp()
+
+    class _FakeClient:
+        messages = _Messages()
+
+    monkeypatch.setattr(reset_llm_client, "_get_client", lambda: _FakeClient())
+    out = await reset_llm_client.extract_structured(
+        "Hello costs $9.99", {"type": "object", "properties": {"title": {"type": "string"}}}
+    )
+    assert out == {"title": "Hello", "price": 9.99}
+    # schema was passed through as a constrained output format
+    assert captured["output_config"]["format"]["type"] == "json_schema"
+
+
+async def test_structured_queue_wait_is_inside_total_deadline(
+    reset_llm_client,
+    monkeypatch,
+):
+    class _Messages:
+        async def create(self, **_kwargs):
+            raise AssertionError("capacity was never acquired")
+
+    class _FakeClient:
+        messages = _Messages()
+
+    monkeypatch.setattr(reset_llm_client, "_get_client", lambda: _FakeClient())
+    monkeypatch.setattr("app.config.settings.structured_extraction_timeout_s", 0.01)
+    monkeypatch.setattr(reset_llm_client, "_semaphore", asyncio.Semaphore(0))
+    monkeypatch.setattr(reset_llm_client, "_semaphore_loop", asyncio.get_running_loop())
+
+    out = await asyncio.wait_for(
+        reset_llm_client.extract_structured("content", {"type": "object"}),
+        timeout=0.1,
+    )
+
+    assert out == {"error": "structured extraction timed out"}
+
+
+async def test_crawl_urls_wires_extraction(monkeypatch, stub_fetch):
+    async def fake_extract(content, schema, prompt):
+        return {"ok": True, "len": len(content)}
+
+    monkeypatch.setattr("app.services.structured.extract_structured", fake_extract)
+    results = await crawler_mod.crawl_urls(
+        ["https://ex.com/a"],
+        formats=["markdown", "json"],
+        json_schema={"type": "object"},
+    )
+    assert results[0].extracted == {"ok": True, "len": len(results[0].markdown)}
+
+
+async def test_crawl_urls_skips_extraction_without_format(monkeypatch, stub_fetch):
+    called = {"n": 0}
+
+    async def fake_extract(content, schema, prompt):
+        called["n"] += 1
+        return {}
+
+    monkeypatch.setattr("app.services.structured.extract_structured", fake_extract)
+    results = await crawler_mod.crawl_urls(
+        ["https://ex.com/a"],
+        json_schema={"type": "object"},  # no "json" in formats
+    )
+    assert results[0].extracted is None
+    assert called["n"] == 0
