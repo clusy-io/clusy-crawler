@@ -1,8 +1,6 @@
-# Archived AEB article-body evaluation against Trafilatura 2.1.0
+# AEB article-body evaluation for Beta 2 against Trafilatura 2.1.0
 
-Status: **ARCHIVED — NOT AUTHORIZED FOR PUBLICATION**. This dated receipt is
-absent from the current evidence registry and is retained only for audit
-history. The Beta 2 tree-equivalent record supersedes it.
+Status: verified for the scope defined below.
 
 ## Scope
 
@@ -12,17 +10,20 @@ on all 181 pages in the pinned ScrapingHub/Zyte Article Extraction Benchmark
 AEB's unchanged four-token-shingle evaluator scores the exact production
 `article_body` output. The prediction transform is identity.
 
-The result is not a recursive-crawling, JavaScript-rendering, general-web,
+The measured source tree is also the exact tree tagged `v0.2.0-beta.2`. The
+result is not a recursive-crawling, JavaScript-rendering, general-web,
 service-latency, reliability, cost, or vendor-API benchmark.
 
 ## Frozen identities
 
 | Material | Identity |
 | --- | --- |
-| Public crawler source | commit `73b02974b4cf2aab0764922cf7ac664e0f3bc36f`; tree `9fb2f1150a4082e7bd905bfc406ab11520da0153` |
-| Runtime source manifest | 231 files; SHA-256 `91890c92612dc1f74c143196b234ced9f546c396155daafd816113b4051d95a5` |
-| Loaded native extension | SHA-256 `73257bdcf8066265680a9f78b935384b7043187bd4a7f322d6c8c9b1acb9c867` |
-| Native source inventory | 132 files; SHA-256 `e874ba9aa5f25daef7259bddd989342161a54d589519b0c7fe175b96c6329166` |
+| Public crawler source | commit `77b8d00c5ebf88ed3afffe64f869ccb8c6922365`; tree `b90c3d6e7b4d816b915da1f0739662bd159752d5` |
+| Beta 2 tag | `v0.2.0-beta.2`; commit `8d38b5ca5dfdb6ba786046d8a0958410a41f48d2`; tree `b90c3d6e7b4d816b915da1f0739662bd159752d5` |
+| Runtime source manifest | 232 files; SHA-256 `5d49abe41606e3cb1dc74427fa749191c6579d7ea2971c69a7258df5b5829547` |
+| Loaded native extension | SHA-256 `99a3e60396884634dec196e4a934e1b0ac40cbf4a1fe92d4cf0467ba19de8e01` |
+| Native package entry point | SHA-256 `eac8fb5bfb89a272fedaad7b58d847dd2741676a2b514e163e395ae2e1bd8a9c` |
+| Native source inventory | 132 files; SHA-256 `a890cd68664b22017fdd580ece3543a77ba3d74ab8636c3a9c0eed786f38f9af` |
 | AEB checkout | commit `4a3bc979f76c0df73cb95fe272e2fc1b96f9f010`; tree `258fee1bb38bcb642afec48cb80e51bd1594c259` |
 | AEB HTML inventory | 181 pages; SHA-256 `1c9833287ef2ee3bf3d9d948dbec300f867316e71815c003640d57e7567a04e9` |
 | Ground truth | SHA-256 `512e9a9498912047a966e22f47302e849dfa45dca1f555d97588317dac7e5a3d` |
@@ -32,9 +33,10 @@ service-latency, reliability, cost, or vendor-API benchmark.
 | Comparator environment | CPython 3.13.5 Darwin/arm64; 17 distributions; 2,632 site files; manifest SHA-256 `fa522352d9e0369dbd1e17794adb09c9e47b9f316f30a6ef6971dc1221eb391f` |
 | Comparator requirements lock | `--require-hashes`; SHA-256 `68b1fe778be9ec1d65ed930f1b3e57e15d195cce5b9c4b87fae6df3cb22d9d5f` |
 | Trafilatura wheel | `trafilatura-2.1.0-py3-none-any.whl`; SHA-256 `0eded5207a806445ddebbe36eae30b9035fe6a2f233c36f6fe82663fca8b9d30` |
-| Production lock | SHA-256 `61949fb0daede4db5b6f1a6b95311075dc879e8f66cf8c27c400ab22779fa11f` |
-| Raw report | SHA-256 `f0d8e5ab91bf40910d06860a9a8028ceea9947307f21f734eb636d997ccefc9b` |
-| Raw artifact manifest | SHA-256 `a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02` |
+| Production lock | SHA-256 `20b4c8bcfee02bf69b17ec3a3abc1f4f4dcb71e33fbf111ce2d6a2e7b7bb8559` |
+| Raw report | SHA-256 `3326579380cc61dc78c4fefcd7384c4d2d6ecb2e0ba5ea38bd11fbbe8c6cff93` |
+| Raw artifact manifest | SHA-256 `fffeba35b9581920f4053eb6e044c5ae16e6d231c97adc110add07cea1987542` |
+| Deterministic raw archive | 2,075,819 bytes; SHA-256 `823ea88f1fdf260d03edfd0f4c0cc8fb1030f5c7583c48daceeabbcb2058f3be` |
 
 The crawler and AEB worktrees were clean. Relevant crawler source hashes were
 identical before and after the complete invocation, including comparator
@@ -89,13 +91,14 @@ serialization, and official scoring are outside the candidate timer.
 | F1 delta vs Trafilatura 2.1.0 | `+0.014581` |
 | Paired 95% interval for the F1 delta | `[+0.005547, +0.025336]` |
 | Paired-bootstrap win fraction | `0.9996` |
-| Local throughput | `152.71` pages/s |
-| Candidate latency p50 / p95 | `12.00 / 24.05` ms |
+| Observed local extraction throughput | `173.97` pages/s |
+| Observed candidate latency p50 / p95 | `10.30 / 20.83` ms |
 | Candidate errors | `0` |
 
-The local performance values are specific to the recorded Apple M4 Pro
-environment and the in-memory extraction boundary. They are not HTTP-service
-or cross-machine throughput claims.
+The performance values are one exact observation on the recorded Darwin arm64
+host. They cover only the in-memory extraction boundary and are not a
+stability result, HTTP-service rate, crawler rate, service-level guarantee, or
+cross-machine throughput claim.
 
 The point score also exceeds the pinned historical rs-trafilatura prediction,
 but its paired interval starts at equality and its win fraction is `0.6349`.
@@ -104,15 +107,28 @@ claim against rs-trafilatura, AutoExtract, or an unqualified AEB leaderboard.
 
 ## Retention and claim boundary
 
-The compact report is checked in. The full 6.1 MiB result
-directory—including exact predictions, per-page metrics, production Markdown,
-split manifest, comparator receipt, environment manifest, requirements lock,
-and original report—is retained in the ignored benchmark-results store:
+The compact report is checked in. The complete raw directory—including exact
+predictions, per-page metrics, production Markdown, split manifest, comparator
+receipt, environment manifest, requirements lock, and original report—is
+retained in a deterministic external archive:
 
+- archive format: sorted USTAR members with fixed modes, zero timestamps,
+  zero numeric owners, fixed owner names, and gzip with no stored name or
+  timestamp;
+- 15 safe, normalized members; no absolute paths, parent traversal, symlinks,
+  or unsupported entry types;
 - raw manifest SHA-256:
-  `a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02`;
+  `fffeba35b9581920f4053eb6e044c5ae16e6d231c97adc110add07cea1987542`;
 - retained archive SHA-256:
-  `8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b`.
+  `823ea88f1fdf260d03edfd0f4c0cc8fb1030f5c7583c48daceeabbcb2058f3be`;
+- uncompressed USTAR SHA-256:
+  `2cf338004244085db452eba490b7fffb5424d4d22db78b227a9339aaa183ef2c`.
 
-This archived record does not authorize publication. Its raw material and
-hashes remain available for audit history.
+Two separate archive builds were byte-identical. A fresh extraction matched
+the source directory byte-for-byte, and every extracted artifact matched its
+manifest size and SHA-256.
+
+This evidence permits publication of the registered AEB metrics, the scoped
+comparison with exact Trafilatura 2.1.0, and the explicitly bounded local
+performance observation. It does not permit a universal SOTA claim, a crawler
+or service performance claim, or a comparison with Exa or Firecrawl.

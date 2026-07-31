@@ -147,14 +147,14 @@ capacity must be measured separately.
 
 ## Evidence status
 
-The current registered result is the clean public
-[`73b0297` evidence record](evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md).
-> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `152.71 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30 -->
+The current registered result is the clean public, Beta 2 tree-equivalent
+[`77b8d00` evidence record](evidence/aeb-article-body-trafilatura-2-1-77b8d00-beta2-public/PROTOCOL.md).
+> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
 
 The retained raw artifact manifest SHA-256 is
-`a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02`;
+`fffeba35b9581920f4053eb6e044c5ae16e6d231c97adc110add07cea1987542`;
 the archive SHA-256 is
-`8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b`.
+`823ea88f1fdf260d03edfd0f4c0cc8fb1030f5c7583c48daceeabbcb2058f3be`.
 ## Artifacts and publication rules
 
 Timestamped runs default to `bench/results/aeb/`, which is gitignored. Each run
