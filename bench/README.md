@@ -72,13 +72,14 @@ permission gates.
 
 | Record | Status |
 | --- | --- |
-| [`evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md`](evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md) | Verified scoped AEB result against exact Trafilatura 2.1.0 |
+| [`evidence/aeb-article-body-trafilatura-2-1-77b8d00-beta2-public/PROTOCOL.md`](evidence/aeb-article-body-trafilatura-2-1-77b8d00-beta2-public/PROTOCOL.md) | Verified Beta 2 tree-equivalent scoped AEB result against exact Trafilatura 2.1.0 |
 
 This is the only current authorized result. Evidence directories absent from
 the registry are archival, non-authorizing records and are not part of the
 current evidence index.
 
-Specifically, `evidence/aeb-article-body-4dd1755-public/` and
+Specifically, `evidence/aeb-article-body-4dd1755-public/`,
+`evidence/aeb-article-body-trafilatura-2-1-73b0297-public/`, and
 `evidence/native-filter-stack-95b3bbe-public/` are superseded archival
 receipts, while `evidence/selection-atom-catalog-e5958b5/` is an archival
 research diagnostic. None authorizes publication.

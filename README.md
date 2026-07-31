@@ -308,16 +308,19 @@ All validated defaults are defined in [`app/config.py`](app/config.py).
 
 ## Evidence status
 
-> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `152.71 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30 -->
+> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
 
-The Verified receipt was produced directly from the public repository. Its exact
-Trafilatura 2.1.0 comparator ran in a separate hash-pinned, label-free
-environment. The result is bound to a clean source commit, frozen protocol,
-compact report, retained raw archive, and exact hashes in
+The Verified receipt was produced directly from a clean public source tree
+identical to the `v0.2.0-beta.2` tag tree. Its exact Trafilatura 2.1.0
+comparator ran in a separate hash-pinned, label-free environment. The result is
+bound to a frozen protocol, compact report, deterministic retained raw archive,
+and exact hashes in
 [`bench/evidence/registry.json`](bench/evidence/registry.json). See
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) for the execution boundary,
-limitations, and evidence-status rules. No other benchmark, implementation,
-deployment, or vendor result is authorized for publication by this release.
+limitations, and evidence-status rules. The throughput value is one local
+in-memory extraction observation, not a crawler, HTTP-service, stability, or
+service-level result. No other benchmark, implementation, deployment, or
+vendor result is authorized for publication by this release.
 
 ## Development
 

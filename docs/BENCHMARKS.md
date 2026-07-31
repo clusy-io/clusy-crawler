@@ -13,30 +13,33 @@ diagnostic material only; they do not authorize a public result.
 
 ## Registered results
 
-> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `152.71 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30 -->
+> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
 
 ### AEB claim boundary
 
 The registered run uses all public AEB pages, the pinned upstream evaluator,
 identity transformation of production `article_body` output, deterministic
 ordering, and a bounded two-worker loop. It was executed directly from clean
-open-source commit `73b02974b4cf2aab0764922cf7ac664e0f3bc36f`.
-Before labels are loaded, a dedicated Python process replays exact
-Trafilatura 2.1.0 from a 17-package hash-pinned environment over a label-free
-HTML capsule.
+open-source commit `77b8d00c5ebf88ed3afffe64f869ccb8c6922365`; its tree is
+identical to the tree tagged `v0.2.0-beta.2`. Before labels are loaded, a
+dedicated Python process replays exact Trafilatura 2.1.0 from a 17-package
+hash-pinned environment over a label-free HTML capsule.
 
 The raw predictions, comparator receipt, per-page measurements, production
-Markdown, original report, and split manifest are retained in a hashed
-external archive.
+Markdown, original report, and split manifest are retained in a deterministic
+hashed external archive. Its members and metadata were normalized, two builds
+were byte-identical, and a fresh extraction passed every manifest hash.
 
 This is evidence for article-body extraction on AEB. It does not evaluate
 recursive discovery, JavaScript rendering, general-web document structure,
-HTTP-service behavior, reliability, cost, or live providers.
+HTTP-service behavior, reliability, cost, or live providers. The local
+throughput value is one exact in-memory extraction observation, not a
+stability result, crawler rate, HTTP-service rate, or service-level guarantee.
 
 Current evidence:
 
-- [frozen protocol](../bench/evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md);
-- [compact report](../bench/evidence/aeb-article-body-trafilatura-2-1-73b0297-public/report.json);
+- [frozen protocol](../bench/evidence/aeb-article-body-trafilatura-2-1-77b8d00-beta2-public/PROTOCOL.md);
+- [compact report](../bench/evidence/aeb-article-body-trafilatura-2-1-77b8d00-beta2-public/report.json);
 - [registry entry](../bench/evidence/registry.json).
 
 ## Protocols without a published result

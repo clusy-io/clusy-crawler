@@ -1,17 +1,11 @@
 {
-  "archive_status": {
-    "current_registry_member": false,
-    "original_record_status": "Verified",
-    "publication_authorized": false,
-    "reason": "Superseded by the current Beta 2 tree-equivalent Trafilatura 2.1.0 evidence record"
-  },
   "claim_binding": {
-    "id": "aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30",
+    "id": "aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31",
     "kind": "benchmark_result",
-    "protocol_sha256": "5da03fcc7c05d03228635af1c0f05f70829d23c5a379e14f7d1416604781b155",
-    "raw_archive_sha256": "8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b",
-    "raw_manifest_sha256": "a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02",
-    "recorded_at_utc": "2026-07-30T22:58:52Z",
+    "protocol_sha256": "0c1a60779fae882ddf549f53bce6ceb2aa51ff754c88d744ca1cc71ffde27b4b",
+    "raw_archive_sha256": "823ea88f1fdf260d03edfd0f4c0cc8fb1030f5c7583c48daceeabbcb2058f3be",
+    "raw_manifest_sha256": "fffeba35b9581920f4053eb6e044c5ae16e6d231c97adc110add07cea1987542",
+    "recorded_at_utc": "2026-07-31T05:54:45Z",
     "scope": {
       "comparators": [
         {
@@ -34,8 +28,8 @@
       "limitations": [
         "Article-body extraction only; not crawling, rendering, or general-web evaluation",
         "The public benchmark fixtures were fetched with JavaScript disabled",
-        "Throughput is local Apple M4 Pro extraction throughput, not HTTP-service throughput",
-        "The result is bound to the recorded source commit and does not establish current deployment state",
+        "The throughput value is one exact local Darwin arm64 extraction-only observation, not a stability, crawler, HTTP-service, or service-level result",
+        "The measured source tree is byte-identical to the v0.2.0-beta.2 tag tree; this does not establish deployment state",
         "The point-score lead over rs-trafilatura is not statistically conclusive under the paired interval"
       ],
       "output_contract": "exact production article_body output with identity prediction transform and the pinned official evaluator",
@@ -49,18 +43,20 @@
     },
     "source": {
       "clean": true,
-      "commit": "73b02974b4cf2aab0764922cf7ac664e0f3bc36f",
+      "commit": "77b8d00c5ebf88ed3afffe64f869ccb8c6922365",
       "repository": "clusy-io/clusy-crawler",
-      "runtime_source_sha256": "91890c92612dc1f74c143196b234ced9f546c396155daafd816113b4051d95a5",
-      "tree": "9fb2f1150a4082e7bd905bfc406ab11520da0153"
+      "runtime_source_sha256": "5d49abe41606e3cb1dc74427fa749191c6579d7ea2971c69a7258df5b5829547",
+      "tree": "b90c3d6e7b4d816b915da1f0739662bd159752d5"
     },
-    "status": "Archived"
+    "status": "Verified"
   },
   "comparator": {
     "call": "trafilatura.extract(html, include_comments=False)",
     "environment_manifest_sha256": "fa522352d9e0369dbd1e17794adb09c9e47b9f316f30a6ef6971dc1221eb391f",
     "input_inventory_sha256": "1c9833287ef2ee3bf3d9d948dbec300f867316e71815c003640d57e7567a04e9",
+    "input_manifest_sha256": "adb34265b32bfa07f2ebda5359dd60f179201090b728a4f583f0ea3a5a50d6f8",
     "packages": 17,
+    "predictions_commitment_sha256": "3eab3eaf4d0324e6bb6eff52b85660448b7fdbc0f24e49b5e56e9ec539414ac0",
     "requirements_lock_sha256": "68b1fe778be9ec1d65ed930f1b3e57e15d195cce5b9c4b87fae6df3cb22d9d5f",
     "site_files": 2632,
     "trafilatura_version": "2.1.0",
@@ -80,20 +76,25 @@
   "metrics": {
     "errors": "0",
     "f1": "0.9721267477263196",
+    "f1_delta_ci95_high_vs_rs_trafilatura": "0.006588982999252732",
     "f1_delta_ci95_high_vs_trafilatura_2_1": "0.02533555028953053",
+    "f1_delta_ci95_low_vs_rs_trafilatura": "0.0",
     "f1_delta_ci95_low_vs_trafilatura_2_1": "0.0055474478846463775",
+    "f1_delta_vs_rs_trafilatura": "0.0021721988516124613",
     "f1_delta_vs_trafilatura_2_1": "0.014581090763431392",
-    "p50_latency_ms": "11.999624999589287",
-    "p95_latency_ms": "24.054708999756258",
-    "pages_per_second": "152.71126292964416",
+    "p50_latency_ms": "10.300499998265877",
+    "p95_latency_ms": "20.830624998779967",
+    "pages_per_second": "173.96633091647158",
     "precision": "0.9551471924829309",
     "recall": "0.9897209165735447",
+    "rs_trafilatura_f1": "0.9699545488747071",
     "trafilatura_2_1_f1": "0.9575456569628882",
+    "win_fraction_vs_rs_trafilatura": "0.6349",
     "win_fraction_vs_trafilatura_2_1": "0.9996"
   },
   "permissions": {
     "scoped_sota": false,
-    "scoped_superiority": false,
+    "scoped_superiority": true,
     "vendor_superiority": false
   },
   "protocol": {
@@ -105,17 +106,35 @@
     "warmup_pages": 5
   },
   "raw_evidence": {
-    "archive_sha256": "8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b",
-    "local_ignored_path": "bench/results/aeb/20260730T225852Z-trafilatura-2.1-formal",
-    "manifest_sha256": "a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02",
-    "report_sha256": "f0d8e5ab91bf40910d06860a9a8028ceea9947307f21f734eb636d997ccefc9b",
-    "retention": "external_retained"
+    "archive_bytes": 2075819,
+    "archive_members": 15,
+    "archive_name": "clusy-oss-beta2-head-77b8d00-aeb-replay-v1.deterministic-v2.tar.gz",
+    "archive_sha256": "823ea88f1fdf260d03edfd0f4c0cc8fb1030f5c7583c48daceeabbcb2058f3be",
+    "candidate_prediction_semantic_sha256": "0853ccd9f933eebb63dcdd7120cf8518a5e1c957946e07c54026bad81baa46d1",
+    "directory_name": "clusy-oss-beta2-head-77b8d00-aeb-replay-v1",
+    "manifest_sha256": "fffeba35b9581920f4053eb6e044c5ae16e6d231c97adc110add07cea1987542",
+    "production_markdown_semantic_sha256": "a152110e91eaf6b5ec12f7c1465884258b6e3ee175866f2ecb979ee642f37ae8",
+    "report_sha256": "3326579380cc61dc78c4fefcd7384c4d2d6ecb2e0ba5ea38bd11fbbe8c6cff93",
+    "retention": "external_retained",
+    "uncompressed_tar_sha256": "2cf338004244085db452eba490b7fffb5424d4d22db78b227a9339aaa183ef2c"
+  },
+  "release_equivalence": {
+    "measured_commit": "77b8d00c5ebf88ed3afffe64f869ccb8c6922365",
+    "measured_tree": "b90c3d6e7b4d816b915da1f0739662bd159752d5",
+    "tag": "v0.2.0-beta.2",
+    "tag_commit": "8d38b5ca5dfdb6ba786046d8a0958410a41f48d2",
+    "tag_tree": "b90c3d6e7b4d816b915da1f0739662bd159752d5",
+    "tree_equivalent": true
   },
   "schema": "clusy.aeb.article-body.compact-evidence.v1",
   "verification": {
+    "archive_builds_byte_identical": true,
+    "archive_extraction_matches_source": true,
+    "archive_safe_members": true,
     "artifact_complete": true,
-    "claimable": false,
+    "claimable": true,
     "comparator_verified": true,
-    "source_stable": true
+    "source_stable": true,
+    "tag_tree_equivalent": true
   }
 }

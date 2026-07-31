@@ -2,13 +2,13 @@
   "claims": [
     {
       "artifact": {
-        "path": "bench/evidence/aeb-article-body-trafilatura-2-1-73b0297-public/report.json",
-        "raw_archive_sha256": "8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b",
-        "raw_manifest_sha256": "a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02",
+        "path": "bench/evidence/aeb-article-body-trafilatura-2-1-77b8d00-beta2-public/report.json",
+        "raw_archive_sha256": "823ea88f1fdf260d03edfd0f4c0cc8fb1030f5c7583c48daceeabbcb2058f3be",
+        "raw_manifest_sha256": "fffeba35b9581920f4053eb6e044c5ae16e6d231c97adc110add07cea1987542",
         "raw_retention": "external_retained",
-        "sha256": "7de33d9a1561437949d25a916835ce7deec6a43905355e6ddc64ce654246df35"
+        "sha256": "6a6e945e32f5f6eb58bff53dadafa7e5a3490774fcf7a6cc18b516f215f55950"
       },
-      "id": "aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30",
+      "id": "aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31",
       "kind": "benchmark_result",
       "metrics": [
         {
@@ -26,9 +26,9 @@
           "value": "0.9721267477263196"
         },
         {
-          "aggregation": "closed-loop in-memory extraction throughput at concurrency two",
+          "aggregation": "single observed closed-loop in-memory extraction throughput at concurrency two",
           "artifact_pointer": "/metrics/pages_per_second",
-          "display": "152.71",
+          "display": "173.97",
           "format": ".2f",
           "key": "pages_per_second",
           "publication_aliases": [
@@ -36,7 +36,7 @@
             "throughput"
           ],
           "unit": "pages_per_second",
-          "value": "152.71126292964416"
+          "value": "173.96633091647158"
         },
         {
           "aggregation": "official full-corpus Trafilatura 2.1.0 four-token-shingle F1",
@@ -118,10 +118,10 @@
         }
       },
       "protocol": {
-        "path": "bench/evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md",
-        "sha256": "5da03fcc7c05d03228635af1c0f05f70829d23c5a379e14f7d1416604781b155"
+        "path": "bench/evidence/aeb-article-body-trafilatura-2-1-77b8d00-beta2-public/PROTOCOL.md",
+        "sha256": "0c1a60779fae882ddf549f53bce6ceb2aa51ff754c88d744ca1cc71ffde27b4b"
       },
-      "recorded_at_utc": "2026-07-30T22:58:52Z",
+      "recorded_at_utc": "2026-07-31T05:54:45Z",
       "scope": {
         "comparators": [
           {
@@ -144,8 +144,8 @@
         "limitations": [
           "Article-body extraction only; not crawling, rendering, or general-web evaluation",
           "The public benchmark fixtures were fetched with JavaScript disabled",
-          "Throughput is local Apple M4 Pro extraction throughput, not HTTP-service throughput",
-          "The result is bound to the recorded source commit and does not establish current deployment state",
+          "The throughput value is one exact local Darwin arm64 extraction-only observation, not a stability, crawler, HTTP-service, or service-level result",
+          "The measured source tree is byte-identical to the v0.2.0-beta.2 tag tree; this does not establish deployment state",
           "The point-score lead over rs-trafilatura is not statistically conclusive under the paired interval"
         ],
         "output_contract": "exact production article_body output with identity prediction transform and the pinned official evaluator",
@@ -159,10 +159,10 @@
       },
       "source": {
         "clean": true,
-        "commit": "73b02974b4cf2aab0764922cf7ac664e0f3bc36f",
+        "commit": "77b8d00c5ebf88ed3afffe64f869ccb8c6922365",
         "repository": "clusy-io/clusy-crawler",
-        "runtime_source_sha256": "91890c92612dc1f74c143196b234ced9f546c396155daafd816113b4051d95a5",
-        "tree": "9fb2f1150a4082e7bd905bfc406ab11520da0153"
+        "runtime_source_sha256": "5d49abe41606e3cb1dc74427fa749191c6579d7ea2971c69a7258df5b5829547",
+        "tree": "b90c3d6e7b4d816b915da1f0739662bd159752d5"
       },
       "status": "Verified",
       "verification": {
