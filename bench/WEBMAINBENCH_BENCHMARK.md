@@ -164,74 +164,15 @@ parsing, official scoring, and artifact serialization are excluded. Scrubbed
 pipeline timing includes the mandatory scrub transform. Do not present this as
 HTTP crawler throughput.
 
-## Retained clean private-source validation and repeat
+## Evidence status
 
-The first full 2026-07-29 run used clean private source revision
-`10ff0c1a7c9a2083958b674d64e15bb5a8a1b90e` and completed all 7,809 pages in
-both required tracks with zero extraction errors. A later clean run from its
-documentation-only child
-`7f202f43cdf21d076415fa3a1f7cfd005533de56` did the same and is the primary
-repeat. Neither run was executed from public OSS revision
-`837dddababc612bfa1ce438307b1e2fb29b4c2f5` or from the current public commit.
-Relative to `10ff0c1`, `7f202f4` changed only the six benchmark documentation
-files, and the recorded production-source digest remained
-`fe89e7a1f7b8770b2f3c71781b902c42d0ef9051b3b255284a355205c2b7fa99`.
-
-| Track | Precision | Recall | F1 | Primary clean repeat | Original clean run |
-|---|---:|---:|---:|---:|---:|
-| raw Direct-MD | 0.615569 | 0.677841 | **0.606672** | 127.4899 pages/s | 131.2818 pages/s |
-| annotation-scrubbed Direct-MD | 0.615698 | 0.676570 | **0.605703** | 57.8572 pages/s | 57.3376 pages/s |
-
-Raw and scrubbed predictions were byte-identical on 7,437/7,809 pages
-(95.24%); the scrubbed-minus-raw mean F1 delta was -0.000969. This supports the
-label-leak guard but does not make the score competitive: the published
-Trafilatura `HTML+MD` row is 0.6402 and the leading model-assisted pipeline is
-0.9098. Output-mode differences mean this is a same-data/scorer Direct-MD
-measurement, not an unconditional official leaderboard placement.
-
-The two retained private artifact identifiers and their `manifest.json`
-SHA-256 values are:
-
-- `bench/results/webmainbench/v2-isolated2-7f202f4-20260729T0728Z`:
-  `df0deb7b3a2565b164cd0fff8f6687fd5d10173d402156425f9d3e07c6bb35d3`
-- `bench/results/webmainbench/v2-10ff0c1-20260729T0033Z`:
-  `10350d98d93498b2f00217f4ebea3716a2a101f20c851b695ede30c55fdc505e`
-
-Dataset, evaluator, production source, and loaded native module were verified
-before and after each run and remained stable. Both harness results are
-protocol-valid and claimable only on the fixed public WebMainBench scope;
-neither marks universal or blind SOTA claimability.
-
-A post-run SHA-256 audit compared each artifact's 49 recorded source files with
-public `837ddda`: 44 matched and none was missing. The WebMainBench runner, core
-extraction implementation, native algorithm sources, Cargo files, and
-`uv.lock` matched byte-for-byte. The five differences were `app/config.py`,
-`app/main.py`, `app/services/renderer.py`, `native/pyproject.toml`, and
-`pyproject.toml`; they comprise OSS configuration, comments, and package
-metadata, and the only executable delta is an adaptive-profile page-type
-validator that this `balanced` run did not exercise. The full snapshots are not
-byte-identical, and the recorded native binary was not reproduced from
-`837ddda`. These are source-audited private-revision results, not benchmark runs
-of the OSS commit.
-
-After applying
-`jq -cS 'del(.extraction.latency_ms)'` to every JSONL page record, the
-canonicalized original and repeated raw streams share SHA-256
-`1fe307cfa6eceb4abb150c753a73a37dfa5b5730f26f9550c3600306a31dd970`;
-the canonicalized scrubbed streams share
-`58ac076a67bc6e9ec62702464773fa0a587ec86aa4676d313d2deefeb5791ce6`.
-Predictions, strategies, per-page scores, errors, and metadata therefore
-reproduced exactly. Throughput is reported as two observations rather than
-selecting the faster run.
-
-On the primary repeat, extraction p50/p95 was `9.544 / 41.929 ms` for raw and
-`10.840 / 36.622 ms` for scrubbed. Pipeline throughput is a local, closed-loop
-measurement on the artifact-recorded hardware. Raw timing covers production
-extraction; scrubbed timing also includes the mandatory scrub transform. Both
-exclude dataset JSON parsing, official scoring, artifact output, HTTP fetching,
-and network service overhead. Dataset pages, references, and predictions are
-benchmark-only and are not used for training, distillation, label generation,
-or production routing calibration.
+This release publishes no WebMainBench result. Local or retained run outputs
+remain non-authorizing until a complete run from clean public source preserves
+the permitted artifacts and receives an exact evidence-registry binding. Raw
+and scrubbed tracks must be reported together, and output-contract differences
+must remain explicit. Dataset pages, references, and predictions are
+benchmark-only and must not be used for training, distillation, label
+generation, or runtime routing calibration.
 
 ## Streaming, atomic checkpoints, and resume
 
@@ -277,13 +218,11 @@ Final artifacts are:
   claimability;
 - `manifest.json` — byte size and SHA-256 of every other final artifact.
 
-## What may and may not be claimed
+## Publication boundary
 
-The current paper's full-protocol comparison points include
-DeepSeek-V3.2-in-Dripper at `0.9098`, GPT-5-in-Dripper at `0.9024`,
-Gemini-2.5-Pro-in-Dripper at `0.8979`, and Dripper standalone at `0.8779`.
-Those LLM entries are block classifiers inside the Dripper pipeline, not direct
-raw-page LLM calls.
+External paper and leaderboard values are context, not local evidence. A
+future comparison must freeze the exact snapshot, preserve output-mode
+qualifications, and retain compatible evidence for the named systems.
 
 Clusy is recorded as a direct `MD` output: the benchmark stores
 `ExtractionResult.text` unchanged. Several paper rows first produce main HTML
@@ -291,21 +230,10 @@ and then use the official `html2text` canonicalizer (`HTML+MD`). Always report
 the output mode beside the score; do not silently describe a direct-Markdown
 run as the paper's `HTML+MD` configuration.
 
-A result may be described only as, for example:
-
-> Best measured mean ROUGE-5 F1 among the named systems on the exact public
-> WebMainBench v1.1 protocol as of YYYY-MM-DD.
-
-That wording is appropriate only after a clean full run, both raw and scrubbed
-results, zero extraction errors, exact protocol comparability, and preservation
-of the complete artifact directory. A point-score win does not establish
-statistical significance when competing systems' per-page predictions are not
-available.
-
-Do not claim:
+Do not infer:
 
 - universal or blind SOTA;
-- “better than GPT-5 webpage extraction” without the Dripper qualification;
+- superiority over a model or pipeline without an exact matched contract;
 - production crawler reliability or live-site success;
 - broad multilingual superiority—the dataset is predominantly English and
   Chinese despite containing 46 language labels;

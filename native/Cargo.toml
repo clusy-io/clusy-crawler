@@ -18,10 +18,9 @@ dom_query = "=0.24.0"
 html5ever = "=0.36.1"
 pyo3 = { version = "=0.27.2", features = ["abi3-py312", "extension-module"] }
 rs-trafilatura-broad = { package = "rs-trafilatura", version = "=0.2.2", path = "vendor/rs-trafilatura-broad" }
-# This exact revision is the independently recorded top open-source backend on
-# the Article Extraction Benchmark.  Keep it alongside the newer, multi-type
-# release: the former is precision-tuned for articles while the latter adds
-# page classification and richer non-article Markdown.
+# Keep the pinned article-oriented backend alongside the multi-type backend.
+# The explicit article_body profile uses the former; general extraction uses
+# the latter for page classification and non-article Markdown.
 rs-trafilatura-article = { package = "rs-trafilatura", path = "vendor/rs-trafilatura" }
 sha2 = "=0.10.9"
 

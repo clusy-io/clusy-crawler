@@ -435,7 +435,7 @@ wheels = [
 
 [[package]]
 name = "clusy-crawler"
-version = "0.2.0b1"
+version = "0.2.0b2"
 source = { virtual = "." }
 dependencies = [
     { name = "aiolimiter" },

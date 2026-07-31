@@ -28,6 +28,7 @@ from app.services.rendering.manager import render_manager_is_ready as renderer_i
 from app.services.source_selection_receipt_v0 import (
     SOURCE_SELECTION_RECEIPT_V0_SCHEMA,
 )
+from app.version import SERVICE_VERSION
 
 router = APIRouter(tags=["health"])
 _LOCAL_FINGERPRINT_HMAC_KEY = secrets.token_bytes(32)
@@ -293,6 +294,7 @@ async def version() -> dict[str, str | bool]:
     quality_configured = settings.quality_backend_configured()
     quality_available = quality_dependency_available()
     return {
+        "service_version": SERVICE_VERSION,
         "sha": settings.git_sha,
         "image_digest": settings.image_digest,
         "environment": settings.environment,

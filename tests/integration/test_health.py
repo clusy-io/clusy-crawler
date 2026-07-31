@@ -7,6 +7,7 @@ import pytest
 
 from app.config import settings
 from app.routers import health as health_module
+from app.version import SERVICE_VERSION
 
 
 class TestHealth:
@@ -32,6 +33,7 @@ class TestHealth:
         resp = await client.get("/health/version")
         assert resp.status_code == 200
         data = resp.json()
+        assert data["service_version"] == SERVICE_VERSION
         assert "python_version" in data
         assert data["native_extractor_version"].startswith("rs-trafilatura")
         assert "trafilatura_version" in data

@@ -25,7 +25,8 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-# Resource types to block for faster rendering (30-50% speedup)
+# These resource types are not needed to serialize the rendered DOM. Blocking
+# them also bounds avoidable network and browser work.
 BLOCKED_RESOURCES = {"image", "media", "font", "stylesheet", "texttrack", "imageset"}
 
 # Pages known to require JS rendering — skip the conditional check entirely
@@ -60,7 +61,7 @@ def _raise_navigation_denial(
 
 
 class OptimizedRenderer:
-    """High-performance JS renderer with stealth and resource blocking."""
+    """JS renderer with isolated contexts and bounded resource loading."""
 
     _playwright = None
     _browser: Browser | None = None
@@ -147,7 +148,8 @@ class OptimizedRenderer:
             },
         )
 
-        # Comprehensive stealth: override all known bot detection vectors
+        # Normalize selected automation-observable browser properties. This is
+        # a compatibility shim, not a guarantee against bot detection.
         await context.add_init_script("""
             // Core anti-detection
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
@@ -554,9 +556,9 @@ def _github_has_static_specialized_content(url: str) -> bool:
 def needs_js_rendering(html: str, url: str) -> bool:
     """Fast heuristic: does this page need JS to render meaningful content?"""
     # GitHub server-renders repositories, directory listings, source controls,
-    # release bodies, and commit diffs. Their route-specific extractor is both
-    # cleaner and faster than hydrating the surrounding application chrome.
-    # Threads remain render-eligible because comments/replies can be lazy-loaded.
+    # release bodies, and commit diffs. Use their route-specific extractor
+    # without hydrating the surrounding application chrome. Threads remain
+    # render-eligible because comments/replies can be lazy-loaded.
     if _github_has_static_specialized_content(url):
         return False
 

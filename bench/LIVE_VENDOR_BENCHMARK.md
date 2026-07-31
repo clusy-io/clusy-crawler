@@ -291,21 +291,19 @@ The descriptive aggregate checks cold and warm runs in every sealed time
 window, complete integrity/cache/structure/tail-latency/cost evidence, and for
 every selected vendor in every run:
 
-- token-F1 evidence contains at least 100 paired tasks and 30 paired domain
-  clusters;
-- structure evidence covers at least three distinct strata, with at least 10
-  paired domain clusters in every reported structure stratum;
-- the lower 95% confidence bound for Clusy token F1 superiority is above zero;
-- the lower 95% confidence bound for Clusy structure superiority is above
-  zero;
-- success is non-inferior within two percentage points;
-- the upper 95% confidence bound for paired Clusy-minus-vendor end-to-end
-  latency is at most zero, and Clusy p95 and p99 latency are each no more than
-  1.10x the vendor value;
-- the upper 95% confidence bound for paired Clusy-minus-vendor normalized cost
-  is at most zero, and Clusy mean normalized cost is no more than 1.00x the
-  vendor value;
-- no important structure stratum regresses by more than one percentage point.
+- Threshold: token_f1_paired_tasks >= 100 count. <!-- clusy-protocol-threshold -->
+- Threshold: token_f1_paired_domain_clusters >= 30 count. <!-- clusy-protocol-threshold -->
+- Threshold: structure_strata >= 3 count. <!-- clusy-protocol-threshold -->
+- Threshold: structure_paired_domain_clusters_per_stratum >= 10 count. <!-- clusy-protocol-threshold -->
+- Threshold: token_f1_superiority_ci_lower > 0 score. <!-- clusy-protocol-threshold -->
+- Threshold: structure_superiority_ci_lower > 0 score. <!-- clusy-protocol-threshold -->
+- Threshold: first_attempt_success_delta >= -2 points. <!-- clusy-protocol-threshold -->
+- Threshold: paired_end_to_end_latency_ci_upper <= 0 milliseconds. <!-- clusy-protocol-threshold -->
+- Threshold: clusy_p95_vendor_ratio <= 1.10 ratio. <!-- clusy-protocol-threshold -->
+- Threshold: clusy_p99_vendor_ratio <= 1.10 ratio. <!-- clusy-protocol-threshold -->
+- Threshold: paired_normalized_cost_ci_upper <= 0 score. <!-- clusy-protocol-threshold -->
+- Threshold: clusy_mean_cost_vendor_ratio <= 1.00 ratio. <!-- clusy-protocol-threshold -->
+- Threshold: important_structure_stratum_delta >= -1 points. <!-- clusy-protocol-threshold -->
 
 These performance gates prevent a quality-only result with terrible Clusy
 latency or normalized cost from passing. The output contains independent Exa

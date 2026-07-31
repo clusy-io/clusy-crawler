@@ -1,6 +1,8 @@
-# Native filtered-traversal implementation A/B
+# Archived native filtered-traversal implementation A/B
 
-Status: **Historical**, recorded 2026-07-29.
+Status: **ARCHIVED — NOT AUTHORIZED FOR PUBLICATION**, recorded 2026-07-29.
+This receipt is absent from the current evidence registry and is retained only
+for audit history.
 
 ## Scope
 
@@ -55,7 +57,7 @@ base-forward
 The headline rate is pooled pages divided by pooled measured seconds. No sample
 was selected or removed based on speed.
 
-## Results
+## Archived measured receipt
 
 | Corpus | Baseline pages/s | Candidate pages/s | Change |
 | --- | ---: | ---: | ---: |
@@ -74,10 +76,9 @@ record in the three locked corpora:
 
 ## Retention and claim boundary
 
-The original large raw bundle is no longer retained. This sanitized compact
-record therefore remains Historical rather than Verified. It supports only the
-dated, local, exact-output implementation A/B described here.
+The original large raw bundle is no longer retained. This compact record is
+archival and non-authorizing; its dated values may not be published as a
+current implementation result.
 
-It contains no private repository identity, cloud endpoint, registry,
-deployment revision, traffic state, or rollback metadata. It does not support
-a general quality, service, deployment, provider, or state-of-the-art claim.
+It does not support a metric, superiority, quality, service, deployment,
+provider, or state-of-the-art claim.

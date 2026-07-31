@@ -1,6 +1,13 @@
 {
+  "archive_status": {
+    "current_registry_member": false,
+    "publication_authorized": false,
+    "protocol_path": "bench/evidence/selection-atom-catalog-e5958b5/PROTOCOL.md",
+    "protocol_sha256": "b26503120b67aea7c9d7e80b9d30d933f13f4b744a245e4016895a1ef76a9f5e"
+  },
   "claim_boundary": {
     "end_to_end_crawler_latency": false,
+    "public_claim_authorized": false,
     "production_default_changed": false,
     "representation_coverage_only": true,
     "sota_claim": false,
@@ -59,7 +66,7 @@
     "platform": "macOS-26.6-arm64-arm-64bit-Mach-O",
     "processor": "arm",
     "python": "3.13.5 | packaged by Anaconda, Inc. | (main, Jun 12 2025, 11:23:37) [Clang 14.0.6 ]",
-    "python_executable": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/bin/python",
+    "python_executable": "project-venv/bin/python",
     "python_implementation": "CPython",
     "release": "25.6.0",
     "system": "Darwin",
@@ -101,7 +108,7 @@
       "network, rendering, scoring, serialization, and vendor APIs"
     ],
     "legacy_comparator": "unavailable: the pre-mapper catalog was an uncommitted development snapshot and no exact executable/source artifact was retained",
-    "measured_command": ".venv/bin/python bench/selection_atom_catalog_representability.py /Users/julin/ClusyV2/webclient/node_modules/.clusy-modal-l40s/inputs/inference-input.jsonl --runs 3 --warmup-pages 16 --output /Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/bench/evidence/selection-atom-catalog-e5958b5/report.json",
+    "measured_command": "project-venv/bin/python bench/selection_atom_catalog_representability.py frozen-input.jsonl --runs 3 --warmup-pages 16 --output bench/evidence/selection-atom-catalog-e5958b5/report.json",
     "percentile": "nearest rank over individual page calls",
     "relative_reproduction_command": ".venv/bin/python bench/selection_atom_catalog_representability.py <frozen-input.jsonl> --runs 3 --warmup-pages 16 --output <report.json>",
     "runs": 3,
@@ -244,7 +251,7 @@
       "clusy_native": {
         "bytes": 4449,
         "installed_relative": "__init__.py",
-        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/__init__.py",
+        "path": "project-venv/lib/python3.13/site-packages/clusy_native/__init__.py",
         "repository_bytes_match": true,
         "repository_relative": "native/python/clusy_native/__init__.py",
         "sha256": "eac8fb5bfb89a272fedaad7b58d847dd2741676a2b514e163e395ae2e1bd8a9c"
@@ -252,7 +259,7 @@
       "clusy_native.document_ir": {
         "bytes": 1515,
         "installed_relative": "document_ir.py",
-        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/document_ir.py",
+        "path": "project-venv/lib/python3.13/site-packages/clusy_native/document_ir.py",
         "repository_bytes_match": true,
         "repository_relative": "native/python/clusy_native/document_ir.py",
         "sha256": "ab698ad5080c3ae0cf7a1b01a4a9ba9934e3d790f3d643ce57b552e37efd50a1"
@@ -260,7 +267,7 @@
       "clusy_native.document_ir_v2": {
         "bytes": 2385,
         "installed_relative": "document_ir_v2.py",
-        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/document_ir_v2.py",
+        "path": "project-venv/lib/python3.13/site-packages/clusy_native/document_ir_v2.py",
         "repository_bytes_match": true,
         "repository_relative": "native/python/clusy_native/document_ir_v2.py",
         "sha256": "9775506cf8f2d7cacc5d45d694b9a38deb842583ab054c8ff9988bd28e3f11c1"
@@ -268,7 +275,7 @@
       "clusy_native.local_atomic_batch_v0": {
         "bytes": 9933,
         "installed_relative": "local_atomic_batch_v0.py",
-        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/local_atomic_batch_v0.py",
+        "path": "project-venv/lib/python3.13/site-packages/clusy_native/local_atomic_batch_v0.py",
         "repository_bytes_match": true,
         "repository_relative": "native/python/clusy_native/local_atomic_batch_v0.py",
         "sha256": "da5247b52eb2293bae927ff847e667e49160bb03dc31ebadb53118dfb8fb9d53"
@@ -276,7 +283,7 @@
       "clusy_native.selection_atom_catalog_v1": {
         "bytes": 47608,
         "installed_relative": "selection_atom_catalog_v1.py",
-        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/selection_atom_catalog_v1.py",
+        "path": "project-venv/lib/python3.13/site-packages/clusy_native/selection_atom_catalog_v1.py",
         "repository_bytes_match": true,
         "repository_relative": "native/python/clusy_native/selection_atom_catalog_v1.py",
         "sha256": "d51d9b203a23e93ee61fd7b240a6f4d8ffb48c472026050969ad3d67b8b59244"
@@ -284,7 +291,7 @@
       "clusy_native.selection_certificate_v0": {
         "bytes": 4462,
         "installed_relative": "selection_certificate_v0.py",
-        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/selection_certificate_v0.py",
+        "path": "project-venv/lib/python3.13/site-packages/clusy_native/selection_certificate_v0.py",
         "repository_bytes_match": true,
         "repository_relative": "native/python/clusy_native/selection_certificate_v0.py",
         "sha256": "abc2a3146b66de24a9dfddd652287ef0bbbded2bc4362593e4c01cd03dadd24f"
@@ -292,7 +299,7 @@
       "clusy_native.source_text_mapper_v2": {
         "bytes": 4597,
         "installed_relative": "source_text_mapper_v2.py",
-        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/source_text_mapper_v2.py",
+        "path": "project-venv/lib/python3.13/site-packages/clusy_native/source_text_mapper_v2.py",
         "repository_bytes_match": true,
         "repository_relative": "native/python/clusy_native/source_text_mapper_v2.py",
         "sha256": "35f93b89c5f0fc265451d209be55b4f1495d7d35204bc9121977d721afa71190"
@@ -301,21 +308,21 @@
     "executed_repository_modules": {
       "benchmark_runner": {
         "bytes": 24854,
-        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/bench/selection_atom_catalog_representability.py",
+        "path": "bench/selection_atom_catalog_representability.py",
         "repository_bytes_match": true,
         "repository_relative": "bench/selection_atom_catalog_representability.py",
         "sha256": "f04f4d8ae3e2ed09cbe39198667137d9c9ad506293ce4bffcd372e9ec4cbd70f"
       },
       "provenance_helper": {
         "bytes": 9661,
-        "path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/bench/source_provenance.py",
+        "path": "bench/source_provenance.py",
         "repository_bytes_match": true,
         "repository_relative": "bench/source_provenance.py",
         "sha256": "6d05da10f2aee3874acd59347636090faa894370ceaf7d2129a319e2df59eb89"
       }
     },
     "native_extension_bytes": 8924624,
-    "native_extension_path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/_native.abi3.so",
+    "native_extension_path": "project-venv/lib/python3.13/site-packages/clusy_native/_native.abi3.so",
     "native_extension_sha256": "73257bdcf8066265680a9f78b935384b7043187bd4a7f322d6c8c9b1acb9c867",
     "native_source_binding": {
       "current_sha256": "e874ba9aa5f25daef7259bddd989342161a54d589519b0c7fe175b96c6329166",
@@ -325,7 +332,7 @@
       "packaged_sha256": "e874ba9aa5f25daef7259bddd989342161a54d589519b0c7fe175b96c6329166",
       "schema": "clusy-native-source-inventory-v1"
     },
-    "python_package_path": "/Users/julin/ClusyV2/webclient/node_modules/.clusy-oss-structure-v2/.venv/lib/python3.13/site-packages/clusy_native/__init__.py",
+    "python_package_path": "project-venv/lib/python3.13/site-packages/clusy_native/__init__.py",
     "relevant_files": {
       "bench/selection_atom_catalog_representability.py": {
         "bytes": 24854,

@@ -5,20 +5,12 @@ over strong open and commercial systems. That target is not treated as a
 current fact. Every claim must be earned on a named protocol and remain valid
 after deployment.
 
-## Measured problem
+## Evidence boundary
 
-Current diagnostics show both strengths and large structured-content gaps:
-
-| Diagnostic | Measured result | Main limitation |
-| --- | ---: | --- |
-| AEB `article_body` | F1 `0.972127` | Narrow public article-body task |
-| WCXB public test, `adaptive` | F1 `0.901714` | Public labels and unresolved classifier provenance |
-| WebMainBench raw Direct-MD | F1 `0.606672` | Broad multilingual and structured pages |
-| WebMainBench 545 | Overall `0.214089` | Code `0.017775`, formula `0.300369`, table/TEDS `0` |
-
-Exact protocols and limitations are in
-[`BENCHMARKS.md`](BENCHMARKS.md). These rows do not establish a universal
-ranking.
+The only current published measurement is the scoped AEB result in
+[`BENCHMARKS.md`](BENCHMARKS.md). Other protocols and research paths in this
+document define reproducible experiments and promotion gates; they do not
+publish additional benchmark, implementation, vendor, or deployment results.
 
 ## Design principles
 
@@ -83,7 +75,7 @@ Every transform consumes one representation version and emits another with an
 explicit loss record. Reconstructed DOM text must not silently become
 equivalent to original source bytes.
 
-### Current source-map and atom-catalog diagnostic
+### Source-map and atom-catalog protocol
 
 The additive `ordered-source-text-map.v2` maps retained DOM text back to exact
 raw UTF-8 source fragments without literal substring guessing. It decodes HTML
@@ -96,27 +88,10 @@ exact. The opt-in
 `selection-atom-catalog.v1` uses that map to expose lexical text, code, table
 cell, list-item, and math atoms.
 
-On the frozen 545-page HTML-only projection with SHA-256
-`e5958b541d844cf011e66e214bf64abb742aec6922e3c32321e2abaf7cf2c735`,
-the catalog accepted `537 / 545` pages (`98.532110%`). The earlier pre-mapper
-development observation accepted `76 / 545` (`13.944954%`), so observed
-representation coverage increased by `461` pages (`84.587156` percentage
-points). The remaining failures were seven incomplete source mappings and one
-truncated IR. Accepted pages contained `183,549` atoms: `65,977` text,
-`68,784` list item, `33,104` table cell, `12,637` code, and `3,047` math.
-There were `12,399` transformed raw spans.
-
-The final three-sweep local mechanism diagnostic measured p50/p95 catalog-call
-wall time of `11.618834 / 53.050500 ms`, `46.685751` pages/s, and
-`7,233,852.37` source HTML bytes/s. Process-lifetime peak RSS was
-`560,087,040` bytes. These rates are machine-local decoded-HTML-to-catalog
-diagnostics, not HTTP, rendering, crawler-service, or vendor latency.
-
-This is representation coverage, not a WebMainBench quality score. No labels
-or scorer were used, the pre-mapper executable snapshot was not retained for a
-performance A/B, and no quality, SOTA, vendor, production, or deployment claim
-follows. The APIs remain disabled by default. The complete protocol and
-source/binary-bound result are
+The frozen HTML-only diagnostic uses no labels or scorer and remains disabled
+by default. Its report is an archival, non-authorizing research artifact; no
+quality, performance-comparison, SOTA, vendor, production, or deployment claim
+follows. The reproducible protocol and source/binary-bound report are
 [`selection-atom-catalog-e5958b5`](../bench/evidence/selection-atom-catalog-e5958b5/PROTOCOL.md).
 
 ## Source-backed candidate lattice
@@ -259,13 +234,13 @@ be worth shipping while remaining far below the strongest comparable system.
 
 ### Structure overlay
 
-- certificate replay success: `100%`;
 - byte-identical fallback for every rejection;
-- global normalized visible-token identity: `100%`;
-- WebMainBench 545 overall delta: at least `+0.01`;
-- code delta: at least `+0.03`;
-- table TEDS delta: at least `+0.02`; and
 - no text or formula regression.
+- Threshold: certificate_replay_success == 100 percent. <!-- clusy-protocol-threshold -->
+- Threshold: visible_token_identity == 100 percent. <!-- clusy-protocol-threshold -->
+- Threshold: webmainbench_overall_delta >= 0.01 score. <!-- clusy-protocol-threshold -->
+- Threshold: code_edit_delta >= 0.03 score. <!-- clusy-protocol-threshold -->
+- Threshold: table_teds_delta >= 0.02 score. <!-- clusy-protocol-threshold -->
 
 ### Learned quality path
 
@@ -295,8 +270,8 @@ than runtime promotion:
 1. Pin the dataset, evaluator, output contract, comparable-system versions,
    leaderboard snapshot, source, dependencies, and configuration before the
    final run.
-2. Beat the strongest comparable result on the primary metric with a paired
-   95% confidence interval whose lower bound is above zero.
+2. Beat the strongest comparable result on the primary metric under the
+   preregistered paired confidence procedure.
 3. Report every required language, difficulty, page-family, and
    structured-content slice; no material slice may be hidden by the aggregate.
 4. Reproduce the result from a clean checkout on independent compute and
@@ -307,14 +282,14 @@ than runtime promotion:
 6. Measure success rate, p50/p95 latency, peak memory, and unit cost at the
    actual service boundary.
 
-For the WebMainBench snapshot recorded on 2026-07-29, the comparable targets
-are `0.9098` on the full `HTML+MD` track and `0.8256` overall on the
-fine-grained 545 track. A Direct-MD score is not compared as if it used the
-`HTML+MD` contract. “All-around SOTA” additionally requires a Pareto result:
-no worse quality, success rate, p95 latency, or unit cost than every named
-vendor track, with a statistically supported win in quality and at least one
-efficiency dimension. If a provider track is not comparable, the claim remains
-open rather than being scored as a win.
+- Threshold: paired_interval_confidence_level == 95 percent. <!-- clusy-protocol-threshold -->
+- Threshold: primary_metric_superiority_ci_lower > 0 score. <!-- clusy-protocol-threshold -->
+
+A Direct-MD score must not be compared as if it used an HTML-to-Markdown
+canonicalization contract. A broader leadership claim additionally requires a
+Pareto result across quality, success rate, tail latency, and unit cost for
+every named, protocol-matched track. If a provider track is not comparable,
+the claim remains open rather than being scored as a win.
 
 ## Delivery order
 

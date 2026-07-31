@@ -1,17 +1,15 @@
-"""Optional LLM-powered structured extraction — the /extract (JSON) capability.
+"""Optional LLM-powered structured extraction for the /extract JSON endpoint.
 
-Parity with Firecrawl `/extract` and Exa summaries: turn a crawled page into
-structured JSON against a caller-supplied JSON Schema, or a freeform answer
-against a prompt. Uses the official Anthropic SDK with schema-constrained
-structured outputs (`output_config.format`).
+Turns crawled page content into JSON against a caller-supplied JSON Schema, or
+returns a freeform answer against a prompt. Uses the official Anthropic SDK
+with schema-constrained structured outputs (`output_config.format`).
 
 Degrades gracefully: if `anthropic` isn't installed or no API key is configured,
 extraction returns a clear error string instead of raising — the markdown crawl
 still succeeds.
 
-Model is operator-configurable via EXTRACTION_MODEL. Default is
-``claude-haiku-4-5`` — the cheap, fast tier appropriate for high-volume page
-extraction; set it to ``claude-opus-4-8`` for maximum extraction quality.
+The model is operator-configurable via EXTRACTION_MODEL; the configured
+Anthropic endpoint must support the requested output mode.
 """
 
 from __future__ import annotations

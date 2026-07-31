@@ -9,6 +9,23 @@ container digests remain the authoritative release identities.
 
 No changes yet.
 
+## 0.2.0-beta.2 - 2026-07-30
+
+### Fixed
+
+- Synchronized the package and OpenAPI release identity and added a
+  consistency regression test.
+- Restricted public benchmark language to the registered, reproducible AEB
+  comparison with exact Trafilatura 2.1.0.
+- Removed stale private-run narratives, developer-local paths, unsupported
+  product comparisons, and superseded publication permissions.
+- Expanded evidence validation across first-party Markdown, with explicit
+  protocol-only and archival boundaries, and added fail-closed checks for
+  private or machine-local provenance leaks. Evidence markers now authorize
+  only an exact registry-derived publication receipt.
+- Clarified that registered throughput is a machine-local, in-memory
+  extraction measurement rather than service or crawler throughput.
+
 ## 0.2.0-beta.1 - 2026-07-30
 
 This branch contains the open-source crawler implementation and its
@@ -37,9 +54,7 @@ deployed a particular revision.
 ### Changed
 
 - The native filtered-DOM traversal now carries ancestor filter state in a
-  linear preorder stack. It preserved all measured native output fields and
-  improved locked-corpus local extraction rate; see
-  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+  linear preorder stack while preserving the locked output contract.
 - General extraction is native-first with confidence-gated Python fallbacks.
 - Cache keys bind runtime and serving semantics. Policy-aware recursive crawls
   bypass the flat result cache because its envelope cannot replay the full

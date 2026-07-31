@@ -8,7 +8,7 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Rust 1.85](https://img.shields.io/badge/Rust-1.85-000000?logo=rust&logoColor=white)](native/Cargo.toml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache--2.0-4C1)](LICENSE)
-[![Release: Beta Preview](https://img.shields.io/badge/release-beta_preview-F59E0B)](CHANGELOG.md)
+[![Release: Beta 2 Preview](https://img.shields.io/badge/release-beta_2_preview-F59E0B)](CHANGELOG.md)
 
 An Apache-2.0, self-hosted FastAPI service for turning HTTP(S) resources into
 clean Markdown, HTML, links, or schema-constrained JSON.
@@ -26,7 +26,7 @@ rendering, a native Rust/PyO3 extraction core, deterministic specialists,
 bounded recursive discovery, optional Redis caching, and explicit completeness
 provenance. The default extraction path is local and does not require a model.
 
-> **Release status: Beta Preview**
+> **Release status: Beta 2 Preview**
 >
 > The deterministic extraction and self-hosting paths are available for
 > evaluation. Pin a source commit or image digest: API and operational
@@ -120,11 +120,11 @@ The main design boundaries are:
   path. Rendering is conditional or explicit.
 - **Deterministic result first.** Optional quality backends cannot remove the
   known local fallback.
-- **Source-derived structure.** Deterministic paths replay source text. The
-  pinned quality model labels source-derived item IDs; Clusy independently
-  validates the exact raw response, replays that selection, and binds both in a
-  versioned receipt before applying grounding and completeness checks. Any
-  failure falls back locally.
+- **Source-derived structure.** Deterministic paths replay source text. A
+  configured quality backend can label source-derived item IDs; Clusy
+  independently validates the exact raw response, replays that selection, and
+  binds both in a versioned receipt before applying grounding and completeness
+  checks. Any failure falls back locally.
 - **Separate extraction from discovery.** Main-content selection and the crawl
   frontier are independent state machines; indexing and ranking remain outside
   this service.
@@ -308,20 +308,16 @@ All validated defaults are defined in [`app/config.py`](app/config.py).
 
 ## Evidence status
 
-| Status | Scope | Result | Interpretation |
-| --- | --- | --- | --- |
-| Verified | AEB `article_body`, 181 pages | P/R/F1 `0.955147 / 0.989721 / 0.972127`; `152.71` pages/s | F1 `+0.014581` vs exact Trafilatura 2.1.0; paired 95% interval `[+0.005547, +0.025336]`; paired-bootstrap win fraction `0.9996` <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30 --> |
-| Historical 2026-07-29 | Local native extraction on three locked corpora | Rate change: WebMain `+13.9905%`, WCXB `+26.9355%`, stress `+35.3818%` | All registered fields exact; original raw bundle not retained <!-- clusy-evidence: native.filter-stack.95b3bbe-public.2026-07-29 --> |
-| Diagnostic | General-web and structured extraction | Evaluation in progress | No cross-benchmark leadership claim |
-| Pending | Exa and Firecrawl | Matched live protocol not complete | No vendor superiority claim |
+> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `152.71 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30 -->
 
-The Verified row was produced directly from the public repository. Its exact
+The Verified receipt was produced directly from the public repository. Its exact
 Trafilatura 2.1.0 comparator ran in a separate hash-pinned, label-free
 environment. The result is bound to a clean source commit, frozen protocol,
 compact report, retained raw archive, and exact hashes in
 [`bench/evidence/registry.json`](bench/evidence/registry.json). See
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) for the execution boundary,
-limitations, and evidence-status rules.
+limitations, and evidence-status rules. No other benchmark, implementation,
+deployment, or vendor result is authorized for publication by this release.
 
 ## Development
 

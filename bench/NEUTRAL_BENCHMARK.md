@@ -8,8 +8,8 @@ predictions and complete provenance. It retains AEB's historical baseline
 outputs and independently replays exact Trafilatura `2.1.0` before labels or
 evaluator code enter the benchmark process.
 
-It is deliberately an **article-body extraction benchmark**, not evidence for
-an unqualified "SOTA crawler" claim.
+This **article-body extraction benchmark** does not support an unqualified
+crawler-leadership claim.
 
 ## Reproduce
 
@@ -119,20 +119,16 @@ The stable development/test split is `sha1(item_key)` parity:
 - even hash: development;
 - odd hash: test.
 
-It is independent of page order and the bootstrap seed. The report contains
-full, development, and test quality for Clusy and three distinct comparison
-points:
+It is independent of page order and the bootstrap seed. The current authorized
+comparison point is the label-free local replay of exact Trafilatura `2.1.0`
+with the pinned upstream call configuration. The runner may retain additional
+upstream diagnostics, but those outputs are not authorized publication claims.
 
-- historical `trafilatura.json` (`2.0.0` at the pinned AEB commit);
-- historical `rs_trafilatura.json` (`9261e08` at the pinned AEB commit);
-- label-free local replay `trafilatura_2_1_0`, using exact Trafilatura `2.1.0`
-  and the pinned upstream call configuration.
-
-For each split and baseline, the runner performs a paired page bootstrap. Each
-replicate samples the same page indices for Clusy and the baseline and calls the
-official `metrics_from_tp_fp_fns`. The report includes point-estimate ΔF1,
-percentile 95% CI, and `P(Clusy > baseline)`. The default 10,000 replicates and
-all page ordering are deterministic from seed `20260727`.
+For each split, the runner performs a paired page bootstrap against the current
+comparison point. Each replicate samples the same page indices for both
+systems and calls the official `metrics_from_tp_fp_fns`. The report includes
+point-estimate ΔF1, a percentile confidence interval, and a paired direction
+statistic. Sampling and page ordering are deterministic from the recorded seed.
 
 Performance reports:
 
@@ -153,28 +149,12 @@ capacity must be measured separately.
 
 The current registered result is the clean public
 [`73b0297` evidence record](evidence/aeb-article-body-trafilatura-2-1-73b0297-public/PROTOCOL.md).
-It used all 181 pages, the production asynchronous entry point, two workers,
-five warm-ups, and 10,000 paired-bootstrap replicates:
-
-| System | Precision | Recall | F1 |
-| --- | ---: | ---: | ---: |
-| Clusy | 0.955147 | 0.989721 | 0.972127 |
-| Trafilatura 2.1.0 | 0.938372 | 0.977519 | 0.957546 |
-
-The paired F1 delta is `+0.014581`, with a 95% interval of
-`[+0.005547, +0.025336]` and win fraction `0.9996`. Candidate local throughput
-was `152.71` pages/s, with p50/p95 latency of `12.00/24.05` ms and zero errors.
-These performance values cover only the recorded in-memory Apple M4 Pro
-extraction boundary.
+> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `152.71 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30 -->
 
 The retained raw artifact manifest SHA-256 is
 `a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02`;
 the archive SHA-256 is
 `8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b`.
-The older
-[`4dd1755` record](evidence/aeb-article-body-4dd1755-public/PROTOCOL.md)
-remains valid for its dated Trafilatura 2.0 comparison.
-
 ## Artifacts and publication rules
 
 Timestamped runs default to `bench/results/aeb/`, which is gitignored. Each run
@@ -228,10 +208,9 @@ JavaScript disabled. It evaluates only `articleBody`; it does not measure:
 - JavaScript rendering and dynamic-link discovery;
 - HTTP latency, sustained load, crash recovery, or cache behavior.
 
-At the pinned commit, the official leaderboard reports rs-trafilatura at
-`0.970 ± 0.004`, Trafilatura 2.0 at `0.958 ± 0.006`, and the historical 2019
-AutoExtract result at `0.970 ± 0.005`. Any older statement that `0.960` is the
-best open-source AEB score is therefore obsolete.
+Upstream leaderboard context can change and is not a current claim in this
+repository. Any future comparison must freeze the comparator version and
+evidence under the registry contract.
 
 For a broader extraction claim, add:
 
@@ -246,8 +225,8 @@ For a broader extraction claim, add:
   human-labelled datasets, useful as a robustness check despite older pages.
 
 A full crawler claim additionally needs deterministic discovery, protocol,
-rendering, deduplication, fault, resume, and security suites. No weighted blend
-of those tasks should be presented as a universal SOTA number.
+rendering, deduplication, fault, resume, and security suites. No universal SOTA
+number follows from a weighted blend of those tasks.
 
 [aeb]: https://github.com/scrapinghub/article-extraction-benchmark
 [webmainbench]: https://huggingface.co/datasets/opendatalab/WebMainBench

@@ -1,6 +1,8 @@
-# AEB article-body evaluation
+# Archived AEB article-body evaluation
 
-Status: verified for the scope defined below.
+Status: **ARCHIVED — NOT AUTHORIZED FOR PUBLICATION**. This dated receipt is
+absent from the current evidence registry and is retained only for audit
+history. The current Trafilatura 2.1.0 record supersedes it.
 
 ## Scope
 
@@ -44,7 +46,7 @@ The timer begins after fixtures are decoded and ends when the production
 `ExtractionResult` is available. Fixture I/O, decompression, and official
 scoring are outside the timer.
 
-## Results
+## Archived measured receipt
 
 | Metric | Result |
 | --- | ---: |
@@ -70,6 +72,6 @@ original report—is retained externally:
 - retained archive SHA-256:
   `16b79ccd4fd87a689bfa9ee34f7119c4d34511fe926afa38eb1b45e24d393bbb`.
 
-This evidence permits publication of the registered metrics and the scoped
-comparison with Trafilatura 2.0. It does not permit a SOTA claim or a
-comparison with Exa or Firecrawl.
+These values describe the retained historical receipt but are not authorized
+for publication by the current registry. This archive does not permit a metric,
+superiority, SOTA, vendor, production, or deployment claim.

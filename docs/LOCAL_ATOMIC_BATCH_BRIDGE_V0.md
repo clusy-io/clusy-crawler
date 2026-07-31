@@ -1,9 +1,8 @@
 # Local-atomic batch certificate bridge v0
 
 Status: research-only, default-off, and outside every production extraction
-route. This document describes the isolated candidate built on `8d2d2f5` plus
-the atomic-overlay and typed-batch research commits. It is not a quality,
-benchmark-leadership, or deployment claim.
+route. This document describes the isolated candidate in the current public
+source tree. It is not a quality, benchmark-leadership, or deployment claim.
 
 ## Purpose
 
@@ -55,13 +54,13 @@ The default-disabled overlay now:
    batches;
 4. applies verified replacements in reverse candidate-byte order.
 
-The per-atom legacy bridge remains available only through the private research
+The per-atom legacy bridge remains available only through the internal research
 function argument `use_batch_certificate_bridge=False`. Locked fixtures cover
 accepted code, accepted tables, mixed structures, local provenance rejection,
 and the disabled identity path. The full decision dataclass, decision digest,
 certificate bytes, output Markdown, and output bytes must match exactly.
 
-## Diagnostic mechanism benchmark
+## Reproduction protocol
 
 Command:
 
@@ -73,22 +72,10 @@ python bench/local_atomic_batch_v0_micro.py \
   --warmups 3
 ```
 
-On the local arm64 development host (Darwin 25.6.0, Python 3.13.5, Rust
-1.85.0), the synthetic 54,412-byte fixture produced 1,267 elements, 1,120 text
-runs, and 48 alternating code/table atoms:
-
-| Paired mechanism | Legacy median | Batch median | Median speedup | Graph clones |
-| --- | ---: | ---: | ---: | ---: |
-| Native create + exact replay | 299.801 ms | 16.881 ms | 17.76x | 96 → 2 |
-| Complete overlay proposal | 485.016 ms | 50.871 ms | 9.53x | 144 → 2 |
-
 The script refuses to time unless both arms produce identical certificate
 bytes, exact native replays, complete overlay decisions, decision digests, and
-output bytes. The retained diagnostic JSON is
-`bench/local_atomic_batch_v0_micro.sample.json`.
-
-These values are local synthetic mechanism measurements. They are not a
-WebMainBench result, a production latency estimate, or a SOTA claim.
+output bytes. Run output is local diagnostic material, not a SOTA result.
+It is not a published benchmark or production latency estimate.
 
 ## Verification commands
 

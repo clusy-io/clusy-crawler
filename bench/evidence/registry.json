@@ -2,147 +2,6 @@
   "claims": [
     {
       "artifact": {
-        "path": "bench/evidence/aeb-article-body-4dd1755-public/report.json",
-        "raw_archive_sha256": "16b79ccd4fd87a689bfa9ee34f7119c4d34511fe926afa38eb1b45e24d393bbb",
-        "raw_manifest_sha256": "2f7b61af148387c93ff6381fee5fad663a1a4e731d79d653568da4a656784fc1",
-        "raw_retention": "external_retained",
-        "sha256": "fcfd26ae71e5e1b09e1a727a91ff9df04e2caee957a27dd69f39175417918d21"
-      },
-      "id": "aeb.article-body.4dd1755-public.2026-07-29",
-      "kind": "benchmark_result",
-      "metrics": [
-        {
-          "aggregation": "official full-corpus four-token-shingle F1",
-          "artifact_pointer": "/metrics/f1",
-          "display": "0.972127",
-          "format": ".6f",
-          "key": "f1",
-          "unit": "score",
-          "value": "0.9721267477263196"
-        },
-        {
-          "aggregation": "official full-corpus four-token-shingle precision",
-          "artifact_pointer": "/metrics/precision",
-          "display": "0.955147",
-          "format": ".6f",
-          "key": "precision",
-          "unit": "score",
-          "value": "0.9551471924829309"
-        },
-        {
-          "aggregation": "official full-corpus four-token-shingle recall",
-          "artifact_pointer": "/metrics/recall",
-          "display": "0.989721",
-          "format": ".6f",
-          "key": "recall",
-          "unit": "score",
-          "value": "0.9897209165735447"
-        },
-        {
-          "aggregation": "closed-loop in-memory extraction throughput at concurrency two",
-          "artifact_pointer": "/metrics/pages_per_second",
-          "display": "142.31",
-          "format": ".2f",
-          "key": "pages_per_second",
-          "unit": "pages_per_second",
-          "value": "142.30575017398746"
-        },
-        {
-          "aggregation": "full-corpus F1 delta against pinned Trafilatura 2.0.0",
-          "artifact_pointer": "/metrics/f1_delta_vs_trafilatura_2",
-          "display": "+0.014624",
-          "format": "+.6f",
-          "key": "f1_delta_vs_trafilatura",
-          "unit": "score",
-          "value": "0.014624227231978204"
-        },
-        {
-          "aggregation": "paired 95% bootstrap interval lower bound",
-          "artifact_pointer": "/metrics/f1_delta_ci95_low_vs_trafilatura_2",
-          "display": "+0.005346",
-          "format": "+.6f",
-          "key": "f1_delta_ci95_low",
-          "unit": "score",
-          "value": "0.005345924297968711"
-        },
-        {
-          "aggregation": "paired 95% bootstrap interval upper bound",
-          "artifact_pointer": "/metrics/f1_delta_ci95_high_vs_trafilatura_2",
-          "display": "+0.025342",
-          "format": "+.6f",
-          "key": "f1_delta_ci95_high",
-          "unit": "score",
-          "value": "0.025342138101853845"
-        }
-      ],
-      "permissions": {
-        "current_production": false,
-        "metric": true,
-        "scoped_sota": {
-          "allowed": false,
-          "artifact_pointer": null
-        },
-        "scoped_superiority": {
-          "allowed": true,
-          "artifact_pointer": "/permissions/scoped_superiority"
-        },
-        "vendor_superiority": {
-          "allowed": false,
-          "artifact_pointer": null
-        }
-      },
-      "protocol": {
-        "path": "bench/evidence/aeb-article-body-4dd1755-public/PROTOCOL.md",
-        "sha256": "c5f55448140ad0f85d7967e88b0564b9b4be35a2a3cbedbfef9cddd346f61db3"
-      },
-      "recorded_at_utc": "2026-07-29T11:03:11Z",
-      "scope": {
-        "comparators": [
-          {
-            "name": "Trafilatura",
-            "version": "2.0.0"
-          },
-          {
-            "name": "rs-trafilatura",
-            "version": "9261e08"
-          }
-        ],
-        "dataset": "Article Extraction Benchmark",
-        "dataset_revision": "4a3bc979f76c0df73cb95fe272e2fc1b96f9f010",
-        "dataset_sha256": "512e9a9498912047a966e22f47302e849dfa45dca1f555d97588317dac7e5a3d",
-        "execution_boundary": "in-memory decoded HTML to production ExtractionResult; closed-loop concurrency 2",
-        "limitations": [
-          "Article-body extraction only; not crawling, rendering, or general-web evaluation",
-          "The public benchmark fixtures were fetched with JavaScript disabled",
-          "Throughput is local Apple M4 Pro extraction throughput, not HTTP-service throughput",
-          "The result is bound to the recorded source commit and does not establish current production state"
-        ],
-        "output_contract": "exact production article_body output with identity prediction transform and the pinned official evaluator",
-        "pages": 181,
-        "profile": "article_body",
-        "split": "full",
-        "task": "article-body extraction",
-        "vendors": [
-          "Clusy"
-        ]
-      },
-      "source": {
-        "clean": true,
-        "commit": "4dd1755e9b425c80193982bc6609c06444cf30d5",
-        "repository": "clusy-io/clusy-crawler",
-        "runtime_source_sha256": "c4c19bd36359e61e4098b55e812b099a48c90f66a9c5a202b544f5d0d28829f0",
-        "tree": "6278cefeb65b9f7c1811b154af9ce9c9581718a7"
-      },
-      "status": "Verified",
-      "verification": {
-        "artifact_complete_pointer": "/verification/artifact_complete",
-        "binding_pointer": "/claim_binding",
-        "claimable_pointer": "/verification/claimable",
-        "source_stable_pointer": "/verification/source_stable"
-      }
-    },
-    {
-      "artifact": {
         "path": "bench/evidence/aeb-article-body-trafilatura-2-1-73b0297-public/report.json",
         "raw_archive_sha256": "8e05a6fb120aaa75ec85170d7b8be0267288aa5acdb33614dafb9458ce7b345b",
         "raw_manifest_sha256": "a4fc6b4c0dfd3937c3ab70664c32a1179aef6e16625d2908ac8d5a36cbd61b02",
@@ -157,27 +16,14 @@
           "artifact_pointer": "/metrics/f1",
           "display": "0.972127",
           "format": ".6f",
-          "key": "f1",
+          "key": "clusy_f1",
+          "publication_aliases": [
+            "clusy f measure",
+            "clusy f-score",
+            "clusy f1"
+          ],
           "unit": "score",
           "value": "0.9721267477263196"
-        },
-        {
-          "aggregation": "official full-corpus four-token-shingle precision",
-          "artifact_pointer": "/metrics/precision",
-          "display": "0.955147",
-          "format": ".6f",
-          "key": "precision",
-          "unit": "score",
-          "value": "0.9551471924829309"
-        },
-        {
-          "aggregation": "official full-corpus four-token-shingle recall",
-          "artifact_pointer": "/metrics/recall",
-          "display": "0.989721",
-          "format": ".6f",
-          "key": "recall",
-          "unit": "score",
-          "value": "0.9897209165735447"
         },
         {
           "aggregation": "closed-loop in-memory extraction throughput at concurrency two",
@@ -185,6 +31,10 @@
           "display": "152.71",
           "format": ".2f",
           "key": "pages_per_second",
+          "publication_aliases": [
+            "pages/s",
+            "throughput"
+          ],
           "unit": "pages_per_second",
           "value": "152.71126292964416"
         },
@@ -194,6 +44,11 @@
           "display": "0.957546",
           "format": ".6f",
           "key": "trafilatura_2_1_f1",
+          "publication_aliases": [
+            "trafilatura 2.1.0 f measure",
+            "trafilatura 2.1.0 f-score",
+            "trafilatura 2.1.0 f1"
+          ],
           "unit": "score",
           "value": "0.9575456569628882"
         },
@@ -203,6 +58,9 @@
           "display": "+0.014581",
           "format": "+.6f",
           "key": "f1_delta_vs_trafilatura_2_1",
+          "publication_aliases": [
+            "f1 delta"
+          ],
           "unit": "score",
           "value": "0.014581090763431392"
         },
@@ -212,6 +70,9 @@
           "display": "+0.005547",
           "format": "+.6f",
           "key": "f1_delta_ci95_low_vs_trafilatura_2_1",
+          "publication_aliases": [
+            "f1 delta ci95 low"
+          ],
           "unit": "score",
           "value": "0.0055474478846463775"
         },
@@ -221,6 +82,9 @@
           "display": "+0.025336",
           "format": "+.6f",
           "key": "f1_delta_ci95_high_vs_trafilatura_2_1",
+          "publication_aliases": [
+            "f1 delta ci95 high"
+          ],
           "unit": "score",
           "value": "0.02533555028953053"
         },
@@ -230,26 +94,11 @@
           "display": "0.9996",
           "format": ".4f",
           "key": "win_fraction_vs_trafilatura_2_1",
+          "publication_aliases": [
+            "win fraction"
+          ],
           "unit": "ratio",
           "value": "0.9996"
-        },
-        {
-          "aggregation": "candidate per-page extraction latency p50",
-          "artifact_pointer": "/metrics/p50_latency_ms",
-          "display": "12.00",
-          "format": ".2f",
-          "key": "p50_latency_ms",
-          "unit": "milliseconds",
-          "value": "11.999624999589287"
-        },
-        {
-          "aggregation": "candidate per-page extraction latency p95",
-          "artifact_pointer": "/metrics/p95_latency_ms",
-          "display": "24.05",
-          "format": ".2f",
-          "key": "p95_latency_ms",
-          "unit": "milliseconds",
-          "value": "24.054708999756258"
         }
       ],
       "permissions": {
@@ -322,126 +171,22 @@
         "claimable_pointer": "/verification/claimable",
         "source_stable_pointer": "/verification/source_stable"
       }
-    },
-    {
-      "artifact": {
-        "path": "bench/evidence/native-filter-stack-95b3bbe-public/report.json",
-        "raw_archive_sha256": null,
-        "raw_manifest_sha256": null,
-        "raw_retention": "not_retained",
-        "sha256": "86dc19edfd3b1284170f5dafef75c792381ae9fd9206a88c0ce69a484d399f9c"
-      },
-      "id": "native.filter-stack.95b3bbe-public.2026-07-29",
-      "kind": "implementation_benchmark",
-      "metrics": [
-        {
-          "aggregation": "pooled local WebMain native extraction rate change",
-          "artifact_pointer": "/metrics/webmain_gain_percent",
-          "display": "+13.9905",
-          "format": "+.4f",
-          "key": "webmain_gain_percent",
-          "unit": "percent",
-          "value": "13.990485601398085"
-        },
-        {
-          "aggregation": "pooled local WCXB native extraction rate change",
-          "artifact_pointer": "/metrics/wcxb_gain_percent",
-          "display": "+26.9355",
-          "format": "+.4f",
-          "key": "wcxb_gain_percent",
-          "unit": "percent",
-          "value": "26.935456045867202"
-        },
-        {
-          "aggregation": "pooled local deterministic-stress native extraction rate change",
-          "artifact_pointer": "/metrics/stress_gain_percent",
-          "display": "+35.3818",
-          "format": "+.4f",
-          "key": "stress_gain_percent",
-          "unit": "percent",
-          "value": "35.381838418492165"
-        }
-      ],
-      "permissions": {
-        "current_production": false,
-        "metric": true,
-        "scoped_sota": {
-          "allowed": false,
-          "artifact_pointer": null
-        },
-        "scoped_superiority": {
-          "allowed": true,
-          "artifact_pointer": "/permissions/scoped_superiority"
-        },
-        "vendor_superiority": {
-          "allowed": false,
-          "artifact_pointer": null
-        }
-      },
-      "protocol": {
-        "path": "bench/evidence/native-filter-stack-95b3bbe-public/PROTOCOL.md",
-        "sha256": "b5b6428d25af5b91f5d8d6f7bbf11b9d16924bacb9ced14fe4fe7d2b70eba479"
-      },
-      "recorded_at_utc": "2026-07-29T17:02:52Z",
-      "scope": {
-        "comparators": [
-          {
-            "name": "baseline filtered traversal",
-            "version": "ffd61dbe"
-          },
-          {
-            "name": "linear filtered traversal",
-            "version": "95b3bbec"
-          }
-        ],
-        "dataset": "WebMain, WCXB, and deterministic stress locked corpora",
-        "dataset_revision": "webmain-85765fe7+wcxb-3634f976+stress-506a8026",
-        "dataset_sha256": "8123ded6cc15adeb38c747d4f194fed38d3138f40d08825f0b32e31b581430fc",
-        "execution_boundary": "local native extraction over preloaded records with counterbalanced forward and reverse traversal",
-        "limitations": [
-          "Historical local extraction-loop A/B; not HTTP, browser, network, service, or provider performance",
-          "The original large raw bundle is not retained",
-          "Runtime source equivalence is established, not whole-build reproduction from the public commit",
-          "Exact equality covers only the three locked corpora and ten serialized fields"
-        ],
-        "output_contract": "byte-identical framing and values for ten UTF-8 extraction fields",
-        "pages": 10065,
-        "profile": "native broad extraction",
-        "split": "three complete locked corpora",
-        "task": "exact-output native extraction implementation A/B",
-        "vendors": [
-          "Clusy"
-        ]
-      },
-      "source": {
-        "clean": true,
-        "commit": "95b3bbecdf447980ca845fc2442e4e4555418671",
-        "repository": "clusy-io/clusy-crawler",
-        "runtime_source_sha256": "6dc82c36a25a29d5e08d15a422989f1ccd907c3592553202be7bf08b49d07504",
-        "tree": "47e414aa9fbae67cbc4f7cbd506a3aa9ff13ec84"
-      },
-      "status": "Historical",
-      "verification": {
-        "artifact_complete_pointer": "/verification/artifact_complete",
-        "binding_pointer": "/claim_binding",
-        "claimable_pointer": "/verification/claimable",
-        "source_stable_pointer": "/verification/source_stable"
-      }
     }
   ],
   "documentation": {
     "enforced_files": [
       "README.md",
+      "bench/NEUTRAL_BENCHMARK.md",
       "docs/BENCHMARKS.md"
     ],
     "marker_format": "<!-- clusy-evidence: <claim-id> -->",
     "migration_status": "enforced"
   },
   "registry_id": "clusy.benchmark-evidence-registry.v1",
-  "registry_note": "Version 1 evidence registry. Only normalized, source-bound, retained claims listed here may appear as evidence in enforced documentation.",
+  "registry_note": "Only the current normalized, source-bound, retained claim listed here is authorized for publication. Unregistered evidence bundles are archival and non-authorizing.",
   "schema": {
     "path": "bench/evidence/registry.schema.json",
-    "sha256": "45948d6bf328ca5c52c8e26edea373b216b0a48e33f7c3aea27630bd34e5132a"
+    "sha256": "695a7d0502ab9391101a5a49d293948d07f7bd993fd4282059761d8d8b969fda"
   },
   "schema_version": 1
 }

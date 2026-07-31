@@ -210,16 +210,14 @@ acceptance or raw-output selection.
 
 Preregistered continuation thresholds:
 
-| Metric | Minimum delta |
-| --- | ---: |
-| Overall mean | +0.010 |
-| Code edit | +0.030 |
-| Table TEDS | +0.020 |
-| Text edit | 0.000 |
-| Formula edit | 0.000 |
+- Threshold: overall_mean_delta >= 0.010 score. <!-- clusy-protocol-threshold -->
+- Threshold: code_edit_delta >= 0.030 score. <!-- clusy-protocol-threshold -->
+- Threshold: table_teds_delta >= 0.020 score. <!-- clusy-protocol-threshold -->
+- Threshold: text_edit_delta >= 0.000 score. <!-- clusy-protocol-threshold -->
+- Threshold: formula_edit_delta >= 0.000 score. <!-- clusy-protocol-threshold -->
 
-Passing these thresholds authorizes further shadow evaluation only. It is not
-by itself a vendor comparison or universal SOTA result.
+Passing these thresholds authorizes further shadow evaluation only.
+It is not a vendor comparison or universal SOTA result.
 
 ## Fresh AWS or Azure run
 

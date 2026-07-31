@@ -1,15 +1,14 @@
 # Typed atomic overlay batch: phase-one prototype
 
-Status: research-only, default-off, unwired. Base source: `96779e4`. The cost
-audit also inspected the hardened atomic-overlay research commit `8592510`.
-This note is not a production or quality claim.
+Status: research-only, default-off, unwired. This note describes an archival
+prototype in implementation terms and is not a production or quality claim.
 
 This file records the original full-document phase-one prototype. A later
 bridge ports the hardened `pre`/`table` overlay to a batch-native
 `local_atomic` scope; see `LOCAL_ATOMIC_BATCH_BRIDGE_V0.md`. `list` and `math`
 remain on the stricter full-document prototype path.
 
-## Cost found in `8592510`
+## Cost model
 
 The overlay parses HTML once inside one proposal call. Parsing is not the main
 per-atom cost. The native certificate boundary is:
@@ -53,12 +52,12 @@ The prototype adds an independent batch path with these invariants:
 - default disabled, with no import or call from the production extraction
   cascade.
 
-The batch currently uses the stricter full-document certificate scope from
-`96779e4`. It rejects a document when unrelated source mapping or parse
-provenance is incomplete. It does not yet port the local code/table rescue
-scope from `8592510`.
+The batch currently uses the stricter full-document certificate scope. It
+rejects a document when unrelated source mapping or parse provenance is
+incomplete. It does not yet port the local code/table rescue scope used by the
+later bridge.
 
-## Mechanism benchmark
+## Reproduction protocol
 
 Command:
 
@@ -70,16 +69,9 @@ python bench/typed_atomic_overlay_batch_v0_micro.py \
   --warmups 2
 ```
 
-Observed on the local development host:
-
-| Arm | Full graph clones / iteration | Median | p95 | Atoms/s |
-| --- | ---: | ---: | ---: | ---: |
-| Per-atom create + replay | 96 | 333.349 ms | 370.629 ms | 143.99 |
-| Batch create + replay | 2 | 17.129 ms | 18.188 ms | 2802.25 |
-
-Median speedup was `19.46x`. The benchmark checked that every Markdown output
-and every certificate byte was identical between arms. This is a synthetic
-mechanism benchmark, not WebMainBench evidence and not a SOTA claim.
+The script must verify that every Markdown output and every certificate byte
+is identical between arms before timing. Run output is local diagnostic
+material and is not authorized as WebMainBench evidence or a SOTA result.
 
 ## Missing evidence before any promotion
 
@@ -96,8 +88,9 @@ Phase one is not promotable. It still needs:
    `pre` and `table`, with adversarial tokenizer, scope, tamper, aggregate-cap,
    and unrelated-sibling tests.
 6. Independent frozen certificate replay, not only same-implementation replay.
-7. WebMainBench-545 latency, p95/p99, peak RSS, output growth, certificate
-   bytes, and cold/warm measurements against both `96779e4` and `8592510`.
+7. Fine-grained WebMainBench latency, p95/p99, peak RSS, output growth,
+   certificate bytes, and cold/warm measurements against the locked per-atom
+   and batch implementations.
 8. Platform contract, container, and deployment gates after a candidate is
    wired. No production route is changed here.
 
@@ -105,7 +98,7 @@ Phase one is not promotable. It still needs:
 
 The next implementation should keep this batch boundary and:
 
-1. lift the local exact-tokenizer checks from `8592510` into a typed
+1. lift the local exact-tokenizer checks into a typed
    `code/table/list/math` validator;
 2. render each already-validated root directly instead of rebuilding a global
    selection index and traversing all graph roots once per atom;

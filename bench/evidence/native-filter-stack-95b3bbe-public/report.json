@@ -1,8 +1,14 @@
 {
+  "archive_status": {
+    "current_registry_member": false,
+    "original_record_status": "Historical",
+    "publication_authorized": false,
+    "reason": "Raw evidence is not retained and the record is absent from the current registry"
+  },
   "claim_binding": {
     "id": "native.filter-stack.95b3bbe-public.2026-07-29",
     "kind": "implementation_benchmark",
-    "protocol_sha256": "b5b6428d25af5b91f5d8d6f7bbf11b9d16924bacb9ced14fe4fe7d2b70eba479",
+    "protocol_sha256": "6f41c994f972073864e2b85402249bb991b9fe7082ae461ff1cc1ac581560d99",
     "raw_archive_sha256": null,
     "raw_manifest_sha256": null,
     "recorded_at_utc": "2026-07-29T17:02:52Z",
@@ -43,7 +49,7 @@
       "runtime_source_sha256": "6dc82c36a25a29d5e08d15a422989f1ccd907c3592553202be7bf08b49d07504",
       "tree": "47e414aa9fbae67cbc4f7cbd506a3aa9ff13ec84"
     },
-    "status": "Historical"
+    "status": "Archived"
   },
   "environment": {
     "logical_cpus": 12,
@@ -64,7 +70,7 @@
   },
   "permissions": {
     "scoped_sota": false,
-    "scoped_superiority": true,
+    "scoped_superiority": false,
     "vendor_superiority": false
   },
   "raw_evidence": {
@@ -73,7 +79,7 @@
   "schema": "clusy.native.filter-stack.public-historical-evidence.v1",
   "verification": {
     "artifact_complete": true,
-    "claimable": true,
+    "claimable": false,
     "source_stable": true
   }
 }

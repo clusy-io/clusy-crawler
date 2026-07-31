@@ -4,25 +4,16 @@ This document is the human-readable index for claims made by the open-source
 crawler repository. The machine-enforced source of truth is
 [`bench/evidence/registry.json`](../bench/evidence/registry.json).
 
-## Status vocabulary
+## Publication rule
 
-| Status | Meaning |
-| --- | --- |
-| **Verified** | Clean public source, frozen protocol, retained raw evidence, exact compact-artifact binding, and all claimability gates pass |
-| **Diagnostic** | Useful engineering signal with a known limitation that prevents a product claim |
-| **Historical** | Accurate for a dated source or environment; not a statement about a live deployment |
-| **Rejected** | Evaluated candidate that failed a preregistered promotion gate |
-| **Pending** | Protocol or execution is incomplete; no result is claimed |
-
-Only a registry entry can authorize a measured statement in this file or the
-README. Every such statement carries its claim ID on the same line.
+Only a current registry entry can authorize a measured statement in an
+enforced documentation surface. Every such statement carries its claim ID on
+the same line. Unregistered files and local run directories are archival or
+diagnostic material only; they do not authorize a public result.
 
 ## Registered results
 
-| Status | Suite and boundary | Measured result | Interpretation |
-| --- | --- | --- | --- |
-| Verified | AEB `article_body`, 181 pages; direct public-repository run | P/R/F1 `0.955147 / 0.989721 / 0.972127`; `152.71` pages/s | F1 `+0.014581` vs exact Trafilatura 2.1.0; paired 95% interval `[+0.005547, +0.025336]`; paired-bootstrap win fraction `0.9996` <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30 --> |
-| Historical 2026-07-29 | Local native extraction on three locked corpora | Rate change: WebMain `+13.9905%`, WCXB `+26.9355%`, stress `+35.3818%` | All registered fields exact; original raw bundle not retained <!-- clusy-evidence: native.filter-stack.95b3bbe-public.2026-07-29 --> |
+> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `152.71 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.73b0297-public.2026-07-30 -->
 
 ### AEB claim boundary
 
@@ -48,39 +39,14 @@ Current evidence:
 - [compact report](../bench/evidence/aeb-article-body-trafilatura-2-1-73b0297-public/report.json);
 - [registry entry](../bench/evidence/registry.json).
 
-The older Trafilatura 2.0 comparison remains registered as a dated record; it
-is not the current README comparison.
+## Protocols without a published result
 
-## Evidence under evaluation
-
-The following tracks are intentionally absent from the registered result table:
-
-| Track | Status | Publication boundary |
-| --- | --- | --- |
-| WCXB extraction | Diagnostic | Dataset-overlap and classifier provenance must be closed |
-| Webis extraction | Historical | Existing record came from private source; a direct public rerun is required |
-| WebMain direct Markdown | Diagnostic | Existing record is not a direct public-repository run |
-| Fine-grained WebMain | Diagnostic | Structure reconstruction is being evaluated with frozen label-free predictions |
-| Atomic structure overlay | Diagnostic | Default-off research path; not wired into serving |
-| Cloud hot-path A/B | Pending | Formal cross-zone evidence is not yet registered |
-| Exa and Firecrawl | Pending | No completed matched live-provider result is registered |
-
-Diagnostic artifacts may guide engineering decisions, but they do not authorize
-leadership, deployment, or vendor-superiority language.
-
-## Historical implementation record
-
-The registered native A/B is a newly issued public-only compact record. It
-binds the public runtime source, locked binaries and corpora, counterbalanced
-local-loop protocol, exact-output commitments, environment, and limitations.
-It omits private cloud, image-registry, deployment, traffic, rollback, and
-private source metadata.
-
-The original raw bundle is unavailable, so this result is visibly Historical
-instead of Verified:
-
-- [sanitized protocol](../bench/evidence/native-filter-stack-95b3bbe-public/PROTOCOL.md);
-- [sanitized compact report](../bench/evidence/native-filter-stack-95b3bbe-public/report.json).
+WCXB, Webis, both WebMainBench tracks, the ordered-IR label oracle, local
+implementation microbenchmarks, and live-provider evaluation remain
+reproducible protocol surfaces. This release publishes no result from those
+tracks. A future result must be run from clean public source, retain its
+permitted raw evidence, receive a registry binding, and pass the documentation
+validator before it appears here.
 
 ## Claim controls
 
@@ -89,11 +55,27 @@ The evidence validator runs in CI and fails closed on:
 - missing, ignored, or symlinked protocol and artifact paths;
 - source, protocol, artifact, manifest, or archive hash mismatches;
 - unclean source for Verified claims;
-- metric values that differ from their JSON pointers;
-- Diagnostic or Rejected claims with an open superiority gate;
-- unregistered measured language in enforced documentation;
-- mutable deployment language in versioned documentation; and
+- metric values that differ from their JSON pointers, and published
+  label/value pairs not explicitly bound by the registry;
+- unregistered metrics or unsupported comparative and leadership statements
+  in first-party Markdown outside explicit protocol-only or archival boundaries;
+- evidence markers outside the exact canonical publication line derived from
+  registered metric keys, artifact pointers, units, and displays;
+- protocol-only numeric thresholds without the dedicated threshold annotation,
+  or annotations that cover a result assertion or multiple metric values;
+- personal absolute paths or restricted evidence lineage;
+- mutable production-state language in first-party documentation; and
 - broad leadership or unsupported live-provider claims.
+
+Protocol-only numeric gates use one canonical line:
+
+```text
+- Threshold: <metric-id> <operator> <decimal> <unit>. <!-- clusy-protocol-threshold -->
+```
+
+Allowed units are `score`, `points`, `ratio`, `percent`, `milliseconds`, and
+`count`. The annotation is invalid outside an explicit protocol-only file or
+when any extra clause shares its line.
 
 Run it locally:
 

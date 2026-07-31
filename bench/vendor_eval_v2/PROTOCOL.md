@@ -137,9 +137,9 @@ reference.
 ### Whole-output and positional fidelity
 
 Whole-output F1 compares the complete candidate and truth multisets, so page
-chrome reduces precision. Positional F1 adds one of 64 relative-position
-buckets to every q-gram key, detecting broad reorderings even when unpositioned
-multisets collide.
+chrome reduces precision. A fixed 64-way protocol partition supplies the
+relative-position bucket that positional F1 adds to every q-gram key, detecting
+broad reorderings even when unpositioned multisets collide.
 
 ### Full-candidate ordered fidelity
 

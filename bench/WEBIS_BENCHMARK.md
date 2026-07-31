@@ -145,56 +145,18 @@ remaining summaries and manifest.
 - “Macro” follows the official evaluator: the mean of dataset means and median
   of dataset medians, with each of the eight datasets weighted equally.
 
-The official published-output reference is 0.898844 macro ROUGE-LSum F1 and
-0.895533 macro Levenshtein similarity for the best weighted ensemble. The best
-single published system, Trafilatura, is 0.883461 and 0.879562 respectively.
+Published upstream results can provide study context, but they are not local
+comparison evidence. A future comparison must pin the exact upstream output,
+retain compatible per-page evidence when available, and state output-contract
+and aggregation differences.
 
-## Retained clean private-source validation
+## Evidence status
 
-The full 2026-07-29 run from clean private source revision
-`10ff0c1a7c9a2083958b674d64e15bb5a8a1b90e` completed all 3,985 pages with
-zero extraction errors and zero empty predictions. It was not executed from
-public OSS revision `837dddababc612bfa1ce438307b1e2fb29b4c2f5` or from the
-current public commit:
-
-| Result | Macro mean | Micro/page-weighted mean |
-|---|---:|---:|
-| ROUGE-LSum precision | 0.867148 | 0.841455 |
-| ROUGE-LSum recall | 0.908456 | 0.879140 |
-| ROUGE-LSum F1 | **0.854920** | 0.816145 |
-| normalized Levenshtein similarity | **0.849806** | 0.810808 |
-
-The result is 0.028541 ROUGE-LSum F1 below the pinned best single system and
-0.043923 below the best weighted ensemble; it is not a SOTA result. Extraction
-took 14.501 seconds (`274.8155` pages/s; p50/p95
-`7.551 / 26.242 ms`). The official scorer took `1669.686` seconds and
-dominates end-to-end time.
-
-The retained private artifact identifier is
-`bench/results/webis-v2-10ff0c1-20260729T0004Z`; its `manifest.json` SHA-256 is
-`b43a79097a1a04ae3b2254cf25a7ecda9fe2b05be42304e9f79b25638f5ab51e`.
-Its clean source, loaded native module, official repository, corpus, and NLTK
-resources were verified before and after the run and stayed stable. The
-harness status is `ARCHIVAL_REPRODUCIBLE` within the fixed Webis extraction
-scope.
-
-A post-run SHA-256 audit compared the artifact's 147 recorded production-source
-paths with public `837ddda`: 102 matched; `app/config.py`, `app/main.py`,
-`app/services/renderer.py`, `native/pyproject.toml`, and `pyproject.toml`
-differed; and 40 ignored `native/target`-generated paths were absent from public
-Git. The Webis runner, core extractor, tracked native algorithm and vendored
-sources, Cargo files, and `uv.lock` matched byte-for-byte. The executed native
-extension was sealed as
-`b41af0b08b6ae49aa976c564835fdbf0537710a272c8fc5b1e6ade4dcdf4f75c`,
-but it was not reproduced from a public `837ddda` build. This is therefore
-source-audited private-revision evidence, not a benchmark run or binary
-provenance claim for the OSS commit.
-
-Extraction throughput is the local production-call phase on the
-artifact-recorded hardware; it excludes corpus preparation, official scoring,
-serialization, HTTP fetching, and network service overhead. Webis pages,
-references, and predictions are benchmark-only and are not used for training,
-distillation, label generation, or production routing calibration.
+This release publishes no Webis result. A future public result must come from
+clean public source, preserve the complete permitted artifact set, and receive
+an exact evidence-registry binding. Webis pages, references, and predictions
+remain benchmark-only and must not be used for training, distillation, label
+generation, or runtime routing calibration.
 
 ## Artifact contract
 

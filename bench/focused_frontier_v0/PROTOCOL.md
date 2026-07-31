@@ -57,7 +57,7 @@ diagnostics, not end-to-end recursive-crawl performance.
 For each policy the report records:
 
 - `requests_to_90pct_targets`: inclusive request count at the first prefix
-  reaching the pinned 90% target recall threshold;
+  reaching the pinned target-recall threshold;
 - `non_target_bytes_before_90pct`: all non-target payload bytes in that
   inclusive prefix;
 - `yield_auc`: mean cumulative target recall over the common full reachable
@@ -67,6 +67,7 @@ For each policy the report records:
 - `peak_rss_bytes`: worker-process high-water resident set size; and
 - `trace_sha256`: SHA-256 over canonical semantic JSONL. Timing and RSS are not
   included in the semantic trace.
+- Threshold: target_recall >= 90 percent. <!-- clusy-protocol-threshold -->
 
 The full graph is traversed by every policy, giving all policies the same
 request denominator for yield AUC. The runner writes each canonical trace,

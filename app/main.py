@@ -30,6 +30,7 @@ from app.services.rendering.manager import (
 )
 from app.services.robots import close_robots_policy
 from app.services.structured import close_structured_client
+from app.version import SERVICE_VERSION
 
 logger = structlog.get_logger()
 
@@ -91,7 +92,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Clusy Crawler",
-    version="0.1.0",
+    version=SERVICE_VERSION,
     lifespan=lifespan,
 )
 

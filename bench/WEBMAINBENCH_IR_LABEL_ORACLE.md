@@ -31,8 +31,8 @@ For each frozen page, the runner:
 6. converts that HTML with the pinned evaluator's own
    `HTML2TextWrapper(bodywidth=0, ignore_links=True, ignore_images=True)`;
 7. scores the resulting Markdown with the pinned official
-   `calc_rouge_n_score(..., n=5)` and arithmetic-means per-page precision,
-   recall, and F1.
+   `calc_rouge_n_score(..., n=5)`. The scorer arithmetic-means the per-page
+   precision, recall, and F1 values.
 
 No classifier is invoked. The policy selects every representable labelled
 region; it does not search all subsets to maximize ROUGE against the reference.
@@ -145,76 +145,9 @@ whether a model can identify those blocks without labels, and it does not
 measure fetching, rendering, discovery, robots compliance, latency under load,
 or platform reliability.
 
-The corrected deterministic 100-page seed above measured F1 `0.873965`, with
-all 100 ground-truth HTML conversions exactly reproducing their stored
-reference strings. This sample is useful only as a harness check and
-architectural warning.
+## Evidence status
 
-## Full-corpus diagnostic, 2026-07-28
-
-> **LABEL_ORACLE — NOT CLAIMABLE.** These numbers use public labels directly
-> and are not production quality, model quality, or a leaderboard result.
-
-The complete pinned 7,809-page v6 run produced:
-
-| Diagnostic | Pages | Precision | Recall | F1 |
-|---|---:|---:|---:|---:|
-| Label-selected ordered IR | 7,809 | 0.935255 | 0.855861 | **0.873146** |
-| Ground-truth HTML recanonicalization canary | 7,809 | 0.999872 | 0.999872 | 0.999872 |
-
-The canonicalizer reproduced the stored reference string exactly on all 7,809
-pages. The canary metric is slightly below one only because the official
-ROUGE-5 function returns zero for an identical non-empty string with fewer
-than five tokens.
-
-Architecture coverage:
-
-- selectable-unit marker recall: `0.909095`;
-- emitted marker recall after reconstruction: `0.872075`;
-- selectable-unit labelled non-whitespace character recall: `0.850629`;
-- emitted labelled-character recall: `0.788780`;
-- pages with an unselectable label marker: `3,087`;
-- pages with an unrepresented table/list marker: `1,750`;
-- pages with zero selectable labelled units: `18`;
-- IR-truncated pages: `1,420`, including `1,377` with stored block-HTML
-  truncation;
-- selected-unit HTML truncation that dropped labelled content during
-  reconstruction: `96` pages;
-- coarse selectable containers: `215,415` units on `3,121` pages;
-- mixed labelled/unlabelled selected blocks: `3,980` units on `1,393` pages;
-- duplicate annotation UID ambiguity: eight UIDs on one page; no marker lacked
-  a UID.
-
-The most important score splits are:
-
-| Category | Pages | F1 |
-|---|---:|---:|
-| Ground-truth table markup | 2,672 | 0.784944 |
-| No ground-truth table markup | 5,137 | 0.919023 |
-| Unrepresented table/list marker | 1,750 | 0.718478 |
-| No unrepresented table/list marker | 6,059 | 0.917818 |
-| Coarse selectable container present | 3,121 | 0.823777 |
-| No coarse selectable container | 4,688 | 0.906013 |
-| IR truncated | 1,420 | 0.780315 |
-| IR not truncated | 6,389 | 0.893778 |
-| Reconstruction dropped a selected marker | 96 | 0.069433 |
-| No selected-marker reconstruction drop | 7,713 | 0.883149 |
-
-The artifact directory is
-`bench/results/webmainbench-ir-label-oracle/full-20260728-v6/`. Its immutable
-top-level hashes are:
-
-- `pages.jsonl`:
-  `2fe3b8db2fdb746b0ce72b9568c82a8952af3d6a3aafab6512dac9ab2d017b38`;
-- `summary.json`:
-  `49612019919c7853927b1276fa47ca3d9312a7dc2cf3bd9e19854bb74c292767`;
-- `manifest.json`:
-  `83f63881162a7127cf0d058465eda98e56f2529cd85c4d4875fc5fb6f53b3663`.
-
-The result identifies a real architecture ceiling below the desired target.
-The next IR revision should expose bounded child/text-run ranges inside
-compound cells, list items, and mixed blocks; make selectable units
-non-overlapping by construction; and store lightweight ancestor start/end
-tags separately from complete selectable fragments. That removes the dominant
-table granularity loss and avoids duplicating huge container `outer_html`
-values that currently exhaust the storage budget.
+This release publishes no label-oracle result. Any local output remains a
+non-authorizing architecture diagnostic because the policy reads public labels
+directly. It must never be presented as production quality, model quality, a
+leaderboard result, or evidence for a deployed route.

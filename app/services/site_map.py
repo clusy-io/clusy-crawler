@@ -1,6 +1,6 @@
-"""Site URL discovery — the /map capability (Firecrawl parity).
+"""Site URL discovery for the /map endpoint.
 
-Discovers a site's URLs cheaply (no rendering, no extraction) by reading
+Discovers a site's URLs without rendering or content extraction by reading
 robots.txt → sitemap(s), then supplementing with same-site links from the
 homepage. Uses the shared HTTP client directly because sitemaps are XML and
 fetcher.fetch_url() only accepts HTML/PDF.

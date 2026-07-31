@@ -196,17 +196,21 @@ different table/code behavior.
 ## Preregistered promotion hypotheses
 
 H1 compares fixed segmentation, union/max candidates, and the marginalized
-lattice on frozen WCXB development pages. The lattice must improve overall
-macro F1 by at least 1.5 points, improve the weak page-type mean (service,
-collection, listing, product) by at least 3 points, keep article precision loss
-within 0.5 point, and beat union/max under a paired 95% bootstrap interval.
+lattice on frozen WCXB development pages:
+
+- Threshold: wcxb_macro_f1_delta >= 1.5 points. <!-- clusy-protocol-threshold -->
+- Threshold: wcxb_weak_page_type_mean_delta >= 3 points. <!-- clusy-protocol-threshold -->
+- Threshold: wcxb_article_precision_delta >= -0.5 points. <!-- clusy-protocol-threshold -->
+- Threshold: wcxb_lattice_vs_unionmax_ci_lower > 0 points. <!-- clusy-protocol-threshold -->
 
 H2 freezes all candidate scores and compares independent thresholding,
-source-order greedy selection, and exact decoding. Exact decoding must reduce
-duplicate, inversion, and ancestor-overlap diagnostics by at least 80%, improve
-WebMain ROUGE-5 by at least 0.5 point and WCXB macro F1 by at least 0.5 point,
-while keeping the future Rust decoder below 5 ms p95 or 10% of end-to-end
-latency.
+source-order greedy selection, and exact decoding:
+
+- Threshold: overlap_diagnostic_reduction >= 80 percent. <!-- clusy-protocol-threshold -->
+- Threshold: webmain_rouge5_delta >= 0.5 points. <!-- clusy-protocol-threshold -->
+- Threshold: wcxb_macro_f1_delta >= 0.5 points. <!-- clusy-protocol-threshold -->
+- Threshold: rust_decoder_p95 <= 5 milliseconds. <!-- clusy-protocol-threshold -->
+- Threshold: rust_decoder_end_to_end_latency_share <= 10 percent. <!-- clusy-protocol-threshold -->
 
 Neither hypothesis may be tuned on the held-out public-test or vendor result
 aggregates.

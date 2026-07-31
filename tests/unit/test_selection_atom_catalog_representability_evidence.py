@@ -10,11 +10,13 @@ from typing import Any
 import pytest
 
 from bench import selection_atom_catalog_representability as runner
-from bench.source_provenance import native_source_digest
 
 ROOT = Path(__file__).resolve().parents[2]
 REPORT = ROOT / "bench" / "evidence" / "selection-atom-catalog-e5958b5" / "report.json"
-REPORT_SHA256 = "923ce975b22faae14e583d046c93a20fd9e625472d071cd09caf47ead7ae69b8"
+PROTOCOL = (
+    ROOT / "bench" / "evidence" / "selection-atom-catalog-e5958b5" / "PROTOCOL.md"
+)
+REPORT_SHA256 = "6215135966e7bed99d6df16918923b678732f267c351de91b21ff3e05c900717"
 INPUT_SHA256 = "e5958b541d844cf011e66e214bf64abb742aec6922e3c32321e2abaf7cf2c735"
 
 
@@ -42,12 +44,21 @@ def test_frozen_selection_atom_catalog_diagnostic_is_self_consistent() -> None:
     assert report["input_identity_before_and_after_match"] is True
     assert report["source_identity_before_and_after_match"] is True
 
+    archive_status = report["archive_status"]
+    assert archive_status["current_registry_member"] is False
+    assert archive_status["publication_authorized"] is False
+    assert archive_status["protocol_path"] == (
+        "bench/evidence/selection-atom-catalog-e5958b5/PROTOCOL.md"
+    )
+    assert archive_status["protocol_sha256"] == _sha256(PROTOCOL)
+
     boundary = report["claim_boundary"]
     assert boundary["representation_coverage_only"] is True
     assert not any(
         boundary[key]
         for key in (
             "end_to_end_crawler_latency",
+            "public_claim_authorized",
             "production_default_changed",
             "sota_claim",
             "vendor_latency_comparison",
@@ -100,18 +111,14 @@ def test_frozen_selection_atom_catalog_diagnostic_is_self_consistent() -> None:
         assert run["output_commitment_sha256"] == stable["output_commitment_sha256"]
 
 
-def test_frozen_diagnostic_binds_current_catalog_and_native_source_inventory() -> None:
+def test_archival_diagnostic_retains_an_internal_source_receipt() -> None:
     report = _report()
     identity = report["source_identity"]
     binding = identity["native_source_binding"]
 
     assert binding["matched"] is True
     assert binding["packaged_sha256"] == binding["current_sha256"]
-    assert binding["current_sha256"] == native_source_digest(ROOT)
-    for relative, recorded in identity["relevant_files"].items():
-        path = ROOT / relative
-        assert path.stat().st_size == recorded["bytes"]
-        assert _sha256(path) == recorded["sha256"]
+    assert "/Users/" not in REPORT.read_text(encoding="utf-8")
 
     executed = identity["executed_python_modules"]
     assert set(executed) >= runner.REQUIRED_EXECUTED_PYTHON_MODULES

@@ -100,16 +100,16 @@ def _log_host(url: str) -> str:
 _MIN_ACCEPT_WORDS = 8
 
 # Experimental adaptive-only candidate expansion. This heuristic is excluded
-# from the balanced/default profile and from benchmark claims: its thresholds
-# are not independent evidence of general quality. Integer comparisons merely
-# keep the experimental routing behavior deterministic and boundary-exact.
+# from the balanced/default profile; its thresholds are routing policy, not
+# evidence of general extraction quality. Integer comparisons keep the
+# experimental routing behavior deterministic and boundary-exact.
 _ADAPTIVE_ARTICLE_RESCUE_MAX_BROAD_CHARACTERS = 3_000
 _ADAPTIVE_ARTICLE_RESCUE_LENGTH_NUMERATOR = 5
 _ADAPTIVE_ARTICLE_RESCUE_LENGTH_DENOMINATOR = 4
 
-# Strategy trust order for choosing the union base. Specialized + trafilatura
-# produce the cleanest markdown; markdownify captures the most text but also the
-# most boilerplate, so it loses ties.
+# Strategy trust order for choosing the union base. Source-specific and
+# main-content strategies precede full-page conversion strategies, which can
+# retain navigation and footer text.
 _STRATEGY_RANK = {
     "rs-trafilatura": 6,
     "documentation": 5,
@@ -174,10 +174,10 @@ _CLEAN_AUGMENT_STRATEGIES = frozenset(
 
 # A genuine news/blog article, per its own metadata (Open Graph og:type, an
 # article schema, or an article:published_time). This is deliberately NARROW:
-# the precision-first body path (favor_precision + boilerplate strip) lifts
-# short news F1 but DROPS real content on long, content-rich pages (Wikipedia,
-# data/reference pages, tutorials), so we gate it on a positive news signal
-# rather than "anything that isn't technical".
+# the precision-first body path (favor_precision + boilerplate strip) can drop
+# real content on long, content-rich pages (Wikipedia, data/reference pages,
+# tutorials), so we gate it on a positive news signal rather than "anything
+# that isn't technical".
 _NEWS_META = re.compile(
     r'og:type"\s+content="(?:article|news)'
     r'|"@type"\s*:\s*"(?:News|Blog|Reportage)?(?:Article|BlogPosting)"'
@@ -310,8 +310,8 @@ def _extract_with_native(
 
     Import failure is deliberately non-fatal so source checkouts that have not
     built the extension still retain the complete Python fallback pipeline.
-    Production images build the extension and expose its version in health and
-    benchmark metadata.
+    Production images build the extension and expose its version in health
+    diagnostics.
     """
     global _native_import_warning_emitted
 
@@ -368,10 +368,9 @@ def _extract_with_trafilatura(
     # News/blog articles take the precision-first body path: favor_precision drops
     # residual boilerplate, and comments are reader chatter we exclude. Inline
     # tables (a data table in the article flow) are kept — trafilatura only emits
-    # main-content tables — while the widget-table DUMP is a separate step we skip
-    # for news. Beats standalone trafilatura 2.0 on the Zyte news corpus (F1 0.960
-    # vs 0.958, holds on a held-out half) WITHOUT the recall loss that a blanket
-    # favor_precision inflicts on Wikipedia/reference/tutorial pages.
+    # main-content tables — while the widget-table recovery step is skipped for
+    # news. Gating precision mode avoids applying article-specific filtering to
+    # Wikipedia, reference, and tutorial pages.
     news = _is_news_article(html_content)
     # Use the Document returned by bare_extraction for both content and
     # metadata. Calling extract() followed by bare_extraction() parsed every
@@ -699,10 +698,9 @@ def _merge_union(results: list[ExtractionResult], news: bool = False) -> Extract
     ]
     # Otherwise the base is the highest-ranked BOILERPLATE-REMOVING extractor.
     # A full-page dump (markdownify / raw_lxml) may only become the base when no
-    # clean extractor produced usable output — the old `word_count >= 0.5·max`
-    # rule let the full-page dump win the base slot whenever the clean extractors
-    # were much shorter (i.e. did their job), collapsing precision to ~0.55 on
-    # real article corpora. See _CLEAN_AUGMENT_STRATEGIES.
+    # clean extractor produced usable output. A length-relative rule can select
+    # the full-page dump merely because it retains more navigation and footer
+    # text. See _CLEAN_AUGMENT_STRATEGIES.
     clean = [r for r in ranked if r.strategy in _CLEAN_AUGMENT_STRATEGIES]
     base = specialized[0] if specialized else (clean[0] if clean else ranked[0])
 
@@ -713,8 +711,7 @@ def _merge_union(results: list[ExtractionResult], news: bool = False) -> Extract
     # ever pull paragraphs from other BOILERPLATE-REMOVING extractors. The
     # full-page strategies (markdownify / raw_lxml) exist solely to guarantee
     # *some* output when every clean extractor fails; folding their paragraphs
-    # into a clean base re-injects nav/footer/related-article chrome and tanks
-    # precision (measured: ~1 F1 point on the Zyte article corpus).
+    # into a clean base can re-inject nav/footer/related-article chrome.
     # On news/blog pages a clean base is already the complete body, and folding
     # in another extractor's paragraphs only re-admits boilerplate — so only
     # rescue a base that clearly FAILED (tiny). Other pages keep the higher
@@ -790,8 +787,6 @@ def _strip_boilerplate_lines(text: str) -> str:
 
     Only removes lines that BOTH match a boilerplate pattern AND are short — real
     body sentences that happen to start with a trigger word run long and survive.
-    Measured on the Zyte article corpus: F1 0.955 → 0.963 (precision 0.947 →
-    0.958), and the gain holds on a held-out test half, so it is not overfit.
     """
     kept: list[str] = []
     for line in text.split("\n"):
@@ -817,9 +812,8 @@ def _dedup_key(paragraph: str) -> str:
 def _ensure_title_heading(text: str, title: str) -> str:
     """Guarantee the markdown opens with the page title as an H1.
 
-    Trafilatura often drops the page's <h1> from the body. SOTA scrapers
-    (Firecrawl/Exa) surface it as a top-level heading — it both aids LLM
-    structure and matches what callers expect from `# Title`.
+    Main-content extraction can omit the page's <h1> from the body. A leading
+    heading preserves the title in Markdown structure for downstream consumers.
     """
     if not title or not text.strip():
         return text
@@ -988,7 +982,7 @@ def _post_process(text: str, html_content: str, title: str, news: bool) -> str:
 
 
 def _post_process_native(text: str) -> str:
-    """Keep the independently benchmarked native body byte-for-byte stable."""
+    """Keep the native article-body output byte-for-byte stable."""
     return text
 
 
@@ -1048,9 +1042,8 @@ def _finalize_result(
             result.route = "native_fast_path"
         else:
             result.route = "deterministic_fallback"
-    # Preserve the independently benchmarked native fast path: structural
-    # scanning belongs to adaptive/quality routing and must not tax every
-    # article-body request.
+    # Preserve the native article-body path. Structural scanning belongs to
+    # adaptive/quality routing and does not affect this profile's output.
     _annotate_completeness(
         result,
         html_content,
@@ -1912,9 +1905,9 @@ async def extract_content_async(
         extraction_profile == "adaptive" and not _quality_backend_configured()
     )
 
-    # GitHub's server-rendered route-specific subtrees are both cleaner and
-    # cheaper than model inference. Fall through to generic extraction only
-    # when the deterministic GitHub adapter has no usable content.
+    # Prefer GitHub's deterministic route-specific subtree extraction before
+    # the optional model path. Fall through to generic extraction only when
+    # the GitHub adapter has no usable content.
     if page_type == "repository":
         specialized = await _to_thread_holding_cancellation(
             _extract_github,
@@ -1937,10 +1930,10 @@ async def extract_content_async(
             return finalized
 
     if extraction_profile == "quality":
-        # Quality inference must compete against a complete deterministic
-        # candidate. Running model-first left the verifier with only its
+        # Quality inference is checked against the deterministic candidate.
+        # Running model-first left the verifier with only its
         # eight-unit absolute floor, so a grounded excerpt could replace a
-        # long page. The baseline is also the exact no-model fallback and
+        # long page. The baseline is also the no-model fallback and
         # supplies metadata plus a page-type-aware completeness threshold.
         deterministic = await _extract_deterministic_after_specialized(
             html_content,
@@ -2013,7 +2006,7 @@ async def extract_content_async(
             # The broad native backend's article label is useful but is not a
             # calibrated adaptive routing guarantee. Compare clean candidates
             # on articles so disagreement can trigger the quality lane, while
-            # balanced/article_body keep their independently benchmarked path.
+            # balanced/article_body retain their stable deterministic path.
             allow_article_shortcut=False,
             enable_article_rescue=True,
         )

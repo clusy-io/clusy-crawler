@@ -5,8 +5,8 @@ WebMainBench 545-page fine-grained track. It imports the metric classes from a
 verified, immutable checkout of the official toolkit; no metric is copied or
 reimplemented in Clusy.
 
-It is complementary to `webmainbench_benchmark.py`, which evaluates the
-7,809-page ROUGE-5 track.
+It is complementary to `webmainbench_benchmark.py`, which evaluates the full
+direct-Markdown track with ROUGE-5.
 
 ## Frozen provenance
 
@@ -94,71 +94,12 @@ rapidfuzz==3.14.3
 `openai` is imported by the official splitter module but no client is created
 and no request is made when `use_llm=False`.
 
-## Current production baseline
+## Evidence status
 
-The complete 2026-07-28 working-tree run scored all 545 pages in both required
-modes with zero extraction errors:
-
-| Metric | Official offline | Valid pages |
-|---|---:|---:|
-| `overall` | **0.214089** | — |
-| `text_edit` | 0.752301 | 545 |
-| `code_edit` | 0.017775 | 100 |
-| `formula_edit` | 0.300369 | 281 |
-| `table_edit` | 0.000000 | 85 |
-| `table_TEDS` | 0.000000 | 85 |
-
-The annotation-scrubbed scores were identical, and the production predictions
-were byte-identical for all 545 pages. The official mode completed at 19.44
-pages/s including input cleanup, extraction, and official scoring. Production
-extraction latency was 11.07 ms p50 and 47.40 ms p95 on this machine.
-
-This run is **not claimable** because the Clusy worktree was dirty. Its complete
-artifact is:
-
-```text
-bench/results/webmainbench-finegrained/sota-architecture-regression-20260728/
-```
-
-`summary.json` SHA-256:
-`15acb7b8da3b4f6a36c7f03d62ae65e8aaac5f7a296459b26079436a642032b9`.
-The copied artifact was verified byte-for-byte against the original run.
-Its `manifest.json` SHA-256 is
-`9770f8d4ffcc65683ff96bdd7eb3876a48f18204414213f8ed07e1582ee4bfc2`.
-
-This artifact predates the clean V2 runs. A post-run comparison against public
-OSS revision `837dddababc612bfa1ce438307b1e2fb29b4c2f5` matched only 24 of its 44
-recorded source files; the 20 differences include this benchmark's runner and
-documentation plus production extractor and native-IR files. It is therefore
-neither clean V2 evidence nor source-equivalent evidence for the OSS commit.
-Retain it only as the explicitly non-claimable architecture diagnostic
-described below.
-
-### Architectural diagnosis
-
-The result isolates a structural serialization failure rather than a general
-text-selection failure:
-
-- `text_edit=0.7523` shows that useful prose is often retained.
-- Of the 88 successfully scored pages with non-empty reference code, only 15
-  had any code recognized in the prediction. Code is commonly flattened
-  without fenced-block semantics.
-- Of the 81 successfully scored pages with non-empty reference tables, zero had
-  any table recognized in the prediction. Four additional pages produced
-  false-positive table syntax. Some outputs contain pipe-delimited rows but
-  omit a valid Markdown header separator, so the official table parser
-  correctly treats them as plain text.
-- The offline formula score needs caution: 98/119 reference-formula pages had
-  a recognized predicted formula, but 162 pages with no reference formula
-  produced regex-level false positives. This is exactly the distinction the
-  toolkit's optional, incompletely specified LLM refinement attempts to make.
-
-Accordingly, the next quality gate is not another prose threshold tweak.
-Ordered IR selection and deterministic reconstruction must preserve semantic
-`pre`/`code`, math, and `table` nodes; reconstruction must emit canonical fenced
-code and valid GFM tables (including the header separator row). The 545-page
-track should become a mandatory structure-preservation regression gate, while
-the 7,809-page ROUGE track remains the broad main-content gate.
+This release publishes no fine-grained WebMainBench result. Smoke, partial,
+dirty-source, and unregistered artifacts are non-authorizing. A future result
+must complete both required modes from clean public source, preserve the
+permitted raw artifacts, and receive an exact evidence-registry binding.
 
 ## Prepare and run
 
