@@ -97,6 +97,45 @@ def test_terminal_receipt_binds_text_and_rejects_caller_chosen_role() -> None:
         )
 
 
+def test_terminal_receipt_schema_requires_exact_str_and_fails_closed() -> None:
+    class EvilStr(str):
+        def __ne__(self, _other: object) -> bool:
+            return False
+
+    class ExplosiveSchema:
+        def __ne__(self, _other: object) -> bool:
+            raise AssertionError("schema comparison must not execute")
+
+    class Fallback(str):
+        pass
+
+    fallback = Fallback("exact fallback for a hostile terminal receipt")
+    canonical = _candidate("production_balanced", "rs-trafilatura", fallback)
+
+    for hostile_schema in (EvilStr("wrong-schema"), ExplosiveSchema()):
+        hostile_receipt = replace(
+            canonical.terminal_receipt,
+            schema_version=cast("Any", hostile_schema),
+        )
+        hostile = IndependentLineageCandidateV1(
+            text=canonical.text,
+            terminal_receipt=hostile_receipt,
+        )
+
+        assert not verify_terminal_strategy_role_receipt_v1(
+            hostile_receipt,
+            text=canonical.text,
+        )
+        result = select_independent_lineage_text_medoid_v1(
+            fallback,
+            (hostile,),
+            config=_enabled(),
+        )
+        assert not result.accepted
+        assert result.reason == "invalid_terminal_receipt"
+        assert result.output is fallback
+
+
 def test_selects_character_5gram_medoid_with_two_other_lineages() -> None:
     fallback = "alpha beta gamma"
     readability = "alpha beta gamma delta"

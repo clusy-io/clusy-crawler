@@ -3,8 +3,8 @@
 This module is intentionally pure and unwired.  It consumes already-produced
 text candidates and terminal strategy/role receipts; it does not import HTML
 parsers, extractors, or crawler routing code.  The algorithm is new and has not
-been validated by the frozen WebMainBench protocol, whose experimental selector
-used jieba-tokenized ROUGE-5.  Its protocol revision therefore names the actual
+been validated by the frozen public-benchmark protocol, whose exploratory
+selector used jieba-tokenized ROUGE-5.  Its protocol revision therefore names the actual
 similarity here: exact Unicode-codepoint character-5-gram multiset Dice.
 
 Independence is not caller-declared.  Receipts keep the candidate's orchestration
@@ -528,7 +528,8 @@ def verify_terminal_strategy_role_receipt_v1(
         text, encoded = _hard_bounded_text(text)
         del text
         if (
-            receipt.schema_version != TERMINAL_STRATEGY_ROLE_RECEIPT_V1_SCHEMA
+            type(receipt.schema_version) is not str
+            or receipt.schema_version != TERMINAL_STRATEGY_ROLE_RECEIPT_V1_SCHEMA
             or type(receipt.text_sha256) is not str
             or _SHA256_RE.fullmatch(receipt.text_sha256) is None
             or type(receipt.text_bytes) is not int
