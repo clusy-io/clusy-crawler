@@ -21,7 +21,10 @@ from app.middleware.resource_limits import ResourceLimitMiddleware
 from app.routers import crawl, extract, health
 from app.routers import map as map_router
 from app.services.crawler import shutdown_crawler, start_crawler
-from app.services.quality_extractor import close_quality_extractor
+from app.services.quality_extractor import (
+    close_quality_extractor,
+    quality_dependency_available,
+)
 from app.services.rendering.manager import (
     start_render_manager as start_renderer,
 )
@@ -55,6 +58,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
                 if settings.environment == "prod":
                     raise
+        if settings.quality_backend_configured():
+            # Warm the cached functional dependency probe outside the event
+            # loop. Readiness remains fail-closed without making its first
+            # request pay import and converter startup latency.
+            await asyncio.to_thread(quality_dependency_available)
         yield
     finally:
         try:

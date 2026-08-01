@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import threading
 import time
+from dataclasses import replace
+from html import escape
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from lxml import html as lxml_html
 
-from app.config import settings
+from app.config import Settings, settings
 from app.services import extractor as extractor_module
 from app.services import quality_extractor as quality_module
+from app.services import source_serialization_receipt_v1 as serialization_module
 from app.services.extractor import ExtractionResult, extract_content, extract_content_async
 from app.services.quality_extractor import (
     QUALITY_STRATEGY,
@@ -22,6 +27,25 @@ from app.services.quality_extractor import (
 from app.services.source_selection_receipt_v0 import (
     build_quality_source_selection_receipt_v0,
 )
+from app.services.source_serialization_receipt_v1 import (
+    MINERU_HTML_PREPROCESSOR_CUTOFF_LENGTH,
+    QualitySourceSerializationReceiptV1,
+    build_quality_source_serialization_receipt_v1,
+)
+
+_test_preprocessor_state = threading.local()
+
+
+def test_quality_worker_count_is_bounded_by_global_serializer() -> None:
+    configured = Settings(_env_file=None, environment="test")
+    assert configured.quality_extraction_max_concurrency == 2
+
+    with pytest.raises(ValueError, match="less than or equal to 2"):
+        Settings(
+            _env_file=None,
+            environment="test",
+            quality_extraction_max_concurrency=3,
+        )
 
 
 def _configure_quality_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -40,6 +64,40 @@ def _configure_quality_backend(monkeypatch: pytest.MonkeyPatch) -> None:
         extractor_module.settings,
         "quality_extraction_model",
         "test-model",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _use_local_test_serializer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace the absent optional package with a deterministic local stand-in."""
+
+    def preprocess(html_str: str, cutoff_length: int = 500) -> object:
+        del html_str
+        assert cutoff_length == MINERU_HTML_PREPROCESSOR_CUTOFF_LENGTH
+        artifacts = getattr(_test_preprocessor_state, "artifacts", None)
+        if type(artifacts) is not tuple or len(artifacts) != 2:
+            raise AssertionError("test upstream did not publish source artifacts")
+        return artifacts
+
+    def serialize(
+        *,
+        main_html: str,
+        url: str | None,
+        output_format: str,
+    ) -> str:
+        del url
+        assert output_format == "mm_md"
+        return lxml_html.fromstring(main_html.encode()).text_content()
+
+    monkeypatch.setattr(
+        serialization_module,
+        "load_pinned_mineru_html_preprocessor_v1",
+        lambda: preprocess,
+    )
+    monkeypatch.setattr(
+        serialization_module,
+        "load_pinned_mineru_webkit_serializer_v1",
+        lambda: serialize,
     )
 
 
@@ -112,11 +170,8 @@ def _success(
     *,
     raw_model_response: str = '{"1":"main"}',
 ) -> list[object]:
-    mapped_html = (
-        '<html><body><article _item_id="1">'
-        "source-backed model selection"
-        "</article></body></html>"
-    )
+    mapped_html = f'<html><body><article _item_id="1">{escape(text)}</article></body></html>'
+    _test_preprocessor_state.artifacts = (mapped_html, mapped_html)
     return [
         SimpleNamespace(
             error=None,
@@ -135,11 +190,7 @@ def _success(
 
 
 def _verified_quality(text: str, raw_html: str) -> QualityExtraction:
-    mapped_html = (
-        '<html><body><main _item_id="1">'
-        "source-backed test selection"
-        "</main></body></html>"
-    )
+    mapped_html = '<html><body><main _item_id="1">source-backed test selection</main></body></html>'
     return QualityExtraction(
         text=text,
         selection_receipt=build_quality_source_selection_receipt_v0(
@@ -156,9 +207,77 @@ def _verified_quality(text: str, raw_html: str) -> QualityExtraction:
     )
 
 
+def _verified_serialized_quality(
+    text: str,
+    raw_html: str,
+    source_url: str,
+    *,
+    selected_source_text: str | None = None,
+) -> QualityExtraction:
+    mapped_html = (
+        '<html><body><main _item_id="1">'
+        f"{escape(selected_source_text if selected_source_text is not None else text)}"
+        "</main></body></html>"
+    )
+    _test_preprocessor_state.artifacts = (mapped_html, mapped_html)
+    return QualityExtraction(
+        text=text,
+        selection_receipt=build_quality_source_serialization_receipt_v1(
+            raw_html=raw_html,
+            source_url=source_url,
+            raw_model_response='{"1":"main"}',
+            response_format="json",
+            simplified_html=mapped_html,
+            mapped_html=mapped_html,
+            item_labels={"1": "main"},
+            selected_html=mapped_html,
+            output_text=text,
+            upstream_revision=quality_module.MINERU_HTML_REVISION,
+            prompt_profile="openai_json",
+        ),
+    )
+
+
 def test_quality_runtime_configuration_rejects_unknown_prompt_contract() -> None:
     with pytest.raises(ValueError, match="prompt profile"):
         _config(prompt_profile="unknown")
+
+
+def test_quality_dependency_probe_requires_complete_v1_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe_calls: list[bool] = []
+    quality_module.quality_dependency_available.cache_clear()
+    monkeypatch.setattr(quality_module, "_load_official_bindings", lambda: object())
+    monkeypatch.setattr(
+        quality_module,
+        "probe_pinned_quality_serialization_runtime_v1",
+        lambda: probe_calls.append(True),
+    )
+
+    assert quality_module.quality_dependency_available() is True
+    assert quality_module.quality_dependency_available() is True
+    assert probe_calls == [True]
+    quality_module.quality_dependency_available.cache_clear()
+
+
+def test_quality_dependency_probe_fails_closed_on_serializer_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quality_module.quality_dependency_available.cache_clear()
+    monkeypatch.setattr(quality_module, "_load_official_bindings", lambda: object())
+
+    def fail() -> None:
+        raise RuntimeError("serializer unavailable")
+
+    monkeypatch.setattr(
+        quality_module,
+        "probe_pinned_quality_serialization_runtime_v1",
+        fail,
+    )
+
+    assert quality_module.quality_dependency_available() is False
+    quality_module.quality_dependency_available.cache_clear()
 
 
 @pytest.mark.asyncio
@@ -181,6 +300,7 @@ async def test_official_pipeline_success_uses_empty_fallback_and_clear_strategy(
     assert result.text == "# Paper\n\nUseful content"
     assert result.strategy == QUALITY_STRATEGY
     assert result.selection_receipt is not None
+    assert result.selection_receipt.schema_version == ("quality-source-selection-serialization.v1")
     assert result.selection_receipt.replay_verified is True
     assert captured_inputs[0].url == "https://example.test/p"
     mineru_config = captured_init[0]["config"]
@@ -189,9 +309,31 @@ async def test_official_pipeline_success_uses_empty_fallback_and_clear_strategy(
         "early_load": False,
         "prompt_version": "v2",
         "response_format": "json",
-        "output_format": "mm_md",
+        "output_format": "none",
     }
     assert captured_init[0]["retry_times"] == 1
+    await extractor.aclose()
+
+
+@pytest.mark.asyncio
+async def test_upstream_main_content_never_has_text_authority() -> None:
+    local_text = "# Local\n\nSource-selected serializer output"
+
+    def process(_: _FakeInput) -> list[object]:
+        cases = _success(local_text)
+        cases[0].output_data.main_content = "foreign model-controlled text"
+        return cases
+
+    extractor = QualityExtractor(
+        _config(),
+        bindings_loader=lambda: _bindings(process),
+    )
+
+    result = await extractor.extract("<article>source input</article>")
+
+    assert result is not None
+    assert result.text == local_text
+    assert "foreign" not in result.text
     await extractor.aclose()
 
 
@@ -379,6 +521,109 @@ async def test_oversized_input_falls_back_without_loading_dependency() -> None:
 
 
 @pytest.mark.asyncio
+async def test_structurally_dense_input_falls_back_before_dependency_initialization() -> None:
+    load_count = 0
+
+    def loader() -> _OfficialBindings:
+        nonlocal load_count
+        load_count += 1
+        return _bindings(lambda _: _success("# Eligible\n\nNormal input"))
+
+    extractor = QualityExtractor(
+        _config(max_input_chars=2_000_000),
+        bindings_loader=loader,
+    )
+    dense_html = "<html><body>" + ("<div>x</div>" * 5001) + "</body></html>"
+
+    assert await extractor.extract(dense_html) is None
+    assert load_count == 0
+
+    result = await extractor.extract("<p>eligible input</p>")
+    assert result is not None
+    assert load_count == 1
+    await extractor.aclose()
+
+
+@pytest.mark.asyncio
+async def test_structurally_ineligible_input_never_queues_or_opens_capacity_circuit() -> None:
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def process(_: _FakeInput) -> list[object]:
+        nonlocal calls
+        calls += 1
+        started.set()
+        release.wait(timeout=1)
+        return _success("# Eligible\n\nNormal input")
+
+    extractor = QualityExtractor(
+        _config(
+            max_concurrency=1,
+            timeout_s=1,
+            capacity_timeout_s=0.01,
+            failure_threshold=1,
+        ),
+        bindings_loader=lambda: _bindings(process),
+    )
+    live = asyncio.create_task(extractor.extract("<p>live request</p>"))
+    assert await asyncio.to_thread(started.wait, 0.5)
+
+    dense_html = "<main>" + ("<span>x</span>" * 5000) + "</main>"
+    assert await extractor.extract(dense_html) is None
+    assert calls == 1
+    assert extractor._consecutive_failures == 0
+    assert extractor._open_until == 0
+
+    release.set()
+    assert await live is not None
+    await extractor.aclose()
+
+
+@pytest.mark.asyncio
+async def test_selected_work_ineligibility_does_not_open_backend_circuit() -> None:
+    calls = 0
+
+    def process(input_data: _FakeInput) -> list[object]:
+        nonlocal calls
+        calls += 1
+        if "large selection" in input_data.raw_html:
+            return _success("x" * 1001)
+        return _success("# Eligible\n\nNormal input")
+
+    extractor = QualityExtractor(
+        _config(failure_threshold=1, max_output_chars=1000),
+        bindings_loader=lambda: _bindings(process),
+    )
+
+    assert await extractor.extract("<p>large selection</p>") is None
+    recovered = await extractor.extract("<p>eligible selection</p>")
+
+    assert recovered is not None
+    assert recovered.text == "# Eligible\n\nNormal input"
+    assert calls == 2
+    await extractor.aclose()
+
+
+@pytest.mark.asyncio
+async def test_hard_preprocessor_character_cap_cannot_be_raised_by_configuration() -> None:
+    loader_called = False
+
+    def loader() -> _OfficialBindings:
+        nonlocal loader_called
+        loader_called = True
+        raise AssertionError("hard-ineligible input must not initialize dependency")
+
+    extractor = QualityExtractor(
+        _config(max_input_chars=2_000_000),
+        bindings_loader=loader,
+    )
+
+    assert await extractor.extract("<p>" + ("x" * 1_000_001) + "</p>") is None
+    assert loader_called is False
+
+
+@pytest.mark.asyncio
 async def test_missing_dependency_is_cached_and_falls_back_immediately() -> None:
     load_count = 0
 
@@ -487,9 +732,7 @@ async def test_worker_concurrency_is_bounded() -> None:
         bindings_loader=lambda: _bindings(process),
     )
 
-    results = await asyncio.gather(
-        *(extractor.extract(f"<p>{index}</p>") for index in range(6))
-    )
+    results = await asyncio.gather(*(extractor.extract(f"<p>{index}</p>") for index in range(6)))
 
     assert all(result is not None for result in results)
     assert maximum_active == 2
@@ -720,10 +963,7 @@ async def test_async_integration_returns_quality_result(
 
     async def quality_result(raw_html: str, _: str) -> QualityExtraction:
         return _verified_quality(
-            (
-                "# Neural\n\nSelected body with grounded words for the useful "
-                "page content."
-            ),
+            ("# Neural\n\nSelected body with grounded words for the useful page content."),
             raw_html,
         )
 
@@ -749,6 +989,266 @@ async def test_async_integration_returns_quality_result(
     assert result.source_selection_item_count == 1
     assert result.source_selection_selected_count == 1
     assert result.source_selection_replay_verified is True
+
+
+@pytest.mark.asyncio
+async def test_v1_exact_serialization_accepts_former_source_order_false_reject(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_words = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima"
+    quality_text = (
+        "# Replayed\n\nlima kilo juliet india hotel golf foxtrot echo delta charlie bravo alpha"
+    )
+    raw_html = f"<html><body><main>{source_words}</main></body></html>"
+    source_url = "https://example.test/reordered-serialization"
+
+    def serialize(**_: object) -> str:
+        return quality_text
+
+    monkeypatch.setattr(
+        serialization_module,
+        "load_pinned_mineru_webkit_serializer_v1",
+        lambda: serialize,
+    )
+    quality = _verified_serialized_quality(
+        quality_text,
+        raw_html,
+        source_url,
+        selected_source_text=source_words,
+    )
+
+    async def quality_result(_: str, __: str) -> QualityExtraction:
+        return quality
+
+    monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
+    assert (
+        extractor_module._quality_rejection_reason(
+            quality_text,
+            raw_html,
+            None,
+        )
+        == "source_order_violation"
+    )
+
+    result = await extractor_module._try_quality_result(
+        raw_html,
+        source_url,
+        "article",
+    )
+
+    assert result is not None
+    assert result.text == quality_text
+    assert result.source_selection_schema == ("quality-source-selection-serialization.v1")
+
+
+@pytest.mark.asyncio
+async def test_v1_exact_serialization_accepts_former_grounding_false_reject(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_text = "source alpha bravo charlie delta echo foxtrot golf hotel india"
+    quality_text = "# Canonical\n\nrendered uno dos tres cuatro cinco seis siete ocho nueve diez"
+    raw_html = f"<html><body><main>{source_text}</main></body></html>"
+    source_url = "https://example.test/canonical-serialization"
+
+    def serialize(**_: object) -> str:
+        return quality_text
+
+    monkeypatch.setattr(
+        serialization_module,
+        "load_pinned_mineru_webkit_serializer_v1",
+        lambda: serialize,
+    )
+    quality = _verified_serialized_quality(
+        quality_text,
+        raw_html,
+        source_url,
+        selected_source_text=source_text,
+    )
+
+    async def quality_result(_: str, __: str) -> QualityExtraction:
+        return quality
+
+    monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
+    assert (
+        extractor_module._quality_rejection_reason(
+            quality_text,
+            raw_html,
+            None,
+        )
+        == "ungrounded_content"
+    )
+
+    result = await extractor_module._try_quality_result(
+        raw_html,
+        source_url,
+        "documentation",
+    )
+
+    assert result is not None
+    assert result.text == quality_text
+
+
+@pytest.mark.parametrize(
+    ("quality_text", "deterministic", "reason"),
+    [
+        ("too short", None, "insufficient_content"),
+        (
+            "safe words before an <script>alert</script> unsafe executable structure",
+            None,
+            "unsafe_structure",
+        ),
+        (
+            "eight grounded words remain but this ``` fence never closes safely",
+            None,
+            "unbalanced_code_fence",
+        ),
+        (
+            (
+                "repeat block has enough distinct words\n\n"
+                "repeat block has enough distinct words\n\n"
+                "repeat block has enough distinct words"
+            ),
+            None,
+            "duplicate_content",
+        ),
+        (
+            "plain serialized body contains enough words but no prior structures remain",
+            ExtractionResult(
+                text="# Trusted heading\n\n- trusted list item",
+                word_count=5,
+                confidence=0.9,
+                page_type="documentation",
+            ),
+            "structure_regression",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_v1_attestation_preserves_non_grounding_acceptance_gates(
+    monkeypatch: pytest.MonkeyPatch,
+    quality_text: str,
+    deterministic: ExtractionResult | None,
+    reason: str,
+) -> None:
+    raw_html = (
+        "<html><body><main>selected source body with enough words for local "
+        "serialization and every acceptance test</main></body></html>"
+    )
+    source_url = f"https://example.test/rejected/{reason}"
+
+    def serialize(**_: object) -> str:
+        return quality_text
+
+    monkeypatch.setattr(
+        serialization_module,
+        "load_pinned_mineru_webkit_serializer_v1",
+        lambda: serialize,
+    )
+    quality = _verified_serialized_quality(
+        quality_text,
+        raw_html,
+        source_url,
+        selected_source_text="selected source body",
+    )
+
+    async def quality_result(_: str, __: str) -> QualityExtraction:
+        return quality
+
+    monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
+    assert (
+        extractor_module._quality_rejection_reason(
+            quality_text,
+            raw_html,
+            deterministic,
+            serialization_attested=True,
+        )
+        == reason
+    )
+
+    result = await extractor_module._try_quality_result(
+        raw_html,
+        source_url,
+        "documentation",
+        deterministic,
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_v1_mutated_output_fails_before_attested_acceptance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_html = (
+        "<html><body><main>one two three four five six seven eight nine ten</main></body></html>"
+    )
+    source_url = "https://example.test/mutated-output"
+    original = "one two three four five six seven eight nine ten"
+    quality = _verified_serialized_quality(original, raw_html, source_url)
+    assert type(quality.selection_receipt) is QualitySourceSerializationReceiptV1
+    receipt = quality.selection_receipt
+    forged_text = "forged words one two three four five six seven eight nine"
+    encoded = forged_text.encode()
+    draft = replace(
+        receipt,
+        output_sha256=hashlib.sha256(encoded).hexdigest(),
+        output_bytes=len(encoded),
+        receipt_sha256="0" * 64,
+    )
+    forged_receipt = replace(
+        draft,
+        receipt_sha256=serialization_module._sha256_json(
+            serialization_module._receipt_identity(
+                draft,
+                draft.selection_receipt,
+            )
+        ),
+    )
+    forged = QualityExtraction(
+        text=forged_text,
+        selection_receipt=forged_receipt,
+    )
+
+    async def quality_result(_: str, __: str) -> QualityExtraction:
+        return forged
+
+    monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
+
+    assert (
+        await extractor_module._try_quality_result(
+            raw_html,
+            source_url,
+            "article",
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_legacy_v0_receipt_keeps_strict_source_order_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_html = (
+        "<html><body><main>alpha bravo charlie delta echo foxtrot golf hotel "
+        "india juliet kilo lima</main></body></html>"
+    )
+    source_url = "https://example.test/legacy-order"
+    quality_text = "lima kilo juliet india hotel golf foxtrot echo delta charlie bravo alpha"
+    legacy = _verified_quality(quality_text, raw_html)
+
+    async def quality_result(_: str, __: str) -> QualityExtraction:
+        return legacy
+
+    monkeypatch.setattr(quality_module, "extract_quality_content", quality_result)
+
+    assert (
+        await extractor_module._try_quality_result(
+            raw_html,
+            source_url,
+            "article",
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -964,10 +1464,7 @@ async def test_failed_quality_profile_preserves_balanced_extraction_semantics(
     assert quality_result.word_count == balanced_result.word_count
     assert quality_result.route == balanced_result.route
     assert quality_result.completeness_score == balanced_result.completeness_score
-    assert (
-        quality_result.completeness_coverage
-        == balanced_result.completeness_coverage
-    )
+    assert quality_result.completeness_coverage == balanced_result.completeness_coverage
     assert quality_result.quality_attempted is True
     assert quality_result.quality_succeeded is False
     assert quality_result.route_reasons == ("quality_backend_fallback",)
@@ -979,8 +1476,7 @@ def _adaptive_candidate(
     confidence: float = 0.95,
 ) -> ExtractionResult:
     text = (
-        "Deterministic content remains the stable fallback for every adaptive "
-        "extraction request."
+        "Deterministic content remains the stable fallback for every adaptive extraction request."
     )
     return ExtractionResult(
         text=text,

@@ -10,7 +10,7 @@ immutable implementation records live under [`../bench`](../bench/README.md).
 | --- | --- |
 | [`../README.md`](../README.md) | Product overview, quick start, API, and registry-backed evidence status |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Runtime boundaries, extraction design, and failure behavior |
-| [`QUALITY_SOURCE_SELECTION.md`](QUALITY_SOURCE_SELECTION.md) | Optional-model pointer selection and independent replay contract |
+| [`QUALITY_SOURCE_SELECTION.md`](QUALITY_SOURCE_SELECTION.md) | Optional-model pointer selection, local serialization, and authenticated receipt contract |
 | [`SELF_HOSTING.md`](SELF_HOSTING.md) | Compose, image selection, production configuration, and upgrades |
 | [`OPERATIONS.md`](OPERATIONS.md) | Health, observability, release verification, rollback, and incidents |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | Results, artifacts, scope, and claim boundaries |

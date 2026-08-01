@@ -50,7 +50,7 @@ class TestHealth:
         assert isinstance(data["quality_backend_enabled"], bool)
         assert data["quality_backend_revision"] == ""
         assert data["quality_source_selection_schema"] == (
-            "quality-source-selection.v0"
+            "quality-source-selection-serialization.v1"
         )
         assert isinstance(data["playwright_enabled"], bool)
         assert data["crawl_store_in_cache_supported"] is True

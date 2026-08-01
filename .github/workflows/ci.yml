@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -15,12 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
+          version: "0.11.6"
 
       - name: Set up Python
         run: uv python install 3.12
@@ -47,6 +53,25 @@ jobs:
       - name: Benchmark evidence claims
         run: uv run python scripts/check_evidence_claims.py
 
+      - name: Quality runtime dependency surface
+        run: |
+          uv export \
+            --locked \
+            --no-dev \
+            --extra llm \
+            --extra quality \
+            --prune accelerate \
+            --prune pytest \
+            --prune pytest-asyncio \
+            --no-emit-project \
+            --no-emit-package clusy-native \
+            --no-emit-package mineru-html \
+            --output-file "${RUNNER_TEMP}/quality-requirements.txt" \
+            >/dev/null
+          uv run python scripts/check_quality_runtime_requirements.py \
+            --requirements "${RUNNER_TEMP}/quality-requirements.txt" \
+            --manifest scripts/quality_runtime_packages.txt
+
       - name: Rust format
         run: cargo +1.85 fmt --manifest-path native/Cargo.toml --check
 
@@ -64,9 +89,11 @@ jobs:
 
   container-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Build static runtime image
         run: >-
@@ -124,6 +151,9 @@ jobs:
             --user 10001:10001 --init --read-only \
             --tmpfs /tmp:size=512m,mode=1777 \
             --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
+            --security-opt no-new-privileges:true \
+            --security-opt "seccomp=${PWD}/seccomp_profile.json" \
+            --cap-drop ALL \
             --pids-limit=256 --memory=4g --cpus=2 \
             --env-file .env.example \
             --env ENVIRONMENT=prod \
@@ -164,10 +194,17 @@ jobs:
           curl --fail --silent \
             --header 'authorization: Bearer ci-smoke-token' \
             --header 'content-type: application/json' \
-            --data '{"urls":["https://example.com"],"js_render":false}' \
+            --data '{"urls":["https://example.com"],"js_render":false,"extraction_profile":"balanced","max_age":0,"store_in_cache":false}' \
             http://127.0.0.1:11235/crawl \
             | jq -e \
-              '.status == "ok" and .results[0].error == null and .results[0].metadata.rendered == false and (.results[0].markdown | length > 0)'
+              '.status == "ok" and .results[0].error == null and .results[0].metadata.rendered == false and .results[0].metadata.cache_status == "live" and .results[0].metadata.cache_policy == "no_store" and (.results[0].markdown | length > 0)'
+          curl --fail --silent \
+            --header 'authorization: Bearer ci-smoke-token' \
+            --header 'content-type: application/json' \
+            --data '{"urls":["http://127.0.0.1/private"],"max_age":0,"store_in_cache":false}' \
+            http://127.0.0.1:11235/crawl \
+            | jq -e \
+              '.status == "ok" and (.results[0].error | type == "string" and length > 0)'
           docker rm --force clusy-crawler-static-ci
 
       - name: Build browser runtime image
@@ -194,7 +231,10 @@ jobs:
             --user 10001:10001 --init --read-only --shm-size=1g \
             --tmpfs /tmp:size=512m,mode=1777 \
             --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
+            --security-opt no-new-privileges:true \
             --security-opt "seccomp=${PWD}/seccomp_profile.json" \
+            --cap-drop ALL \
+            --cap-add SYS_CHROOT \
             --pids-limit=256 --memory=4g --cpus=2 \
             --env ENVIRONMENT=prod \
             --env GIT_SHA="${GITHUB_SHA}" \
@@ -218,10 +258,11 @@ jobs:
           curl --fail --silent \
             --header 'authorization: Bearer ci-smoke-token' \
             --header 'content-type: application/json' \
-            --data '{"urls":["https://example.com"],"js_render":true}' \
+            --data '{"urls":["https://example.com"],"js_render":true,"extraction_profile":"balanced","max_age":0,"store_in_cache":false}' \
             http://127.0.0.1:11235/crawl \
             | jq -e \
-              '.status == "ok" and .results[0].error == null and .results[0].metadata.rendered == true'
+              '.status == "ok" and .results[0].error == null and .results[0].metadata.rendered == true and .results[0].metadata.cache_status == "live" and .results[0].metadata.cache_policy == "no_store"'
+          docker rm --force clusy-crawler-browser-ci
 
       - name: Build quality runtime image
         run: >-
@@ -231,17 +272,108 @@ jobs:
           --tag clusy-crawler:quality-ci
           .
 
-      - name: Verify quality runtime boundary and pinned package
+      - name: Verify bounded quality runtime
         run: |
           set -euo pipefail
           test "$(docker image inspect clusy-crawler:quality-ci --format '{{.Config.User}}')" = "crawler"
-          docker image inspect clusy-crawler:quality-ci --format '{{range .Config.Env}}{{println .}}{{end}}' \
-            | grep -Fx \
-              "MINERU_HTML_SOURCE_REVISION=73cf266690befd209cae7e6fdff9716d5b31a976"
-          docker run --rm --entrypoint python clusy-crawler:quality-ci -c \
-            "import importlib.metadata as m, mineru_html; assert m.version('mineru-html') == '1.1.2'; import app.main"
-          docker run --rm --entrypoint python clusy-crawler:quality-ci -c \
-            "import importlib.util as i; assert i.find_spec('playwright') is not None"
+          # Docker reports compressed/content-store size on some local
+          # containerd-backed engines and unpacked layer bytes with the classic
+          # Linux graph driver used by GitHub runners. Gate the exact CI
+          # platform's host-disk footprint, and print both the value and limit
+          # so a regression is diagnosable rather than an unexplained `test 1`.
+          image_size=$(docker image inspect clusy-crawler:quality-ci --format '{{.Size}}')
+          image_size_limit=2000000000
+          echo "quality_image_size_bytes=${image_size} limit=${image_size_limit}"
+          if [ "${image_size}" -gt "${image_size_limit}" ]; then
+            echo "Quality runtime exceeds the Linux CI unpacked-size budget"
+            exit 1
+          fi
+          docker run --rm --network none -i --read-only \
+            --tmpfs /tmp:size=128m,mode=1777 \
+            --tmpfs /home/crawler:size=16m,mode=0700,uid=10001,gid=10001 \
+            --security-opt no-new-privileges:true \
+            --security-opt "seccomp=${PWD}/seccomp_profile.json" \
+            --cap-drop ALL --pids-limit=128 --memory=1g --cpus=1 \
+            --entrypoint python clusy-crawler:quality-ci - \
+            < scripts/smoke_quality_runtime.py
+
+          docker network create clusy-quality-ci-net
+          docker run --detach --name clusy-quality-stub-ci \
+            --network clusy-quality-ci-net --network-alias quality-stub \
+            --init --read-only --no-healthcheck \
+            --security-opt no-new-privileges:true \
+            --security-opt "seccomp=${PWD}/seccomp_profile.json" \
+            --cap-drop ALL \
+            --pids-limit=64 --memory=256m --cpus=0.5 \
+            --volume "${PWD}/scripts/quality_openai_stub.py:/tmp/quality_openai_stub.py:ro" \
+            --entrypoint python \
+            clusy-crawler:quality-ci /tmp/quality_openai_stub.py
+
+          docker run --detach --name clusy-crawler-quality-ci \
+            --publish 127.0.0.1:11236:11235 \
+            --network clusy-quality-ci-net \
+            --user 10001:10001 --init --read-only --shm-size=1g \
+            --tmpfs /tmp:size=512m,mode=1777 \
+            --tmpfs /home/crawler:size=64m,mode=0700,uid=10001,gid=10001 \
+            --security-opt no-new-privileges:true \
+            --security-opt "seccomp=${PWD}/seccomp_profile.json" \
+            --cap-drop ALL \
+            --cap-add SYS_CHROOT \
+            --pids-limit=256 --memory=4g --cpus=2 \
+            --env ENVIRONMENT=prod \
+            --env GIT_SHA="${GITHUB_SHA}" \
+            --env CRAWL4AI_API_TOKEN=ci-smoke-token \
+            --env SERVING_FINGERPRINT_KEY=ci-fingerprint-key-0123456789abcdef \
+            --env QUALITY_EXTRACTION_BASE_URL=http://quality-stub:8000/v1 \
+            --env QUALITY_EXTRACTION_API_KEY=ci-quality-key \
+            --env QUALITY_EXTRACTION_MODEL=ci-quality-model \
+            --env QUALITY_EXTRACTION_BACKEND_REVISION=ci-quality-revision \
+            --env QUALITY_EXTRACTION_PROMPT_PROFILE=openai_json \
+            clusy-crawler:quality-ci
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11236/health/ready > /tmp/quality-ready.json; then
+              break
+            fi
+            if [ "${attempt}" = 60 ]; then
+              docker logs clusy-crawler-quality-ci
+              exit 1
+            fi
+            sleep 1
+          done
+          jq -e \
+            '.status == "ready" and .checks.quality_backend == "ok"' \
+            /tmp/quality-ready.json
+          curl --fail --silent http://127.0.0.1:11236/health/version \
+            | jq -e \
+              '.quality_dependency_available == true and .quality_backend_enabled == true and .quality_source_selection_schema == "quality-source-selection-serialization.v1"'
+          docker exec -i clusy-crawler-quality-ci python - \
+            < scripts/smoke_configured_quality_backend.py
+          docker exec -i \
+            --env QUALITY_EXTRACTION_PROMPT_PROFILE=mineru_compact \
+            clusy-crawler-quality-ci python - \
+            < scripts/smoke_configured_quality_backend.py
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header 'content-type: application/json' \
+            --data '{"urls":["https://example.com"]}' \
+            http://127.0.0.1:11236/crawl)" = "401"
+          curl --fail --silent \
+            --header 'authorization: Bearer ci-smoke-token' \
+            --header 'content-type: application/json' \
+            --data '{"urls":["https://example.com"],"js_render":false,"extraction_profile":"quality","max_age":0,"store_in_cache":false}' \
+            http://127.0.0.1:11236/crawl \
+            | jq -e '
+              .status == "ok" and
+              .results[0].error == null and
+              .results[0].metadata.model_assisted == true and
+              .results[0].metadata.quality_succeeded == true and
+              .results[0].metadata.source_selection_schema == "quality-source-selection-serialization.v1" and
+              .results[0].metadata.source_selection_replay_verified == true and
+              .results[0].metadata.source_selection_item_count == 3 and
+              .results[0].metadata.source_selection_selected_count == 3 and
+              (.results[0].metadata.source_selection_receipt_sha256 | test("^[0-9a-f]{64}$")) and
+              .results[0].metadata.cache_status == "live" and
+              .results[0].metadata.cache_policy == "no_store"'
 
       - name: Stop smoke containers
         if: always()
@@ -249,3 +381,6 @@ jobs:
           set -euo pipefail
           docker rm --force clusy-crawler-static-ci 2>/dev/null || true
           docker rm --force clusy-crawler-browser-ci 2>/dev/null || true
+          docker rm --force clusy-crawler-quality-ci 2>/dev/null || true
+          docker rm --force clusy-quality-stub-ci 2>/dev/null || true
+          docker network rm clusy-quality-ci-net 2>/dev/null || true

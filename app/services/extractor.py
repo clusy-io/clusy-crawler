@@ -1536,12 +1536,16 @@ def _quality_rejection_reason(
     quality_text: str,
     html_content: str,
     deterministic: ExtractionResult | None,
+    *,
+    serialization_attested: bool = False,
 ) -> str | None:
     """Fail closed before model-assisted Markdown replaces stable output.
 
-    MinerU should only select nodes from the supplied document. Multiset token
-    grounding therefore catches hallucinated text *and* repetition inflation,
-    while the remaining checks reject truncated or malformed serialization.
+    Legacy v0 receipts retain multiset and source-order grounding. A verified
+    v1 receipt has just re-executed the pinned serializer on its retained,
+    independently replayed selected DOM, so only those two lossy heuristics are
+    skipped. Length, unsafe structure, fence, duplication, and deterministic
+    baseline structure-regression checks remain mandatory for both versions.
     """
     quality_words = _quality_content_units(quality_text)
     minimum_words = _MIN_ACCEPT_WORDS
@@ -1578,17 +1582,18 @@ def _quality_rejection_reason(
         if duplicate_blocks / len(blocks) > 0.25:
             return "duplicate_content"
 
-    quality_tokens = _quality_tokens(quality_text)
-    source_tokens = _quality_tokens(_quality_source_text(html_content))
-    if not quality_tokens or not source_tokens:
-        return "ungrounded_content"
-    quality_counts = Counter(quality_tokens)
-    source_counts = Counter(source_tokens)
-    grounded = sum((quality_counts & source_counts).values())
-    if grounded / len(quality_tokens) < 0.80:
-        return "ungrounded_content"
-    if _ordered_grounding_ratio(quality_tokens, source_tokens) < 0.65:
-        return "source_order_violation"
+    if not serialization_attested:
+        quality_tokens = _quality_tokens(quality_text)
+        source_tokens = _quality_tokens(_quality_source_text(html_content))
+        if not quality_tokens or not source_tokens:
+            return "ungrounded_content"
+        quality_counts = Counter(quality_tokens)
+        source_counts = Counter(source_tokens)
+        grounded = sum((quality_counts & source_counts).values())
+        if grounded / len(quality_tokens) < 0.80:
+            return "ungrounded_content"
+        if _ordered_grounding_ratio(quality_tokens, source_tokens) < 0.65:
+            return "source_order_violation"
     if (
         deterministic is not None
         and deterministic.confidence >= 0.75
@@ -1688,14 +1693,32 @@ async def _try_quality_result(
     if quality is None:
         return None
     from app.services.source_selection_receipt_v0 import (
+        QualitySourceSelectionReceiptV0,
         verify_quality_source_selection_receipt_v0,
+    )
+    from app.services.source_serialization_receipt_v1 import (
+        QualitySourceSerializationReceiptV1,
+        verify_quality_source_serialization_receipt_v1,
     )
 
     receipt = quality.selection_receipt
-    if not verify_quality_source_selection_receipt_v0(
-        receipt,
-        raw_html=html_content,
-    ):
+    serialization_attested = False
+    if type(receipt) is QualitySourceSerializationReceiptV1:
+        verified = verify_quality_source_serialization_receipt_v1(
+            receipt,
+            raw_html=html_content,
+            source_url=url,
+            output_text=quality.text,
+        )
+        serialization_attested = verified
+    elif type(receipt) is QualitySourceSelectionReceiptV0:
+        verified = verify_quality_source_selection_receipt_v0(
+            receipt,
+            raw_html=html_content,
+        )
+    else:
+        verified = False
+    if not verified:
         logger.warning(
             "quality_extraction_fallback",
             reason="verification_failed",
@@ -1707,6 +1730,7 @@ async def _try_quality_result(
         quality.text,
         html_content,
         deterministic,
+        serialization_attested=serialization_attested,
     )
     if rejection_reason is not None:
         logger.warning(

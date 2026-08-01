@@ -88,6 +88,18 @@ class TestIpIsBlocked:
 
 class TestValidatePublicUrl:
     @pytest.mark.anyio
+    async def test_oversize_url_is_rejected_before_dns(self, monkeypatch):
+        async def fail_resolve(_host):
+            raise AssertionError("oversize URL must be rejected before DNS")
+
+        monkeypatch.setattr("app.services.fetcher._resolve_all", fail_resolve)
+        url = "https://example.com/" + ("a" * fetcher_mod._MAX_FETCH_URL_CHARS)
+
+        error = await validate_public_url(url)
+
+        assert error == "URL exceeds 4096-character limit"
+
+    @pytest.mark.anyio
     async def test_non_http_scheme_blocked(self):
         assert await validate_public_url("file:///etc/passwd") is not None
         assert await validate_public_url("gopher://x/") is not None
@@ -115,6 +127,28 @@ class TestValidatePublicUrl:
 
 
 class TestFetchUrl:
+    @pytest.mark.anyio
+    async def test_oversize_initial_url_never_reaches_browser_or_static_fetch(
+        self,
+        monkeypatch,
+    ):
+        async def fail_render(*_args, **_kwargs):
+            raise AssertionError("oversize URL must not reach Chromium")
+
+        async def fail_stream(*_args, **_kwargs):
+            raise AssertionError("oversize URL must not reach httpx")
+
+        monkeypatch.setattr(settings, "playwright_enabled", True)
+        monkeypatch.setattr(settings, "playwright_java_script_enabled", True)
+        monkeypatch.setattr("app.services.fetcher._try_direct_render", fail_render)
+        monkeypatch.setattr("app.services.fetcher._stream_one", fail_stream)
+        url = "https://example.com/" + ("a" * fetcher_mod._MAX_FETCH_URL_CHARS)
+
+        result = await fetch_url(url, js_render=True)
+
+        assert result.error == "URL exceeds 4096-character limit"
+        assert result.final_url == url
+
     @pytest.mark.anyio
     async def test_private_ip_rejected(self):
         result = await fetch_url("http://127.0.0.1/test")
@@ -451,6 +485,29 @@ class TestFetchUrl:
         ]
 
     @pytest.mark.anyio
+    async def test_oversize_redirect_is_rejected_before_second_request(
+        self,
+        monkeypatch,
+    ):
+        page_requests: list[str] = []
+
+        async def fake_validate(_url):
+            return None
+
+        async def fake_stream(url, _client):
+            page_requests.append(url)
+            return 302, {"location": "/" + ("a" * 4096)}, b""
+
+        monkeypatch.setattr("app.services.fetcher.validate_public_url", fake_validate)
+        monkeypatch.setattr("app.services.fetcher._stream_one", fake_stream)
+
+        result = await fetch_url("https://example.com/start")
+
+        assert result.error == "URL exceeds 4096-character limit"
+        assert result.status_code == 302
+        assert page_requests == ["https://example.com/start"]
+
+    @pytest.mark.anyio
     @pytest.mark.parametrize(
         "destination",
         [
@@ -599,6 +656,45 @@ class TestFetchUrl:
             result.render_latency_ms,
             abs=0.11,
         )
+        assert calls == {"render": 1, "static": 0}
+
+    @pytest.mark.anyio
+    async def test_js_render_rejects_oversize_final_url_without_static_retry(
+        self,
+        monkeypatch,
+    ):
+        from app.services.renderer import RenderResult
+
+        calls = {"render": 0, "static": 0}
+
+        class FakeRenderer:
+            async def render(self, _url, _wait_for_selector=None):
+                calls["render"] += 1
+                return RenderResult(
+                    html="<html><body>" + ("rendered content " * 20) + "</body></html>",
+                    rendered=True,
+                    latency_ms=1.0,
+                    status_code=200,
+                    content_type="text/html",
+                    final_url=(
+                        "https://example.com/"
+                        + ("a" * fetcher_mod._MAX_FETCH_URL_CHARS)
+                    ),
+                )
+
+        async def fail_static(_url, _client):
+            calls["static"] += 1
+            raise AssertionError("rejected rendered result must not retry statically")
+
+        monkeypatch.setattr(settings, "playwright_enabled", True)
+        monkeypatch.setattr(settings, "playwright_java_script_enabled", True)
+        monkeypatch.setattr("app.services.renderer.get_renderer", FakeRenderer)
+        monkeypatch.setattr("app.services.fetcher._stream_one", fail_static)
+
+        result = await fetch_url("https://example.com/start", js_render=True)
+
+        assert result.error == "URL exceeds 4096-character limit"
+        assert result.rendered is True
         assert calls == {"render": 1, "static": 0}
 
     @pytest.mark.anyio

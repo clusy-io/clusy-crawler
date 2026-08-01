@@ -14,6 +14,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 .coverage
 *.egg-info/
 deploy/
@@ -21,6 +22,7 @@ venv/
 .venv/
 node_modules/
 target/
+**/target/
 native/target/
 native/python/clusy_native/*.so
 # Not needed by the native build or runtime — keep the build context small.

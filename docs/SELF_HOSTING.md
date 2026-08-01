@@ -59,10 +59,11 @@ CRAWLER_DOCKER_TARGET=quality-runtime \
 docker compose up --build --detach
 ```
 
-`quality-runtime` contains a pinned client package, not model weights. The
-quality lane remains disabled until `QUALITY_EXTRACTION_BASE_URL`,
-`QUALITY_EXTRACTION_API_KEY`, and `QUALITY_EXTRACTION_MODEL` are all set.
-Review model and service licenses separately.
+`quality-runtime` contains the pinned MinerU-HTML client and MinerU-Webkit
+local converter, not model weights. The quality lane remains disabled until
+`QUALITY_EXTRACTION_BASE_URL`, `QUALITY_EXTRACTION_API_KEY`, and
+`QUALITY_EXTRACTION_MODEL` are all set. Its worker count is hard-capped at
+two. Review model and service licenses separately.
 
 ## Production configuration
 
@@ -72,7 +73,7 @@ Set these values through a secret store or a protected environment file:
 | --- | --- |
 | `ENVIRONMENT` | `prod` |
 | `GIT_SHA` | Exact 7–64 character hexadecimal source commit |
-| `IMAGE_DIGEST` | Immutable `sha256:` OCI digest when available |
+| `IMAGE_DIGEST` | Immutable `sha256:` runtime identity: Docker config image ID locally or OCI manifest digest from a registry |
 | `CRAWL4AI_API_TOKEN` | Non-empty bearer token |
 | `SERVING_FINGERPRINT_KEY` | Independent high-entropy value, at least 32 characters |
 
@@ -98,18 +99,17 @@ uses:
 - 256 PIDs;
 - 4 GiB memory;
 - 2 CPUs; and
-- the checked-in seccomp profile.
+- `no-new-privileges`, a full capability drop with only `SYS_CHROOT` added,
+  and the checked-in seccomp profile.
 
 The static image contains no Playwright package, Chromium binary, browser
-cache, or sandbox helper. It can use stricter static-container policies such as
-`no-new-privileges` and a full capability drop.
-
-The browser and quality images have a different sandbox contract. They include
-Playwright's version-matched Chromium SUID helper for hosts that block
-unprivileged user namespaces. The checked-in Compose stack therefore uses
-seccomp but deliberately does **not** set `no-new-privileges` or drop every
-capability: either can neutralize the SUID fallback. Never solve a browser
-startup failure by setting `PLAYWRIGHT_DISABLE_SANDBOX=true`.
+cache, or sandbox helper. Browser and quality images include Chromium and its
+version-matched helper. The checked-in profile permits the user-namespace
+syscalls and `SYS_CHROOT` needed by the enabled Chromium sandbox while
+dropping every other capability. Hosts that prohibit unprivileged user
+namespaces or force `nosuid` require a reviewed platform-specific sandbox
+policy. Never solve a browser startup failure by setting
+`PLAYWRIGHT_DISABLE_SANDBOX=true`.
 
 See [`../SECURITY.md`](../SECURITY.md#chromium-sandbox) before changing browser
 container flags.
@@ -193,7 +193,7 @@ Release and rollback checks are in
 
 1. Review the source diff, changelog, dependency lockfiles, and security notes.
 2. Build all image targets used by the installation from an exact clean commit.
-3. Record source commit and OCI digest.
+3. Record the source commit and immutable runtime image identity.
 4. Start the new revision without replacing the known-good instance.
 5. Run readiness, identity, authentication, SSRF, and live-crawl checks.
 6. Move traffic only after every required path passes.

@@ -91,7 +91,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 11235
 | --- | --- | --- |
 | `static-runtime` | API, native/Python extraction, PDF support; no Playwright or browser | Lowest-footprint deterministic service |
 | `browser-runtime` | Static runtime plus Playwright and Chromium | Conditional or explicit JavaScript rendering; Compose default |
-| `quality-runtime` | Browser runtime plus the pinned MinerU-HTML client | Operator-configured OpenAI-compatible quality backend |
+| `quality-runtime` | Browser runtime plus pinned MinerU-HTML and MinerU-Webkit CPU dependencies | Operator-configured OpenAI-compatible quality backend |
 
 No model weights are bundled. Selecting `quality-runtime` does not enable a
 backend until its endpoint, API key, and model are configured.
@@ -120,11 +120,11 @@ The main design boundaries are:
   path. Rendering is conditional or explicit.
 - **Deterministic result first.** Optional quality backends cannot remove the
   known local fallback.
-- **Source-derived structure.** Deterministic paths replay source text. A
-  configured quality backend can label source-derived item IDs; Clusy
-  independently validates the exact raw response, replays that selection, and
-  binds both in a versioned receipt before applying grounding and completeness
-  checks. Any failure falls back locally.
+- **Source-derived structure.** Deterministic paths replay source text. The
+  optional model may only label source-derived item IDs. Clusy rebuilds the
+  pinned preprocessing, replays the complete selection, admits bounded
+  serializer work, performs the authoritative local serialization, and
+  authenticates a closed process-local receipt. Any failure falls back locally.
 - **Separate extraction from discovery.** Main-content selection and the crawl
   frontier are independent state machines; indexing and ranking remain outside
   this service.
@@ -184,8 +184,9 @@ If the optional quality backend is absent, saturated, unavailable, invalid, or
 slower than its deadline, the deterministic candidate remains authoritative.
 The quality lane is disabled unless its base URL, API key, and model are all
 configured. Successful model output is not persisted in Redis unless an
-immutable backend revision is supplied and its source-selection receipt was
-independently replayed.
+immutable backend revision is supplied and its v1 source-serialization receipt
+was independently replayed and authenticated. Legacy v0 receipts remain
+readable but are never persisted.
 
 ## API
 
@@ -293,7 +294,8 @@ Required for production mode:
 - non-empty `CRAWL4AI_API_TOKEN`; and
 - an independent `SERVING_FINGERPRINT_KEY` with at least 32 characters.
 
-Set `IMAGE_DIGEST` when the platform exposes an immutable OCI digest.
+Set `IMAGE_DIGEST` to the immutable Docker config image ID for a host-local
+build, or to the OCI manifest digest on a registry-backed platform.
 
 | Optional capability | Main settings |
 | --- | --- |

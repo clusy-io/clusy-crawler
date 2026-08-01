@@ -19,6 +19,13 @@ browser state, and infrastructure telemetry require separate policies.
 
 Do not log, commit, bake into images, or pass credentials on a command line.
 
+The optional quality lane has fixed admission limits that configuration cannot
+raise: 1,000,000 raw characters, 5,000 DOM elements, depth 64, and 8,000 text
+fragments before preprocessing. Serializer work has additional URL, DOM,
+table, image, list, code, and formula caps. Ineligible pages keep the
+deterministic candidate and do not count as backend outages. Worker concurrency
+is hard-capped at two because the pinned serializer is process-global.
+
 ## Health and identity
 
 ```bash
@@ -45,7 +52,8 @@ Before moving traffic:
 
 1. Start from a clean, reviewed commit.
 2. Build from that exact commit and inject its `GIT_SHA`.
-3. Record the immutable OCI digest.
+3. Record the immutable runtime image identity: the Docker config image ID for
+   a host-local build or the OCI manifest digest from a registry.
 4. Supply credentials through the platform secret store without printing
    them.
 5. Start a candidate revision separately from the known-good instance.
@@ -62,12 +70,19 @@ Before moving traffic:
 Documentation-only changes and default-off research code do not require a
 runtime deployment.
 
+For `quality-runtime`, verify the frozen dependency surface and run the real
+pinned preprocessor and MinerU-Webkit converter with networking disabled.
+Exercise both supported prompt profiles against a bounded local
+OpenAI-compatible stub and require an authenticated
+`quality-source-selection-serialization.v1` receipt. A deterministic fallback
+is safe service behavior, but it is not a passing quality-release check.
+
 ## Release identity
 
 A reviewable release binds:
 
 - source commit;
-- OCI digest;
+- immutable runtime image identity;
 - selected Docker target;
 - pipeline and adaptive-router revisions;
 - dependency/native identities;
@@ -134,10 +149,13 @@ Monitor at least:
 
 1. Confirm the image is `browser-runtime` or `quality-runtime`.
 2. Verify the version-matched sandbox helper and checked-in seccomp profile.
-3. Confirm the container has writable tmpfs and sufficient shared memory.
-4. Check whether `no-new-privileges`, a capability drop, or a `nosuid` mount
-   disabled the required sandbox path.
-5. Do not set `PLAYWRIGHT_DISABLE_SANDBOX=true` in production.
+3. Confirm user namespaces are available, `SYS_CHROOT` is the only added
+   capability, and the container has writable tmpfs and sufficient shared
+   memory.
+4. If the host requires the SUID fallback, check whether
+   `no-new-privileges` or a `nosuid` mount neutralized it and review the
+   orchestrator policy before changing the hardened profile.
+5. Never set `PLAYWRIGHT_DISABLE_SANDBOX=true` in production.
 
 ### Redis degrades
 
@@ -147,9 +165,11 @@ timeouts until they dominate request latency.
 
 ### Optional quality backend degrades
 
-Confirm that deterministic fallback succeeds, backend identity is correct, and
-the circuit breaker opens. Reduce or disable optional model traffic without
-changing the deterministic route.
+Confirm that deterministic fallback succeeds, backend identity is correct, the
+v1 source-serialization schema is advertised, and the circuit breaker opens.
+Reduce or disable optional model traffic without changing the deterministic
+route. Receipts are process-local capabilities; do not queue or pickle them
+across workers or expect them to survive a restart.
 
 ### Memory pressure
 
