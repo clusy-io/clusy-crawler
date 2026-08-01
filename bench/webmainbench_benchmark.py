@@ -125,6 +125,11 @@ _FORBIDDEN_SCRUBBED_MARKUP = (
     re.compile(r"\bmark-selected\b", re.IGNORECASE),
     re.compile(r"<\s*/?\s*marked-(?:text|tail)\b", re.IGNORECASE),
 )
+_RCDATA_ESCAPED_WRAPPER_TAG = re.compile(
+    r"&lt;/?marked-(?:text|tail)&gt;",
+    re.IGNORECASE,
+)
+_RCDATA_WRAPPER_TOKEN = re.compile(r"\bmarked-(?:text|tail)\b", re.IGNORECASE)
 
 
 class BenchmarkError(RuntimeError):
@@ -974,6 +979,20 @@ def _tag_has_annotation_style_id(tag: str, name_end: int) -> bool:
     return False
 
 
+def _scrub_annotation_rcdata(value: str) -> tuple[str, int]:
+    """Remove the exact serialized wrappers used in title/textarea RCDATA.
+
+    WebMainBench's annotation tool serialized some injected wrapper tags in
+    HTML RCDATA.  Accept only its canonical ``&lt;...&gt;`` spelling.  An
+    ambiguous or malformed marker fails closed instead of using a broad regex
+    that could consume unrelated page text or become quadratic.
+    """
+    scrubbed, count = _RCDATA_ESCAPED_WRAPPER_TAG.subn("", value)
+    if _RCDATA_WRAPPER_TOKEN.search(scrubbed):
+        raise BenchmarkError("ambiguous annotation wrapper remains in RCDATA")
+    return scrubbed, count
+
+
 def scrub_annotation_artifacts(html: str) -> tuple[str, dict[str, int]]:
     """Remove only known annotation UI signals while preserving page text."""
     output: list[str] = []
@@ -989,19 +1008,13 @@ def scrub_annotation_artifacts(html: str) -> tuple[str, dict[str, int]]:
             end = html.find("-->", start + 4)
             if end < 0:
                 comment = html[start:]
-                if any(
-                    pattern.search(comment)
-                    for pattern in _FORBIDDEN_SCRUBBED_MARKUP
-                ):
+                if any(pattern.search(comment) for pattern in _FORBIDDEN_SCRUBBED_MARKUP):
                     counters["annotation_comments"] += 1
                 else:
                     output.append(comment)
                 break
             comment = html[start : end + 3]
-            if any(
-                pattern.search(comment)
-                for pattern in _FORBIDDEN_SCRUBBED_MARKUP
-            ):
+            if any(pattern.search(comment) for pattern in _FORBIDDEN_SCRUBBED_MARKUP):
                 # Comments are non-rendered input. Some malformed benchmark
                 # pages contain complete annotation-tool HTML snapshots inside
                 # comments; dropping only those comments removes the leak
@@ -1058,6 +1071,36 @@ def scrub_annotation_artifacts(html: str) -> tuple[str, dict[str, int]]:
         output.append(scrubbed_tag)
         position = tag_end + 1
 
+        # title and textarea are escapable raw-text elements.  The annotation
+        # tool sometimes serialized its injected wrapper tags inside them;
+        # scrub only that RCDATA rather than changing encoded markup globally.
+        if name in {"title", "textarea"} and not closing and not tag.rstrip().endswith("/>"):
+            closing_match = re.search(
+                rf"</\s*{re.escape(name)}\b",
+                html[position:],
+                flags=re.IGNORECASE,
+            )
+            if closing_match is None:
+                raw_content = html[position:]
+                scrubbed_content, removed = _scrub_annotation_rcdata(raw_content)
+                output.append(scrubbed_content)
+                if removed:
+                    counters["entity_escaped_wrapper_tags"] += removed
+                position = len(html)
+                break
+            closing_start = position + closing_match.start()
+            closing_end = _find_tag_end(html, closing_start)
+            if closing_end is None:
+                raise BenchmarkError(f"{name} closing tag is malformed")
+            raw_content = html[position:closing_start]
+            scrubbed_content, removed = _scrub_annotation_rcdata(raw_content)
+            output.append(scrubbed_content)
+            output.append(html[closing_start : closing_end + 1])
+            if removed:
+                counters["entity_escaped_wrapper_tags"] += removed
+            position = closing_end + 1
+            continue
+
         # Script and non-annotation style content is raw text.  Copy it without
         # interpreting JavaScript/CSS strings as markup.
         if name in {"script", "style"} and not closing and not tag.rstrip().endswith("/>"):
@@ -1068,10 +1111,7 @@ def scrub_annotation_artifacts(html: str) -> tuple[str, dict[str, int]]:
             )
             if closing_match is None:
                 raw_content = html[position:]
-                if any(
-                    pattern.search(raw_content)
-                    for pattern in _FORBIDDEN_SCRUBBED_MARKUP
-                ):
+                if any(pattern.search(raw_content) for pattern in _FORBIDDEN_SCRUBBED_MARKUP):
                     output.pop()
                     counters[f"annotation_{name}_blocks"] += 1
                 else:
@@ -1082,10 +1122,7 @@ def scrub_annotation_artifacts(html: str) -> tuple[str, dict[str, int]]:
             closing_end = _find_tag_end(html, closing_start)
             if closing_end is None:
                 raw_content = html[position:]
-                if any(
-                    pattern.search(raw_content)
-                    for pattern in _FORBIDDEN_SCRUBBED_MARKUP
-                ):
+                if any(pattern.search(raw_content) for pattern in _FORBIDDEN_SCRUBBED_MARKUP):
                     output.pop()
                     counters[f"annotation_{name}_blocks"] += 1
                 else:
@@ -1093,10 +1130,7 @@ def scrub_annotation_artifacts(html: str) -> tuple[str, dict[str, int]]:
                 position = len(html)
                 break
             raw_content = html[position:closing_start]
-            if any(
-                pattern.search(raw_content)
-                for pattern in _FORBIDDEN_SCRUBBED_MARKUP
-            ):
+            if any(pattern.search(raw_content) for pattern in _FORBIDDEN_SCRUBBED_MARKUP):
                 output.pop()
                 counters[f"annotation_{name}_blocks"] += 1
             else:
