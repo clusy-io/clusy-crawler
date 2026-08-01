@@ -172,6 +172,23 @@ def test_annotation_audit_rejects_raw_and_entity_escaped_artifacts(
         study._assert_annotation_free(artifact, context="test payload")
 
 
+def test_annotation_audit_ignores_deeply_nested_unrelated_entities() -> None:
+    value = "&lt;ordinary-example&gt;"
+    for _ in range(24):
+        value = value.replace("&", "&amp;")
+
+    study._assert_annotation_free(value, context="test payload")
+
+
+def test_annotation_audit_rejects_deeply_nested_annotation_wrapper() -> None:
+    value = "&lt;marked-text&gt;x&lt;/marked-text&gt;"
+    for _ in range(24):
+        value = value.replace("&", "&amp;")
+
+    with pytest.raises(study.SelectorStudyError, match="annotation artifact"):
+        study._assert_annotation_free(value, context="test payload")
+
+
 def test_hostname_unit_is_exact_lowercase_hostname_not_registrable_domain() -> None:
     assert (
         study._canonical_hostname(

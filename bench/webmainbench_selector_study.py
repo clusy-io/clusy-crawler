@@ -105,7 +105,11 @@ _RAW_ANNOTATION_PATTERNS = (
     re.compile(r"\bmark-selected\b", re.IGNORECASE),
     re.compile(r"<\s*/?\s*marked-(?:text|tail)\b", re.IGNORECASE),
 )
-_MAX_ENTITY_DECODE_PASSES = 8
+_ANNOTATION_IDENTIFIER = re.compile(
+    r"cc-select|data-anno-uid|cc-extrastyle|mark-selected|marked-(?:text|tail)",
+    re.IGNORECASE,
+)
+_MAX_ENTITY_DECODE_PASSES = 64
 
 
 class SelectorStudyError(RuntimeError):
@@ -257,6 +261,15 @@ def _parse_row(raw_line: bytes, dataset_index: int) -> dict[str, Any]:
 
 def _assert_annotation_free(value: str, *, context: str) -> None:
     """Reject raw or repeatedly entity-escaped annotation-tool signals."""
+
+    # Re-escaping HTML entities preserves the annotation tool's ASCII
+    # identifiers while adding another ``amp;`` layer around punctuation.  If
+    # none of those identifiers is present, decoding the whole document cannot
+    # reveal an annotation wrapper produced by that serializer.  This fast
+    # path also avoids mistaking deeply nested, unrelated page entities for an
+    # annotation risk.
+    if not _ANNOTATION_IDENTIFIER.search(value):
+        return
 
     representation = value
     for decode_pass in range(_MAX_ENTITY_DECODE_PASSES + 1):
