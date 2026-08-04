@@ -167,7 +167,10 @@ class Settings(BaseSettings):
         le=30,
     )
     quality_extraction_max_input_chars: int = Field(default=1_000_000, ge=1024)
-    quality_extraction_max_concurrency: int = Field(default=2, ge=1, le=32)
+    # MinerU-Webkit's pinned serializer is process-global and guarded by one
+    # lock. Keep the optional lane to two bounded workers so timed-out calls
+    # cannot accumulate an operator-configured queue of stale serializer work.
+    quality_extraction_max_concurrency: int = Field(default=2, ge=1, le=2)
     quality_extraction_failure_threshold: int = Field(default=3, ge=1, le=100)
     quality_extraction_cooldown_s: float = Field(default=30.0, ge=1, le=600)
     # The adaptive profile always produces the normal deterministic candidate

@@ -71,7 +71,33 @@ class QualitySourceSelectionReceiptV0:
     digest_is_authentication: bool = False
 
 
-def build_quality_source_selection_receipt_v0(
+@dataclass(frozen=True, slots=True)
+class QualitySourceSelectionReplayV0:
+    """A v0 receipt plus the exact canonical DOM produced by its replay."""
+
+    receipt: QualitySourceSelectionReceiptV0
+    selected_html: str
+    selected_visible_text_chars: int
+
+
+@dataclass(frozen=True, slots=True)
+class QualitySourceDerivedReplayV0:
+    """Canonical source artifacts replayed from a trusted preprocessor output.
+
+    This deliberately carries no model response.  Its sole purpose is to prove
+    that a bounded set of selected item pointers resolves to a subgraph of the
+    independently derived mapped DOM.
+    """
+
+    simplified_html_sha256: str
+    mapped_html_sha256: str
+    selected_html_sha256: str
+    item_count: int
+    selected_count: int
+    selected_html: str
+
+
+def build_quality_source_selection_replay_v0(
     *,
     raw_html: str,
     raw_model_response: str,
@@ -82,8 +108,8 @@ def build_quality_source_selection_receipt_v0(
     selected_html: str,
     upstream_revision: str,
     prompt_profile: str,
-) -> QualitySourceSelectionReceiptV0:
-    """Validate and independently replay one complete item-label selection."""
+) -> QualitySourceSelectionReplayV0:
+    """Validate and return one complete item-label selection and its replay."""
 
     raw_html = _bounded_exact_string("raw_html", raw_html)
     raw_model_response = _bounded_exact_string(
@@ -160,7 +186,7 @@ def build_quality_source_selection_receipt_v0(
         "replay_verified": True,
         "digest_is_authentication": False,
     }
-    return QualitySourceSelectionReceiptV0(
+    receipt = QualitySourceSelectionReceiptV0(
         schema_version=SOURCE_SELECTION_RECEIPT_V0_SCHEMA,
         upstream_revision=upstream_revision,
         prompt_profile=prompt_profile,
@@ -178,6 +204,40 @@ def build_quality_source_selection_receipt_v0(
         receipt_sha256=_sha256_json(identity),
         digest_is_authentication=False,
     )
+    return QualitySourceSelectionReplayV0(
+        receipt=receipt,
+        selected_html=replayed_canonical,
+        selected_visible_text_chars=sum(
+            len(part) for part in replayed_html.itertext()
+        ),
+    )
+
+
+def build_quality_source_selection_receipt_v0(
+    *,
+    raw_html: str,
+    raw_model_response: str,
+    response_format: str,
+    simplified_html: str,
+    mapped_html: str,
+    item_labels: object,
+    selected_html: str,
+    upstream_revision: str,
+    prompt_profile: str,
+) -> QualitySourceSelectionReceiptV0:
+    """Validate and independently replay one complete item-label selection."""
+
+    return build_quality_source_selection_replay_v0(
+        raw_html=raw_html,
+        raw_model_response=raw_model_response,
+        response_format=response_format,
+        simplified_html=simplified_html,
+        mapped_html=mapped_html,
+        item_labels=item_labels,
+        selected_html=selected_html,
+        upstream_revision=upstream_revision,
+        prompt_profile=prompt_profile,
+    ).receipt
 
 
 def verify_quality_source_selection_receipt_v0(
@@ -200,6 +260,52 @@ def verify_quality_source_selection_receipt_v0(
         and receipt.digest_is_authentication is False
         and receipt.source_sha256 == _sha256_text(raw_html)
         and receipt.receipt_sha256 == _sha256_json(identity)
+    )
+
+
+def replay_quality_source_selection_from_derived_v0(
+    *,
+    simplified_html: str,
+    mapped_html: str,
+    selected_item_ids: object,
+) -> QualitySourceDerivedReplayV0:
+    """Replay selected pointers only from independently derived source DOMs.
+
+    The caller is responsible for obtaining ``simplified_html`` and
+    ``mapped_html`` from a trusted, pinned preprocessor.  This function closes
+    the remaining structural boundary: both DOMs must expose the same complete
+    contiguous item catalogue, and every retained node is replayed from the
+    mapped DOM rather than accepted from a caller-provided fragment.
+    """
+
+    simplified_html = _bounded_exact_string("simplified_html", simplified_html)
+    mapped_html = _bounded_exact_string("mapped_html", mapped_html)
+    simplified_root = _parse_html(simplified_html, field="simplified_html")
+    mapped_root = _parse_html(mapped_html, field="mapped_html")
+    prompt_ids = _ordered_item_ids(simplified_root, field="simplified_html")
+    mapped_ids = _ordered_item_ids(mapped_root, field="mapped_html")
+    if not prompt_ids:
+        raise SourceSelectionReceiptError("source selection has no prompt items")
+    if prompt_ids != mapped_ids:
+        raise SourceSelectionReceiptError(
+            "prompt and mapped-DOM item catalogues differ"
+        )
+
+    selected_ids = _canonical_selected_item_ids(
+        selected_item_ids,
+        prompt_ids=prompt_ids,
+    )
+    simplified_canonical = _canonical_html(simplified_root)
+    mapped_canonical = _canonical_html(mapped_root)
+    selected_root = _replay_selected_html(mapped_root, selected_ids)
+    selected_canonical = _canonical_html(selected_root)
+    return QualitySourceDerivedReplayV0(
+        simplified_html_sha256=_sha256_text(simplified_canonical),
+        mapped_html_sha256=_sha256_text(mapped_canonical),
+        selected_html_sha256=_sha256_text(selected_canonical),
+        item_count=len(prompt_ids),
+        selected_count=len(selected_ids),
+        selected_html=selected_canonical,
     )
 
 
@@ -373,6 +479,35 @@ def _canonical_labels(
     if set(output) != set(prompt_ids):
         raise SourceSelectionReceiptError("model label IDs differ from prompt IDs")
     return output
+
+
+def _canonical_selected_item_ids(
+    selected_item_ids: object,
+    *,
+    prompt_ids: tuple[str, ...],
+) -> tuple[str, ...]:
+    if type(selected_item_ids) is not tuple or not selected_item_ids:
+        raise SourceSelectionReceiptError(
+            "selected item IDs must be a non-empty exact tuple"
+        )
+    selected_ids = selected_item_ids
+    if len(selected_ids) > len(prompt_ids):
+        raise SourceSelectionReceiptError("selected item IDs exceed the source catalogue")
+    selected_set: set[str] = set()
+    previous = 0
+    for item_id in selected_ids:
+        if type(item_id) is not str or _CANONICAL_ITEM_ID.fullmatch(item_id) is None:
+            raise SourceSelectionReceiptError("selected item IDs are not canonical")
+        numeric = int(item_id)
+        if numeric <= previous or numeric > len(prompt_ids) or item_id in selected_set:
+            raise SourceSelectionReceiptError(
+                "selected item IDs are not strictly ordered source pointers"
+            )
+        selected_set.add(item_id)
+        previous = numeric
+    if not selected_set.issubset(prompt_ids):
+        raise SourceSelectionReceiptError("selected item IDs differ from the source catalogue")
+    return selected_ids
 
 
 def _strict_model_labels(

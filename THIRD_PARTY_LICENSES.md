@@ -48,10 +48,12 @@ graph shown above.
 
 Optional extra `[quality]` (off by default) pins
 `mineru-html[openai]` (Apache-2.0) to upstream revision
-`73cf266690befd209cae7e6fdff9716d5b31a976`. It provides the MinerU-HTML v1.1
-preprocessing, OpenAI-compatible inference adapter, label mapping, and
-Markdown conversion pipeline. Its transitive dependency graph is recorded in
-`uv.lock`; preserve the packages' notices when distributing this extra.
+`73cf266690befd209cae7e6fdff9716d5b31a976` (package version 1.1.2) and makes
+`mineru-webkit==0.1.6` (Apache-2.0) a direct dependency. MinerU-HTML provides
+preprocessing, the OpenAI-compatible inference adapter, and source-item label
+mapping; MinerU-Webkit performs the separately verified local `mm_md`
+serialization. Their complete runtime graph is recorded in `uv.lock`. Preserve
+the packages' notices when distributing this extra.
 
 No model weights are bundled. In particular, the upstream v1.1 compact model
 is a Tencent Hunyuan derivative under the Tencent Hunyuan Community License,

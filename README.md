@@ -8,7 +8,7 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Rust 1.85](https://img.shields.io/badge/Rust-1.85-000000?logo=rust&logoColor=white)](native/Cargo.toml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache--2.0-4C1)](LICENSE)
-[![Release: Beta 2 Preview](https://img.shields.io/badge/release-beta_2_preview-F59E0B)](CHANGELOG.md)
+[![Release: Beta 3 Preview](https://img.shields.io/badge/release-beta_3_preview-F59E0B)](CHANGELOG.md)
 
 An Apache-2.0, self-hosted FastAPI service for turning HTTP(S) resources into
 clean Markdown, HTML, links, or schema-constrained JSON.
@@ -19,6 +19,10 @@ clean Markdown, HTML, links, or schema-constrained JSON.
 
 </div>
 
+<p align="center">
+  <img src="docs/launch-card.png" alt="Clusy Crawler Beta 3 Preview" width="100%">
+</p>
+
 ---
 
 Clusy Crawler combines guarded HTTP/2 fetching, conditional Chromium
@@ -26,7 +30,7 @@ rendering, a native Rust/PyO3 extraction core, deterministic specialists,
 bounded recursive discovery, optional Redis caching, and explicit completeness
 provenance. The default extraction path is local and does not require a model.
 
-> **Release status: Beta 2 Preview**
+> **Release status: Beta 3 Preview**
 >
 > The deterministic extraction and self-hosting paths are available for
 > evaluation. Pin a source commit or image digest: API and operational
@@ -37,6 +41,14 @@ provenance. The default extraction path is local and does not require a model.
 > One direct public-repository AEB article-body result is registered as
 > Verified. Broader WebMain, WCXB, and live-provider evaluations remain
 > outside the claim set. Every measured statement below is registry-bound.
+
+### One result you can reproduce
+
+> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
+
+The complete receipt and the limits of this Beta 2 comparison are versioned
+in the repository. Beta 3 adds runtime and source-serialization hardening
+without rewriting that historical result.
 
 ## Quick start
 
@@ -91,7 +103,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 11235
 | --- | --- | --- |
 | `static-runtime` | API, native/Python extraction, PDF support; no Playwright or browser | Lowest-footprint deterministic service |
 | `browser-runtime` | Static runtime plus Playwright and Chromium | Conditional or explicit JavaScript rendering; Compose default |
-| `quality-runtime` | Browser runtime plus the pinned MinerU-HTML client | Operator-configured OpenAI-compatible quality backend |
+| `quality-runtime` | Browser runtime plus pinned MinerU-HTML and MinerU-Webkit CPU dependencies | Operator-configured OpenAI-compatible quality backend |
 
 No model weights are bundled. Selecting `quality-runtime` does not enable a
 backend until its endpoint, API key, and model are configured.
@@ -120,11 +132,11 @@ The main design boundaries are:
   path. Rendering is conditional or explicit.
 - **Deterministic result first.** Optional quality backends cannot remove the
   known local fallback.
-- **Source-derived structure.** Deterministic paths replay source text. A
-  configured quality backend can label source-derived item IDs; Clusy
-  independently validates the exact raw response, replays that selection, and
-  binds both in a versioned receipt before applying grounding and completeness
-  checks. Any failure falls back locally.
+- **Source-derived structure.** Deterministic paths replay source text. The
+  optional model may only label source-derived item IDs. Clusy rebuilds the
+  pinned preprocessing, replays the complete selection, admits bounded
+  serializer work, performs the authoritative local serialization, and
+  authenticates a closed process-local receipt. Any failure falls back locally.
 - **Separate extraction from discovery.** Main-content selection and the crawl
   frontier are independent state machines; indexing and ranking remain outside
   this service.
@@ -184,8 +196,9 @@ If the optional quality backend is absent, saturated, unavailable, invalid, or
 slower than its deadline, the deterministic candidate remains authoritative.
 The quality lane is disabled unless its base URL, API key, and model are all
 configured. Successful model output is not persisted in Redis unless an
-immutable backend revision is supplied and its source-selection receipt was
-independently replayed.
+immutable backend revision is supplied and its v1 source-serialization receipt
+was independently replayed and authenticated. Legacy v0 receipts remain
+readable but are never persisted.
 
 ## API
 
@@ -293,7 +306,8 @@ Required for production mode:
 - non-empty `CRAWL4AI_API_TOKEN`; and
 - an independent `SERVING_FINGERPRINT_KEY` with at least 32 characters.
 
-Set `IMAGE_DIGEST` when the platform exposes an immutable OCI digest.
+Set `IMAGE_DIGEST` to the immutable Docker config image ID for a host-local
+build, or to the OCI manifest digest on a registry-backed platform.
 
 | Optional capability | Main settings |
 | --- | --- |
@@ -307,8 +321,6 @@ Set `IMAGE_DIGEST` when the platform exposes an immutable OCI digest.
 All validated defaults are defined in [`app/config.py`](app/config.py).
 
 ## Evidence status
-
-> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
 
 The Verified receipt was produced directly from a clean public source tree
 identical to the `v0.2.0-beta.2` tag tree. Its exact Trafilatura 2.1.0

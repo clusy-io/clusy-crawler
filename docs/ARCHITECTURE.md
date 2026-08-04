@@ -95,13 +95,21 @@ extraction. Candidate comparison is bounded and deterministic.
 backend is absent, saturated, times out, trips its circuit breaker, returns an
 invalid response, or loses the verification comparison. The pinned MinerU
 adapter classifies source-derived `_item_id` blocks rather than generating page
-text. Clusy strictly validates and binds the exact raw JSON or compact response,
-requires it to agree with complete parsed labels, and independently replays the
-selected DOM into a
-[`quality-source-selection.v0`](QUALITY_SOURCE_SELECTION.md) receipt before
-accepting its deterministic serialization. Bounded source-token coverage and
-ordering remain additional checks. The receipt binds a parser-repaired mapped
-DOM; it is not yet an original-byte span certificate.
+text. Inside a bounded worker, Clusy reruns the pinned preprocessor from the raw
+page after a fixed raw-DOM admission (1,000,000 characters, 5,000 elements,
+depth 64, and 8,000 text fragments), requires exact upstream-artifact equality,
+rebuilds the complete model label and pointer selection, applies deterministic
+serializer-work admission, and runs one locked local serializer. URL, DOM,
+node, depth, fragment, table-grid, image-expansion, list, and code-work limits
+are enforced before the converter; active/internal markup, inline SVG, and
+formula-renderer markup fail closed to the deterministic candidate. A
+process-local HMAC authenticates the closed
+[`quality-source-selection-serialization.v1`](QUALITY_SOURCE_SELECTION.md)
+receipt before acceptance. The verifier performs no third-party import or
+heavy replay on the event loop. Legacy v0 receipts retain token-grounding and
+source-order checks; authenticated v1 output may skip those two lossy
+heuristics while preserving every other acceptance gate. This proves
+source-derived serialization, not relevance or original-byte spans.
 
 ### 5. Projection and output
 
@@ -150,8 +158,8 @@ request's `max_age` policy.
 The effective read/write decision is returned in a versioned per-result
 receipt. Policy-specific singleflight keys prevent a no-store request from
 joining work that may write a result. Every crawl response also carries the
-source revision, serving-config fingerprint, and image digest of the process
-that produced it.
+source revision, serving-config fingerprint, and immutable runtime image
+identity of the process that produced it.
 
 Policy-aware recursive crawls bypass the flat result cache because the
 cache envelope cannot bind and revalidate the complete redirect, robots, and

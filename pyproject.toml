@@ -1,6 +1,6 @@
 [project]
 name = "clusy-crawler"
-version = "0.2.0b2"
+version = "0.2.0b3"
 description = "Fast, permissive, self-hosted web content extraction service"
 requires-python = ">=3.12"
 dependencies = [
@@ -57,6 +57,9 @@ clusy-native = { path = "native" }
 # install and deterministic crawler image.
 quality = [
     "mineru-html[openai] @ git+https://github.com/opendatalab/MinerU-HTML.git@73cf266690befd209cae7e6fdff9716d5b31a976",
+    # The v1 source-serialization receipt verifies this exact local converter.
+    # Keep it direct rather than relying on MinerU-HTML's transitive range.
+    "mineru-webkit==0.1.6",
 ]
 # Optional LLM structured extraction (the "json" output format). Install with
 # `pip install -e ".[llm]"`; the service runs fine without it (feature disabled).

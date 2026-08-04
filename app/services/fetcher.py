@@ -39,6 +39,12 @@ ALLOWED_SCHEMES = frozenset({"http", "https"})
 _MAX_REDIRECTS = 5
 _RETRYABLE_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
+# Keep every URL handed to DNS, httpx, Chromium, document-policy callbacks, and
+# downstream source serializers within the same public request-model budget.
+# Redirect Location values are attacker controlled, so this guard is repeated
+# after urljoin instead of relying only on the next loop's SSRF validation.
+_MAX_FETCH_URL_CHARS = 4096
+
 # Hard ceiling on the DECOMPRESSED response body. httpx's aiter_bytes yields
 # content-decoded bytes, so counting them here caps the post-Brotli/gzip size —
 # closing the decompression-bomb DoS (an 800-byte body can inflate to >500 MB).
@@ -197,6 +203,9 @@ async def validate_public_url(url: str) -> str | None:
     (not just the first) blocks the multi-record bypass, and re-running this on
     every redirect hop blocks the "public URL 302s to 169.254.169.254" attack.
     """
+    length_error = _url_length_error(url)
+    if length_error is not None:
+        return length_error
     parsed = urlparse(url)
     if parsed.scheme not in ALLOWED_SCHEMES:
         return f"blocked scheme: {parsed.scheme or '(none)'!r}"
@@ -212,6 +221,14 @@ async def validate_public_url(url: str) -> str | None:
     for ip in ips:
         if _ip_is_blocked(ip):
             return f"{host} resolves to non-public address {ip}"
+    return None
+
+
+def _url_length_error(url: object) -> str | None:
+    if type(url) is not str:
+        return "URL must be an exact string"
+    if len(url) > _MAX_FETCH_URL_CHARS:
+        return f"URL exceeds {_MAX_FETCH_URL_CHARS}-character limit"
     return None
 
 
@@ -485,6 +502,18 @@ async def _try_direct_render(
         )
         return None
 
+    final_url = rendered.final_url or url
+    final_url_error = _url_length_error(final_url)
+    if final_url_error is not None:
+        return FetchResult(
+            error=final_url_error,
+            status_code=rendered.status_code,
+            latency_ms=rendered.latency_ms,
+            render_latency_ms=rendered.latency_ms,
+            final_url=final_url,
+            rendered=True,
+        )
+
     content_type = rendered.content_type.strip().lower()
     mime = content_type.partition(";")[0]
     if (
@@ -513,7 +542,7 @@ async def _try_direct_render(
             latency_ms=rendered.latency_ms,
             render_latency_ms=rendered.latency_ms,
             bytes_downloaded=downloaded_bytes,
-            final_url=rendered.final_url or url,
+            final_url=final_url,
             rendered=True,
         )
 
@@ -525,7 +554,7 @@ async def _try_direct_render(
         latency_ms=rendered.latency_ms,
         render_latency_ms=rendered.latency_ms,
         bytes_downloaded=downloaded_bytes,
-        final_url=rendered.final_url or url,
+        final_url=final_url,
         rendered=True,
     )
 
@@ -693,6 +722,10 @@ async def fetch_url(
         result.latency_ms = round(fetch_elapsed_ms + render_elapsed_ms, 1)
         return result
 
+    initial_url_error = _url_length_error(url)
+    if initial_url_error is not None:
+        return finish(FetchResult(error=initial_url_error, final_url=url))
+
     # Forced/explicit JS requests go straight to Chromium. Previously they
     # downloaded every page once with httpx and then fetched it again in the
     # browser; conditional escalation downloaded it three times. Obvious PDFs
@@ -782,6 +815,15 @@ async def fetch_url(
         location = _header_value(headers, "location")
         if 300 <= status_code < 400 and location:
             current = urljoin(current, location)
+            redirect_url_error = _url_length_error(current)
+            if redirect_url_error is not None:
+                return finish(
+                    FetchResult(
+                        error=redirect_url_error,
+                        status_code=status_code,
+                        final_url=current,
+                    )
+                )
             continue
         break
     else:

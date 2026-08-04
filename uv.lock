@@ -435,7 +435,7 @@ wheels = [
 
 [[package]]
 name = "clusy-crawler"
-version = "0.2.0b2"
+version = "0.2.0b3"
 source = { virtual = "." }
 dependencies = [
     { name = "aiolimiter" },
@@ -477,6 +477,7 @@ llm = [
 ]
 quality = [
     { name = "mineru-html", extra = ["openai"] },
+    { name = "mineru-webkit" },
 ]
 
 [package.metadata]
@@ -494,6 +495,7 @@ requires-dist = [
     { name = "lxml-html-clean", specifier = ">=0.4.5,<1.0.0" },
     { name = "markdownify", specifier = ">=1.2.0,<2.0.0" },
     { name = "mineru-html", extras = ["openai"], marker = "extra == 'quality'", git = "https://github.com/opendatalab/MinerU-HTML.git?rev=73cf266690befd209cae7e6fdff9716d5b31a976" },
+    { name = "mineru-webkit", marker = "extra == 'quality'", specifier = "==0.1.6" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
     { name = "orjson", specifier = ">=3.10.0,<4.0.0" },
     { name = "playwright", specifier = ">=1.48.0,<2.0.0" },

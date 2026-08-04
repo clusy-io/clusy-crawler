@@ -13,23 +13,31 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar
 import structlog
 
 from app.config import settings
-from app.services.source_selection_receipt_v0 import (
-    QualitySourceSelectionReceiptV0,
-    build_quality_source_selection_receipt_v0,
+from app.services.source_serialization_receipt_v1 import (
+    MINERU_HTML_REVISION,
+    QualitySourceInputIneligibleError,
+    QualitySourceSerializationReceiptV1,
+    mint_quality_source_serialization_v1,
+    preflight_quality_source_input_v1,
+    probe_pinned_quality_serialization_runtime_v1,
 )
+
+__all__ = ["MINERU_HTML_REVISION"]
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
     from concurrent.futures import Future
 
+    from app.services.source_selection_receipt_v0 import (
+        QualitySourceSelectionReceiptV0,
+    )
+
 logger = structlog.get_logger()
 T = TypeVar("T")
 
-# This is the exact upstream revision used by the optional dependency in
-# pyproject.toml. Keep the strategy name stable so benchmark reports and
-# production telemetry can distinguish model-assisted output from the
-# deterministic fallback.
-MINERU_HTML_REVISION = "73cf266690befd209cae7e6fdff9716d5b31a976"
+# Keep the strategy name stable so benchmark reports and production telemetry
+# can distinguish model-assisted output from the deterministic fallback.  The
+# exact upstream revision lives with the receipt verifier that enforces it.
 QUALITY_STRATEGY = "mineru-html-v1.1-openai"
 QualityPromptProfile = Literal["openai_json", "mineru_compact"]
 
@@ -81,7 +89,9 @@ class QualityExtractionConfig:
 class QualityExtraction:
     text: str
     strategy: str = QUALITY_STRATEGY
-    selection_receipt: QualitySourceSelectionReceiptV0 | None = None
+    selection_receipt: (
+        QualitySourceSelectionReceiptV0 | QualitySourceSerializationReceiptV1 | None
+    ) = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,15 +243,17 @@ def _load_official_bindings() -> _OfficialBindings:
 
 @lru_cache(maxsize=1)
 def quality_dependency_available() -> bool:
-    """Return whether the pinned quality adapter can actually be imported.
+    """Return whether the complete pinned v1 quality capability can execute.
 
     The lightweight runtime image intentionally omits MinerU-HTML. A configured
     remote endpoint is therefore not sufficient to call the assisted lane: the
-    local pinned adapter performs its preprocessing and response validation.
-    Cache the import probe because readiness endpoints may be polled often.
+    local pinned adapter performs preprocessing and response validation, and
+    MinerU Webkit owns the accepted serialization. Cache the functional probe
+    because readiness endpoints may be polled often.
     """
     try:
         _load_official_bindings()
+        probe_pinned_quality_serialization_runtime_v1()
     except Exception:
         return False
     return True
@@ -379,7 +391,11 @@ class QualityExtractor:
             early_load=False,
             prompt_version=self._config.prompt_version,
             response_format=self._config.response_format,
-            output_format="mm_md",
+            # The trusted Clusy mint performs the one authoritative local
+            # serialization after source derivation replay.  Asking upstream
+            # to serialize first would duplicate CPU work and widen the race
+            # surface of MinerU Webkit's converter.
+            output_format="none",
         )
         io_loop = self._get_io_loop()
 
@@ -458,14 +474,6 @@ class QualityExtractor:
         if getattr(case, "error", None) is not None:
             raise ValueError("MinerU extraction failed")
         output_data = getattr(case, "output_data", None)
-        text = getattr(output_data, "main_content", None)
-        if not isinstance(text, str):
-            raise ValueError("MinerU output is not text")
-        text = text.strip()
-        if not text:
-            raise ValueError("MinerU output is empty")
-        if len(text) > self._config.max_output_chars:
-            raise ValueError("MinerU output exceeds the configured limit")
         process_data = getattr(case, "process_data", None)
         simplified_html = getattr(process_data, "simpled_html", None)
         mapped_html = getattr(process_data, "map_html", None)
@@ -485,8 +493,9 @@ class QualityExtractor:
         assert isinstance(mapped_html, str)
         assert isinstance(raw_model_response, str)
         assert isinstance(selected_html, str)
-        receipt = build_quality_source_selection_receipt_v0(
+        minted = mint_quality_source_serialization_v1(
             raw_html=html_content,
+            source_url=url,
             raw_model_response=raw_model_response,
             response_format=self._config.response_format,
             simplified_html=simplified_html,
@@ -495,14 +504,28 @@ class QualityExtractor:
             selected_html=selected_html,
             upstream_revision=MINERU_HTML_REVISION,
             prompt_profile=self._config.prompt_profile,
+            max_output_chars=self._config.max_output_chars,
         )
-        return QualityExtraction(text=text, selection_receipt=receipt)
+        if len(minted.text) > self._config.max_output_chars:
+            raise ValueError("MinerU output exceeds the configured limit")
+        return QualityExtraction(
+            text=minted.text,
+            selection_receipt=minted.receipt,
+        )
 
     async def extract(self, html_content: str, url: str = "") -> QualityExtraction | None:
         if not self._config.enabled or self._dependency_unavailable or self._closed:
             return None
         if len(html_content) > self._config.max_input_chars:
             logger.info("quality_extraction_fallback", reason="input_too_large")
+            return None
+        # This fixed local admission is intentionally before breaker and
+        # semaphore state. An ineligible page is not a backend attempt and must
+        # neither queue behind inference nor turn saturation into an outage.
+        try:
+            preflight_quality_source_input_v1(html_content)
+        except QualitySourceInputIneligibleError:
+            logger.info("quality_extraction_fallback", reason="input_ineligible")
             return None
 
         loop = asyncio.get_running_loop()
@@ -586,6 +609,13 @@ class QualityExtractor:
             self._release_probe(was_probe)
             raise
         except Exception as error:
+            if isinstance(error, QualitySourceInputIneligibleError):
+                self._release_probe(was_probe)
+                logger.info(
+                    "quality_extraction_fallback",
+                    reason="input_ineligible",
+                )
+                return None
             self._record_failure()
             reason = (
                 "dependency_unavailable"

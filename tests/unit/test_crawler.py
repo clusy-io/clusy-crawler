@@ -852,6 +852,8 @@ def test_quality_cacheability_requires_success_and_backend_revision(
     accepted.metadata.source_selection_receipt_sha256 = "g" * 64
     assert crawler_module._result_is_stable_for_cache(accepted) is False
     accepted.metadata.source_selection_receipt_sha256 = "a" * 64
+    assert crawler_module._result_is_stable_for_cache(accepted) is False
+    accepted.metadata.source_selection_schema = "quality-source-selection-serialization.v1"
     assert crawler_module._result_is_stable_for_cache(accepted) is True
 
 

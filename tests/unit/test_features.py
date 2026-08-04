@@ -373,7 +373,7 @@ async def test_verified_model_assisted_outputs_use_versioned_cache(
             model_assisted=True,
             quality_attempted=True,
             quality_succeeded=True,
-            source_selection_schema="quality-source-selection.v0",
+            source_selection_schema="quality-source-selection-serialization.v1",
             source_selection_receipt_sha256="a" * 64,
             source_selection_item_count=3,
             source_selection_selected_count=2,
@@ -404,6 +404,55 @@ async def test_verified_model_assisted_outputs_use_versioned_cache(
     assert second.cached is True
     assert stub_fetch["n"] == 1
     assert len(mem_cache.store) == 1
+
+
+async def test_legacy_v0_model_assisted_output_is_not_persisted(
+    mem_cache,
+    stub_fetch,
+    monkeypatch,
+):
+    from app.services.extractor import ExtractionResult
+
+    async def quality_extract(*_args, **_kwargs):
+        return ExtractionResult(
+            text="# Legacy model output\n\nFresh content",
+            word_count=6,
+            strategy="mineru-html-v1.1-openai",
+            route="quality_model",
+            model_assisted=True,
+            quality_attempted=True,
+            quality_succeeded=True,
+            source_selection_schema="quality-source-selection.v0",
+            source_selection_receipt_sha256="a" * 64,
+            source_selection_item_count=3,
+            source_selection_selected_count=2,
+            source_selection_replay_verified=True,
+        )
+
+    monkeypatch.setattr(crawler_mod, "extract_content_async", quality_extract)
+    monkeypatch.setattr(
+        settings,
+        "quality_extraction_backend_revision",
+        "model-build@sha256:abc123",
+    )
+
+    first = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/legacy-v0-quality"],
+            extraction_profile="quality",
+        )
+    )[0]
+    second = (
+        await crawler_mod.crawl_urls(
+            ["https://ex.com/legacy-v0-quality"],
+            extraction_profile="quality",
+        )
+    )[0]
+
+    assert first.cached is False
+    assert second.cached is False
+    assert stub_fetch["n"] == 2
+    assert mem_cache.store == {}
 
 
 async def test_unversioned_model_assisted_output_is_not_persisted(

@@ -88,9 +88,6 @@ COPY --chown=crawler:crawler \
     native/vendor/quick_html2md/LICENSE-APACHE \
     native/vendor/quick_html2md/LICENSE-MIT \
     /licenses/native-vendor/quick_html2md/
-COPY --chown=crawler:crawler app/ app/
-
-USER crawler
 
 EXPOSE 11235
 
@@ -101,12 +98,14 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "11235", "--log-l
 
 
 # Static-only production target. It is deliberately declared before every
-# browser and quality stage so sequential builders stop without resolving or
-# installing optional Playwright, MinerU-HTML, Torch, or CUDA layers.
+# browser and quality stage so sequential/legacy builders stop without
+# resolving or installing optional Playwright, MinerU, Torch, or CUDA layers.
 FROM runtime-core AS static-runtime
 
 ENV PLAYWRIGHT_ENABLED=false \
     PLAYWRIGHT_JAVA_SCRIPT_ENABLED=false
+COPY --chown=crawler:crawler app/ app/
+USER crawler
 
 
 # Export the full browser-capable dependency graph only after static-runtime.
@@ -125,9 +124,8 @@ RUN uv export \
     && grep -q '^playwright==' /browser-requirements.txt
 
 
-FROM runtime-core AS browser-runtime
+FROM runtime-core AS browser-runtime-deps
 
-USER root
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox
 
@@ -146,6 +144,10 @@ RUN python -m playwright install --with-deps chromium \
     && install -o root -g root -m 4755 \
         "${browser_sandbox}" /usr/local/sbin/chrome-devel-sandbox
 
+
+FROM browser-runtime-deps AS browser-runtime
+
+COPY --chown=crawler:crawler app/ app/
 USER crawler
 
 
@@ -160,11 +162,17 @@ RUN uv export \
     --no-dev \
     --extra llm \
     --extra quality \
+    --prune accelerate \
+    --prune pytest \
+    --prune pytest-asyncio \
     --no-emit-project \
     --no-emit-package clusy-native \
     --no-emit-package mineru-html \
     --output-file /quality-requirements.txt \
-    && ! grep -q "git+" /quality-requirements.txt
+    && ! grep -q "git+" /quality-requirements.txt \
+    && ! grep -Eq \
+        '^(accelerate|torch[^=]*|cuda-[^=]+|nvidia-[^=]+|triton|pytest[^=]*)==' \
+        /quality-requirements.txt
 
 RUN git init /build/mineru-html \
     && git -C /build/mineru-html remote add origin \
@@ -186,20 +194,26 @@ RUN SOURCE_DATE_EPOCH=1774521487 uv build \
 # Opt-in image target containing the pinned MinerU-HTML OpenAI-compatible
 # production path. Install third-party dependencies from the hash-locked export
 # first, then install only the separately built, revision-pinned VCS wheel.
-FROM browser-runtime AS quality-runtime
+FROM browser-runtime-deps AS quality-runtime-deps
 
-USER root
 COPY --from=quality-builder /quality-requirements.txt /quality-requirements.txt
 COPY --from=quality-builder /quality-wheels /quality-wheels
 RUN pip install --no-cache-dir --require-hashes -r /quality-requirements.txt \
     && pip install --no-cache-dir --no-deps /quality-wheels/mineru_html-*.whl \
     && python -c \
-        "import importlib.metadata as m, mineru_html; assert m.version('mineru-html') == '1.1.2'" \
+        "import importlib.metadata as m, re, mineru_html; from mineru_html.process.simplify_html import simplify_html; from webpage_converter.convert import convert_html_to_structured_data; names = {re.sub(r'[-_.]+', '-', distribution.metadata['Name']).lower() for distribution in m.distributions() if distribution.metadata['Name']}; forbidden = sorted(name for name in names if name in {'accelerate', 'triton'} or name.startswith(('torch', 'cuda-', 'nvidia-', 'pytest'))); assert not forbidden, forbidden; assert m.version('mineru-html') == '1.1.2'; assert m.version('mineru-webkit') == '0.1.6'; simplified, mapped = simplify_html('<html><body><main><p>Clusy serializer smoke</p></main></body></html>', cutoff_length=500); assert '_item_id' in simplified and '_item_id' in mapped; output = convert_html_to_structured_data(main_html=mapped, url=None, output_format='mm_md'); assert isinstance(output, str) and 'Clusy serializer smoke' in output" \
     && rm -rf /quality-wheels /quality-requirements.txt
 ENV MINERU_HTML_SOURCE_REVISION=73cf266690befd209cae7e6fdff9716d5b31a976
+
+
+FROM quality-runtime-deps AS quality-runtime
+
+COPY --chown=crawler:crawler app/ app/
 USER crawler
+RUN python -c \
+    "from app.services.quality_extractor import quality_dependency_available; assert quality_dependency_available()"
 
 
-# Preserve the historical browser-capable default alias. Compose and CI select
-# explicit early targets so sequential builders stop before the quality stage.
+# Preserve the historical browser-capable default image. Release and CI paths
+# select browser-runtime explicitly so sequential builders stop before quality.
 FROM browser-runtime AS runtime

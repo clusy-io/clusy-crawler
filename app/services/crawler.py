@@ -248,14 +248,14 @@ def _result_is_stable_for_cache(result: CrawlResult) -> bool:
             # Fail closed if an adapter returns a model strategy but forgets
             # the explicit V2 success provenance.
             return False
-        from app.services.source_selection_receipt_v0 import (
-            SOURCE_SELECTION_RECEIPT_V0_SCHEMA,
+        from app.services.source_serialization_receipt_v1 import (
+            SOURCE_SERIALIZATION_RECEIPT_V1_SCHEMA,
         )
 
         if not (
             metadata.source_selection_replay_verified
             and metadata.source_selection_schema
-            == SOURCE_SELECTION_RECEIPT_V0_SCHEMA
+            == SOURCE_SERIALIZATION_RECEIPT_V1_SCHEMA
             and len(metadata.source_selection_receipt_sha256) == 64
             and all(
                 character in "0123456789abcdef"
@@ -267,7 +267,8 @@ def _result_is_stable_for_cache(result: CrawlResult) -> bool:
             <= metadata.source_selection_item_count
         ):
             # Model-assisted Markdown is cacheable only when it came from a
-            # complete, independently replayed source-pointer selection.
+            # complete, independently replayed and process-authenticated local
+            # serialization. Legacy v0 hashes are integrity identities only.
             return False
         # Temperature-zero is insufficient identity by itself. Persist model
         # output only when the operator binds the exact immutable backend build;
