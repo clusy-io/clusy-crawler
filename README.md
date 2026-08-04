@@ -8,7 +8,7 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Rust 1.85](https://img.shields.io/badge/Rust-1.85-000000?logo=rust&logoColor=white)](native/Cargo.toml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache--2.0-4C1)](LICENSE)
-[![Release: Beta 2 Preview](https://img.shields.io/badge/release-beta_2_preview-F59E0B)](CHANGELOG.md)
+[![Release: Beta 3 Preview](https://img.shields.io/badge/release-beta_3_preview-F59E0B)](CHANGELOG.md)
 
 An Apache-2.0, self-hosted FastAPI service for turning HTTP(S) resources into
 clean Markdown, HTML, links, or schema-constrained JSON.
@@ -26,7 +26,7 @@ rendering, a native Rust/PyO3 extraction core, deterministic specialists,
 bounded recursive discovery, optional Redis caching, and explicit completeness
 provenance. The default extraction path is local and does not require a model.
 
-> **Release status: Beta 2 Preview**
+> **Release status: Beta 3 Preview**
 >
 > The deterministic extraction and self-hosting paths are available for
 > evaluation. Pin a source commit or image digest: API and operational
@@ -37,6 +37,14 @@ provenance. The default extraction path is local and does not require a model.
 > One direct public-repository AEB article-body result is registered as
 > Verified. Broader WebMain, WCXB, and live-provider evaluations remain
 > outside the claim set. Every measured statement below is registry-bound.
+
+### One result you can reproduce
+
+> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
+
+The complete receipt and the limits of this Beta 2 comparison are versioned
+in the repository. Beta 3 adds runtime and source-serialization hardening
+without rewriting that historical result.
 
 ## Quick start
 
@@ -309,8 +317,6 @@ build, or to the OCI manifest digest on a registry-backed platform.
 All validated defaults are defined in [`app/config.py`](app/config.py).
 
 ## Evidence status
-
-> **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
 
 The Verified receipt was produced directly from a clean public source tree
 identical to the `v0.2.0-beta.2` tag tree. Its exact Trafilatura 2.1.0

@@ -1,6 +1,6 @@
 [project]
 name = "clusy-crawler"
-version = "0.2.0b2"
+version = "0.2.0b3"
 description = "Fast, permissive, self-hosted web content extraction service"
 requires-python = ">=3.12"
 dependencies = [

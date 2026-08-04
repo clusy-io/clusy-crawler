@@ -9,6 +9,43 @@ container digests remain the authoritative release identities.
 
 No changes yet.
 
+## 0.2.0-beta.3 - 2026-08-04
+
+### Added
+
+- Authenticated `quality-source-selection-serialization.v1`, which rebuilds
+  pinned preprocessing, replays source-derived selection, performs the
+  authoritative local MinerU-Webkit serialization, and verifies a closed
+  process-local receipt.
+- Real static, browser, and quality image release smokes covering
+  authentication, SSRF rejection, JavaScript rendering, dependency boundaries,
+  configured quality extraction, and exact source identity.
+- A default-off, label-free independent-lineage medoid research path with
+  bounded receipts. It remains unwired and cannot change production output.
+
+### Changed
+
+- Added fixed admission and work budgets across raw DOM, source nodes, text,
+  URLs, redirects, tables, images, lists, code, math, output, queueing, and
+  quality-worker concurrency.
+- Pinned the MinerU-HTML and MinerU-Webkit runtime surface and expanded
+  third-party provenance and self-hosting guidance.
+- Legacy source-selection v0 receipts remain readable but are no longer
+  eligible for persistent caching.
+
+### Fixed
+
+- Closed source-serialization replay gaps, unsafe quality work amplification,
+  overlong redirect handling, and ambiguous quality-runtime readiness.
+- Hardened container privileges, seccomp coverage, image identity checks, and
+  cross-storage-driver image-size diagnostics.
+
+### Evidence
+
+- The registered AEB result remains the exact Beta 2 tree receipt; Beta 3 does
+  not restate it as a newly measured result. No general-web, live-provider, or
+  cross-benchmark leadership claim is added.
+
 ## 0.2.0-beta.2 - 2026-07-30
 
 ### Fixed
