@@ -13,7 +13,20 @@ crawler-leadership claim.
 
 ## Reproduce
 
-Prepare the exact frozen dataset:
+The registered receipt belongs to clean public commit
+`77b8d00c5ebf88ed3afffe64f869ccb8c6922365`, whose tree is identical to
+`v0.2.0-beta.2`. Use a separate clone so the historical candidate is exact and
+the current checkout remains untouched:
+
+```bash
+git clone https://github.com/clusy-io/clusy-crawler.git \
+  /tmp/clusy-crawler-aeb-beta2
+git -C /tmp/clusy-crawler-aeb-beta2 checkout --detach \
+  77b8d00c5ebf88ed3afffe64f869ccb8c6922365
+cd /tmp/clusy-crawler-aeb-beta2
+```
+
+Prepare the exact frozen dataset and comparator environment:
 
 ```bash
 git clone https://github.com/scrapinghub/article-extraction-benchmark.git /tmp/clusy-aeb
@@ -25,6 +38,10 @@ uv pip sync --require-hashes \
   --python /tmp/clusy-trafilatura-2.1/bin/python \
   bench/aeb_trafilatura_2_1_0_requirements.lock
 ```
+
+Running the harness from a newer source tree creates a new, unregistered
+evaluation. It does not reproduce or replace the historical registered
+receipt below.
 
 Run the production asynchronous extractor:
 

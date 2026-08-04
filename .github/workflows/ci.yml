@@ -158,7 +158,7 @@ jobs:
             --env-file .env.example \
             --env ENVIRONMENT=prod \
             --env GIT_SHA="${GITHUB_SHA}" \
-            --env CRAWL4AI_API_TOKEN=ci-smoke-token \
+            --env CRAWLER_API_TOKEN=ci-smoke-token \
             --env SERVING_FINGERPRINT_KEY=ci-fingerprint-key-0123456789abcdef \
             clusy-crawler:static-ci
 
@@ -238,7 +238,7 @@ jobs:
             --pids-limit=256 --memory=4g --cpus=2 \
             --env ENVIRONMENT=prod \
             --env GIT_SHA="${GITHUB_SHA}" \
-            --env CRAWL4AI_API_TOKEN=ci-smoke-token \
+            --env CRAWLER_API_TOKEN=ci-smoke-token \
             --env SERVING_FINGERPRINT_KEY=ci-fingerprint-key-0123456789abcdef \
             clusy-crawler:browser-ci
 
@@ -322,7 +322,7 @@ jobs:
             --pids-limit=256 --memory=4g --cpus=2 \
             --env ENVIRONMENT=prod \
             --env GIT_SHA="${GITHUB_SHA}" \
-            --env CRAWL4AI_API_TOKEN=ci-smoke-token \
+            --env CRAWLER_API_TOKEN=ci-smoke-token \
             --env SERVING_FINGERPRINT_KEY=ci-fingerprint-key-0123456789abcdef \
             --env QUALITY_EXTRACTION_BASE_URL=http://quality-stub:8000/v1 \
             --env QUALITY_EXTRACTION_API_KEY=ci-quality-key \

@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">It needs the signal</title>
+  <desc id="desc">Clusy highlights the article while page noise fades away.</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffdfa"/>
+      <stop offset="1" stop-color="#f4eee7"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#17d1a6" stroke-opacity="0.05"/>
+    </pattern>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="145%">
+      <feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#153d32" flood-opacity="0.13"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#paper)"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+  <path d="M-80 820C240 700 480 790 740 1160H-80Z" fill="#17d1a6" opacity="0.045"/>
+  <image href="clusy-logo.png" x="100" y="76" width="270" height="66" preserveAspectRatio="xMinYMid meet"/>
+
+  <g transform="translate(100 250)">
+    <text x="0" y="0" fill="#2e7a55" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="3.5">SOURCE-DERIVED EXTRACTION</text>
+    <text x="0" y="122" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="100" font-weight="800" letter-spacing="-4">IT NEEDS</text>
+    <text x="0" y="228" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="100" font-weight="800" letter-spacing="-4">THE SIGNAL.</text>
+    <text x="3" y="320" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="36" font-weight="500">Keep useful content.</text>
+    <text x="3" y="370" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="36" font-weight="500">Keep the provenance.</text>
+    <g transform="translate(0 462)">
+      <rect width="295" height="58" rx="29" fill="#edf8f4" stroke="#9ed7c5" stroke-width="2"/>
+      <circle cx="30" cy="29" r="8" fill="#17d1a6"/>
+      <text x="54" y="37" fill="#2e7a55" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="700">Bounded at every stage</text>
+    </g>
+  </g>
+
+  <g transform="translate(1070 205)" filter="url(#shadow)">
+    <rect width="730" height="720" rx="34" fill="#fffdfa" stroke="#b9aa9c" stroke-width="2"/>
+    <rect width="730" height="72" rx="34" fill="#f4eee7"/>
+    <rect y="38" width="730" height="34" fill="#f4eee7"/>
+    <circle cx="38" cy="35" r="8" fill="#c97145"/>
+    <circle cx="66" cy="35" r="8" fill="#d7b66b"/>
+    <circle cx="94" cy="35" r="8" fill="#67aa86"/>
+    <rect x="142" y="19" width="500" height="33" rx="16" fill="#fffdfa" stroke="#d8ccc2"/>
+    <text x="163" y="41" fill="#8a8580" font-family="Menlo, SFMono-Regular, monospace" font-size="15">news.example.com/story</text>
+
+    <g opacity="0.18" font-family="Menlo, SFMono-Regular, monospace" font-size="17" fill="#57534e">
+      <rect x="28" y="96" width="674" height="58" rx="13" fill="#b9aa9c"/>
+      <text x="49" y="131">&lt;nav&gt; Home Trending Subscribe Account &lt;/nav&gt;</text>
+      <rect x="28" y="174" width="176" height="330" rx="16" fill="#b9aa9c"/>
+      <text x="49" y="212">&lt;aside&gt;</text>
+      <text x="49" y="252">promoted</text>
+      <text x="49" y="292">popular</text>
+      <text x="49" y="332">topics</text>
+      <text x="49" y="372">newsletter</text>
+      <text x="49" y="412">&lt;/aside&gt;</text>
+      <rect x="28" y="532" width="674" height="66" rx="14" fill="#b9aa9c"/>
+      <text x="49" y="573">COOKIE SETTINGS · Accept all</text>
+      <rect x="28" y="618" width="674" height="52" rx="13" fill="#b9aa9c"/>
+      <text x="49" y="651">&lt;script&gt; analytics · ads &lt;/script&gt;</text>
+    </g>
+
+    <g transform="translate(224 174)">
+      <rect width="478" height="330" rx="18" fill="#edf8f4" stroke="#17d1a6" stroke-width="4"/>
+      <rect x="28" y="38" width="392" height="27" rx="10" fill="#0b0d10"/>
+      <rect x="28" y="89" width="406" height="17" rx="8" fill="#2e7a55" opacity="0.72"/>
+      <rect x="28" y="123" width="366" height="17" rx="8" fill="#2e7a55" opacity="0.72"/>
+      <rect x="28" y="157" width="420" height="17" rx="8" fill="#2e7a55" opacity="0.72"/>
+      <rect x="28" y="208" width="392" height="17" rx="8" fill="#2e7a55" opacity="0.72"/>
+      <rect x="28" y="242" width="345" height="17" rx="8" fill="#2e7a55" opacity="0.72"/>
+      <g transform="translate(390 -18)">
+        <circle cx="20" cy="20" r="20" fill="#17d1a6"/>
+        <path d="m10 20 7 7 14-16" fill="none" stroke="#0b0d10" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(100 978)">
+    <circle cx="9" cy="9" r="9" fill="#17d1a6"/>
+    <text x="34" y="17" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="23">Guarded HTTP/2 · conditional Chromium · source-backed output</text>
+  </g>
+</svg>

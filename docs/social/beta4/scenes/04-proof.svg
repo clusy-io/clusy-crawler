@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">One benchmark result we can defend</title>
+  <desc id="desc">Registered AEB article-body metrics for Clusy and exact Trafilatura 2.1.0.</desc>
+  <metadata>Evidence claim: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31</metadata>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffdfa"/>
+      <stop offset="1" stop-color="#f4eee7"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#8a4b22" stroke-opacity="0.052"/>
+    </pattern>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="145%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#3d2618" flood-opacity="0.13"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#paper)"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+  <image href="clusy-logo.png" x="100" y="72" width="250" height="60" preserveAspectRatio="xMinYMid meet"/>
+  <g transform="translate(1460 75)">
+    <rect width="360" height="54" rx="27" fill="#edf8f4" stroke="#9ed7c5"/>
+    <circle cx="28" cy="27" r="7" fill="#17d1a6"/>
+    <text x="51" y="35" fill="#2e7a55" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="19" font-weight="700" letter-spacing="1.6">REGISTERED PUBLIC EVIDENCE</text>
+  </g>
+
+  <text x="100" y="260" fill="#8a4b22" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="3.4">ARTICLE EXTRACTION BENCHMARK · ARTICLE_BODY</text>
+  <text x="100" y="356" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="78" font-weight="800" letter-spacing="-2.6">ONE RESULT WE CAN DEFEND.</text>
+
+  <g transform="translate(100 430)" filter="url(#shadow)">
+    <rect width="1080" height="390" rx="30" fill="#fffdfa" stroke="#d8ccc2" stroke-width="2"/>
+    <g transform="translate(48 54)">
+      <text x="0" y="0" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="30" font-weight="750">Clusy</text>
+      <text x="980" y="0" text-anchor="end" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="42" font-weight="800">0.972127 F1</text>
+      <rect x="0" y="36" width="980" height="34" rx="17" fill="#eee7df"/>
+      <rect x="0" y="36" width="953" height="34" rx="17" fill="#17d1a6"/>
+    </g>
+    <g transform="translate(48 190)">
+      <text x="0" y="0" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="30" font-weight="700">exact Trafilatura 2.1.0</text>
+      <text x="980" y="0" text-anchor="end" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="42" font-weight="800">0.957546 F1</text>
+      <rect x="0" y="36" width="980" height="34" rx="17" fill="#eee7df"/>
+      <rect x="0" y="36" width="938" height="34" rx="17" fill="#8a4b22" opacity="0.9"/>
+    </g>
+    <text x="48" y="342" fill="#8a8580" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22">Bars share a full 0–1 scale.</text>
+  </g>
+
+  <g transform="translate(1230 430)" filter="url(#shadow)">
+    <rect width="590" height="390" rx="30" fill="#0b0d10"/>
+    <text x="42" y="66" fill="#b5f0df" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="2.1">ABSOLUTE DIFFERENCE</text>
+    <text x="42" y="160" fill="#fffdfa" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="72" font-weight="800">+0.014581</text>
+    <text x="44" y="210" fill="#b9aa9c" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="26">95% CI  +0.005547 → +0.025336</text>
+    <line x1="42" y1="250" x2="548" y2="250" stroke="#57534e"/>
+    <text x="42" y="302" fill="#17d1a6" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="41" font-weight="800">173.97 pages/s</text>
+    <text x="44" y="344" fill="#b9aa9c" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22">local in-memory extraction</text>
+  </g>
+
+  <g transform="translate(100 882)">
+    <rect width="1720" height="112" rx="24" fill="#f4eee7" stroke="#d8ccc2"/>
+    <text x="34" y="44" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="700">Registered Beta 2 AEB · article_body · all 181 pages. Beta 4 carries the historical receipt; it does not restate it as a new run.</text>
+    <text x="34" y="79" fill="#8a8580" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="21">Throughput excludes network and service time. This is a scoped extraction result—not a universal SOTA claim.</text>
+  </g>
+</svg>

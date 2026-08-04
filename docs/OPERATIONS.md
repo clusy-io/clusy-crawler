@@ -152,9 +152,9 @@ Monitor at least:
 3. Confirm user namespaces are available, `SYS_CHROOT` is the only added
    capability, and the container has writable tmpfs and sufficient shared
    memory.
-4. If the host requires the SUID fallback, check whether
-   `no-new-privileges` or a `nosuid` mount neutralized it and review the
-   orchestrator policy before changing the hardened profile.
+4. The checked-in Compose policy does not permit the SUID fallback. If the host
+   blocks unprivileged user namespaces, stop and review a platform-specific
+   sandbox policy before changing the hardened profile.
 5. Never set `PLAYWRIGHT_DISABLE_SANDBOX=true` in production.
 
 ### Redis degrades

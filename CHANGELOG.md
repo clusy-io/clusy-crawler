@@ -9,6 +9,29 @@ container digests remain the authoritative release identities.
 
 No changes yet.
 
+## 0.2.0-beta.4 - 2026-08-04
+
+### Changed
+
+- Made `CRAWLER_API_TOKEN` the preferred public bearer-token name while
+  preserving `CRAWL4AI_API_TOKEN` as a compatibility alias.
+- Bound the registered AEB reproduction guide to the exact historical source
+  commit and clarified the availability boundary for the retained raw archive.
+- Aligned the public package description and JSON-output language with the
+  shipped deterministic and optional model-assisted paths.
+
+### Fixed
+
+- Replaced reconstructed launch artwork with the official Clusy wordmark in
+  the tagged source and release assets.
+- Corrected the Chromium sandbox documentation to match the checked-in Compose
+  capability and `no-new-privileges` policy.
+
+### Evidence
+
+- The only registered result remains the exact Beta 2 AEB article-body
+  receipt. Beta 4 adds no new benchmark or cross-provider leadership claim.
+
 ## 0.2.0-beta.3 - 2026-08-04
 
 ### Added

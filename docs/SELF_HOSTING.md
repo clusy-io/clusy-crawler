@@ -74,7 +74,7 @@ Set these values through a secret store or a protected environment file:
 | `ENVIRONMENT` | `prod` |
 | `GIT_SHA` | Exact 7–64 character hexadecimal source commit |
 | `IMAGE_DIGEST` | Immutable `sha256:` runtime identity: Docker config image ID locally or OCI manifest digest from a registry |
-| `CRAWL4AI_API_TOKEN` | Non-empty bearer token |
+| `CRAWLER_API_TOKEN` | Non-empty bearer token (`CRAWL4AI_API_TOKEN` remains a compatibility alias) |
 | `SERVING_FINGERPRINT_KEY` | Independent high-entropy value, at least 32 characters |
 
 The fingerprint key must differ from the bearer token and contain no

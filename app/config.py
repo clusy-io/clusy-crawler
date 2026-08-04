@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 from typing import Literal
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -30,11 +30,18 @@ class Settings(BaseSettings):
     cors_allow_origins: str = ""
     # Bearer token for crawl/extraction endpoints. Health, readiness, version,
     # and OpenAPI discovery stay public for orchestration and diagnostics.
-    # Accept both the documented CRAWL4AI_API_TOKEN and the field-name default
-    # CRAWLER_API_TOKEN.
+    # CRAWLER_API_TOKEN is the public name. Keep the legacy variable as a
+    # separate excluded field so a present-but-empty preferred value can still
+    # fall back without exposing a second credential field in model dumps.
     crawler_api_token: str = Field(
         default="",
-        validation_alias=AliasChoices("CRAWL4AI_API_TOKEN", "CRAWLER_API_TOKEN"),
+        validation_alias="CRAWLER_API_TOKEN",
+    )
+    crawler_api_token_compat: str = Field(
+        default="",
+        validation_alias="CRAWL4AI_API_TOKEN",
+        exclude=True,
+        repr=False,
     )
     # Independent key for public serving-config HMACs and private credential
     # identities. Never reuse the externally presented bearer token as a
@@ -312,8 +319,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def require_production_auth(self) -> Settings:
+        if not self.crawler_api_token and self.crawler_api_token_compat:
+            object.__setattr__(self, "crawler_api_token", self.crawler_api_token_compat)
         if self.environment == "prod" and not self.crawler_api_token:
-            raise ValueError("CRAWL4AI_API_TOKEN (or CRAWLER_API_TOKEN) is required in prod")
+            raise ValueError("CRAWLER_API_TOKEN is required in prod")
         if self.environment == "prod" and not self.serving_fingerprint_key:
             raise ValueError("SERVING_FINGERPRINT_KEY is required in prod")
         if (
