@@ -54,6 +54,11 @@ provenance. The default extraction path is local and does not require a model.
 
 > **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
 
+> **Lineage boundary.** The measured candidate uses a pinned
+> `rs-trafilatura` descendant. This is a same-family implementation/version
+> comparison with exact Python Trafilatura 2.1.0, not evidence for an
+> independently originated extraction algorithm.
+
 The complete receipt and the limits of this Beta 2 comparison are versioned
 in the repository. Beta 4 carries the Beta 3 runtime and source-serialization
 hardening plus documentation and release-integrity corrections, without
@@ -136,11 +141,34 @@ request
   ├─ authentication + admission budgets
   ├─ URL / DNS / redirect / robots policy
   ├─ static fetch ───── optional Chromium render
-  ├─ specialist or native deterministic extraction
+  ├─ specialist or pinned native deterministic extraction
   ├─ optional risk-routed quality backend
   ├─ provenance + output budgets
   └─ Markdown / HTML / links / constrained JSON
 ```
+
+### Engine lineage
+
+The generic HTML fast path is Trafilatura-family software, not a from-scratch
+Clusy selector. The PyO3 extension calls vendored `rs-trafilatura` broad 0.2.2
+for the general candidate and a `9261e08`-derived article backend for explicit
+`article_body` plus bounded adaptive rescue. Below the native confidence gate,
+the bounded local fallback set includes Python Trafilatura 2.1.0, Readability,
+Markdownify, documentation-specific extraction, and raw-text rescue. Default
+asynchronous execution compares eligible candidates in parallel; nonparallel
+mode tries Trafilatura first. Their exact provenance and current Clusy
+modifications are documented in
+[`native/vendor/NOTICE.md`](native/vendor/NOTICE.md). None of these paths calls
+a hosted extraction API.
+
+The Clusy codebase adds the service and decision layers around that selector
+substrate: guarded fetch and render escalation, source-family specialists,
+deterministic candidate admission and comparison, structure recovery, Document
+IR and selection receipts, crawl budgets, provenance, and output enforcement.
+Because the measured candidate uses an `rs-trafilatura` descendant, the
+registered AEB result is a same-family implementation/version comparison
+against exact Python Trafilatura 2.1.0. It measures the complete frozen Beta 2
+path, not an independently originated extraction algorithm.
 
 The main design boundaries are:
 
@@ -179,7 +207,8 @@ contract.
 
 ### Extract
 
-- native Rust/PyO3 main-content extraction;
+- pinned, vendored `rs-trafilatura` Rust/PyO3 fast-path extraction with
+  documented Clusy modifications;
 - confidence-gated Trafilatura, Readability, Markdownify, and documentation
   fallbacks;
 - GitHub repository, file, issue, pull request, commit, and diff specialists;

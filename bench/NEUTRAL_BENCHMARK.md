@@ -11,6 +11,11 @@ evaluator code enter the benchmark process.
 This **article-body extraction benchmark** does not support an unqualified
 crawler-leadership claim.
 
+The measured production candidate uses a pinned `rs-trafilatura` descendant.
+Its comparison with exact Python Trafilatura 2.1.0 is therefore a same-family
+implementation/version comparison, not evidence for an independently
+originated extraction algorithm.
+
 ## Reproduce
 
 The registered receipt belongs to clean public commit

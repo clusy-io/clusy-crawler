@@ -80,9 +80,28 @@ Strong source-family signals can route to specialists for:
 - documentation-like pages; and
 - metadata-only scholarly fallbacks for supported publisher identifiers.
 
-General HTML uses the Rust/PyO3 extractor first. Confidence-gated Python
-fallbacks include Trafilatura, Readability, Markdownify, and documentation
-extraction. Candidate comparison is bounded and deterministic.
+General HTML uses the Rust/PyO3 extractor first. This is Trafilatura-family
+software, not a from-scratch Clusy selector: broad `rs-trafilatura` 0.2.2
+produces the general candidate, while a `9261e08`-derived article backend
+serves explicit `article_body` and bounded adaptive rescue. Below the native
+gate, the bounded local fallback set includes Python Trafilatura 2.1.0, Readability,
+Markdownify, documentation-specific extraction, and raw-text rescue. Default
+asynchronous execution compares eligible candidates in parallel; nonparallel
+mode tries Trafilatura first. Their provenance and current Clusy modifications
+are recorded in [`native/vendor/NOTICE.md`](../native/vendor/NOTICE.md).
+Candidate comparison is bounded and deterministic.
+
+The Clusy codebase adds layers around those selector dependencies: source-family
+routing, fetch and render policy, candidate admission and comparison, structure
+recovery, Document IR, selection certificates, specialists, completeness and
+truncation accounting, crawl budgets, provenance, and response enforcement.
+The deterministic path remains local, but “local” does not mean
+“dependency-free” or “clean-room.”
+
+Because the registered AEB candidate uses an `rs-trafilatura` descendant, its
+comparison with exact Python Trafilatura 2.1.0 is a same-family
+implementation/version comparison. It does not establish an independently
+originated extraction algorithm.
 
 | Profile | Contract |
 | --- | --- |

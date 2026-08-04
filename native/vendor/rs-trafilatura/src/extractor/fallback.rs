@@ -2,6 +2,9 @@
 //!
 //! This module ports fallback extraction from go-trafilatura's baseline.go and external.go.
 //! It provides baseline extraction (JSON-LD, paragraph scraping) and external fallback using `dom_smoothie`.
+//!
+//! Modified by Clusy on 2026-07-29 to apply identity-based outermost-root
+//! serialization to embedded Discourse and JSON-LD article-body HTML.
 
 use dom_query::{Document, Selection};
 use serde_json::Value;

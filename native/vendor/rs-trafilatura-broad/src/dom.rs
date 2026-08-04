@@ -4,8 +4,9 @@
 //! This adapter layer offers familiar function names that map to dom_query,
 //! establishing a consistent DOM manipulation API matching go-trafilatura's expectations.
 //!
-//! Modified by Clusy on 2026-07-29 to add composite tree/node source identity
-//! and outermost-root text traversal for reviewed JSON-LD normalization.
+//! Modified by Clusy on 2026-07-29 to add composite tree/node source identity,
+//! outermost-root text traversal for reviewed JSON-LD normalization, and
+//! isolated parsed-DOM cloning without a serialize/reparse round trip.
 
 use std::collections::HashSet;
 

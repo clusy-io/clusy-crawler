@@ -4,7 +4,8 @@
 //! It provides baseline extraction (JSON-LD, paragraph scraping) and comparison-based fallback.
 //!
 //! Modified by Clusy on 2026-07-29 to preserve distinct DOM source roots while
-//! suppressing repeated or ancestor-covered JSON-LD selections.
+//! suppressing repeated or ancestor-covered JSON-LD selections, and to remove
+//! original-DOM work that cannot affect the returned candidate.
 
 use dom_query::{Document, Selection};
 use serde_json::Value;

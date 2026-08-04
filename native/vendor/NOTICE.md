@@ -26,9 +26,11 @@ license files are retained. No file inside that phase-A vendoring baseline was
 authored or normalized by Clusy; subsequent reviewed patches must be identified
 separately.
 
-No Rust implementation semantics were changed by vendoring. The source-only
-modifications in the article-backend trees remove unused CLI binaries and
-existing trailing whitespace. The manifest modifications are:
+No Rust implementation semantics were changed by the vendoring commit. At that
+commit, source-only modifications in the article-backend trees removed unused
+CLI binaries and existing trailing whitespace. Subsequent Clusy behavioral
+changes are listed separately below. The vendoring-time manifest modifications
+are:
 
 - the workspace `native/Cargo.toml` points both aliased rs-trafilatura
   backends at their distinct vendored paths;
@@ -41,21 +43,39 @@ existing trailing whitespace. The manifest modifications are:
   benchmarks were removed. This keeps clean metadata and `--all-targets`
   checks from referring to intentionally omitted files.
 
-## Clusy modifications to the broad 0.2.2 baseline
+## Current Clusy modifications to the article backend
+
+Repository commit `2fcaf80` changes two files after the pinned `9261e08`
+baseline:
+
+- `rs-trafilatura/src/dom.rs` adds identity-based outermost-root text
+  serialization, preventing ancestor/descendant overlap without collapsing
+  distinct source nodes that contain equal text;
+- `rs-trafilatura/src/extractor/fallback.rs` applies that serialization to
+  embedded HTML recovered from Discourse and JSON-LD `articleBody` fields.
+
+## Current Clusy modifications to the broad 0.2.2 baseline
 
 The exact archive baseline is preserved in repository history before the
-separately reviewed `clusy-source-roots.1` patch. The current tree modifies:
+separately reviewed changes in commits `f9da2c7`, `f5647e1`, `ffd61db`, and
+`95b3bbe`. The current tree modifies three files:
 
 - `rs-trafilatura-broad/src/dom.rs` to identify a source node by its DOM tree
-  identity plus `NodeId`, preserve document order, and emit only outermost
-  selected roots;
-- `rs-trafilatura-broad/src/extractor/fallback.rs` to use that traversal for
-  JSON-LD `Article`, `Product`, and `SoftwareApplication` text fields.
+  identity plus `NodeId`, preserve document order, emit only outermost selected
+  roots, and clone an already parsed DOM without a serialize/reparse round trip;
+- `rs-trafilatura-broad/src/extractor/fallback.rs` to use source-root traversal
+  for JSON-LD `Article`, `Product`, and `SoftwareApplication` text fields and
+  remove original-DOM work that cannot affect the returned candidate;
+- `rs-trafilatura-broad/src/extract.rs` to defer fallback cloning until it can
+  contribute, reuse parsed DOM state, and replace repeated ancestor walks with
+  one stateful filtered-text traversal.
 
-The patch suppresses only the same selected node or a selected descendant
-already covered by a selected ancestor. Distinct nodes with identical text
-remain distinct. Both modified upstream files carry a prominent modification
-notice; the original MIT and Apache-2.0 license texts remain unchanged.
+The source-root changes suppress only the same selected node or a selected
+descendant already covered by a selected ancestor. Distinct nodes with
+identical text remain distinct. These five currently modified upstream files
+carry prominent modification notices; the original MIT and Apache-2.0 license
+texts remain unchanged. No other file in either current backend differs from
+its preserved pre-patch source baseline.
 
 `quick_html2md` declared `MIT OR Apache-2.0` but its cached checkout did not
 contain license files. Canonical MIT and Apache-2.0 texts are included beside

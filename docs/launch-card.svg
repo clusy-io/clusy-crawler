@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
   <title id="title">Clusy Crawler Beta 4 Preview</title>
-  <desc id="description">Fast, bounded, source-derived web extraction with a registered AEB article-body result.</desc>
+  <desc id="description">Fast, bounded, source-derived web extraction with a registered same-family AEB article-body comparison.</desc>
   <defs>
     <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#fffdfa"/>
@@ -44,7 +44,7 @@
 
   <g transform="translate(660 145)" filter="url(#shadow)">
     <rect width="470" height="310" rx="28" fill="#fffdfa" stroke="#ded3ca"/>
-    <text x="34" y="45" fill="#8a4b23" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="760" letter-spacing="1.5">REGISTERED AEB · ARTICLE_BODY</text>
+    <text x="34" y="45" fill="#8a4b23" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="760" letter-spacing="1.35">REGISTERED AEB · SAME-FAMILY ARTICLE_BODY</text>
     <text x="34" y="128" fill="#1c1917" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="64" font-weight="800" letter-spacing="-2">0.972127</text>
     <text x="338" y="127" fill="#57534e" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="21" font-weight="650">F1</text>
     <line x1="34" y1="157" x2="436" y2="157" stroke="#ded3ca"/>
@@ -69,5 +69,6 @@
     <text x="365" y="25" fill="#57534e" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="700">3 image profiles</text>
   </g>
 
-  <text x="70" y="588" fill="#8a8580" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">AEB article_body · all 181 pages · registered Beta 2 receipt. Beta 4 carries Beta 3 runtime hardening. Throughput is local in-memory, not HTTP or service throughput.</text>
+  <text x="70" y="579" fill="#716c67" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12.5" font-weight="650">Same-family comparison · pinned rs-trafilatura candidate vs Python Trafilatura 2.1.0 · registered Beta 2 receipt</text>
+  <text x="70" y="600" fill="#8a8580" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12.5">AEB article_body · all 181 pages · throughput is local in-memory, not HTTP or service throughput</text>
 </svg>
