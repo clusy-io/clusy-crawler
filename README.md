@@ -19,6 +19,10 @@ clean Markdown, HTML, links, or schema-constrained JSON.
 
 </div>
 
+<p align="center">
+  <img src="docs/launch-card.png" alt="Clusy Crawler Beta 3 Preview" width="100%">
+</p>
+
 ---
 
 Clusy Crawler combines guarded HTTP/2 fetching, conditional Chromium
