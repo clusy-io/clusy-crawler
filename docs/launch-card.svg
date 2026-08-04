@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
-  <title id="title">Clusy Crawler Beta 3 Preview</title>
+  <title id="title">Clusy Crawler Beta 4 Preview</title>
   <desc id="description">Fast, bounded, source-derived web extraction with a registered AEB article-body result.</desc>
   <defs>
     <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
@@ -31,7 +31,7 @@
     <g transform="translate(770 0)">
       <rect width="290" height="48" rx="24" fill="#fffdfa" stroke="#b9aa9c"/>
       <circle cx="25" cy="24" r="6" fill="#2e7a55"/>
-      <text x="44" y="30" fill="#57534e" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="700" letter-spacing="1.25">OPEN SOURCE · BETA 3</text>
+      <text x="44" y="30" fill="#57534e" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="700" letter-spacing="1.25">OPEN SOURCE · BETA 4</text>
     </g>
   </g>
 
@@ -66,8 +66,8 @@
     <rect x="169" width="162" height="38" rx="19" fill="#fffdfa" stroke="#b9aa9c"/>
     <text x="191" y="25" fill="#57534e" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="700">No model required</text>
     <rect x="343" width="175" height="38" rx="19" fill="#fffdfa" stroke="#b9aa9c"/>
-    <text x="365" y="25" fill="#57534e" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="700">3 runtime profiles</text>
+    <text x="365" y="25" fill="#57534e" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="700">3 image profiles</text>
   </g>
 
-  <text x="70" y="588" fill="#8a8580" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">AEB article_body · all 181 pages · registered Beta 2 receipt. Beta 3 adds runtime hardening. Throughput is local in-memory, not HTTP or service throughput.</text>
+  <text x="70" y="588" fill="#8a8580" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">AEB article_body · all 181 pages · registered Beta 2 receipt. Beta 4 carries Beta 3 runtime hardening. Throughput is local in-memory, not HTTP or service throughput.</text>
 </svg>

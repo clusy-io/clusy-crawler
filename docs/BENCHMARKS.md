@@ -30,6 +30,10 @@ Markdown, original report, and split manifest are retained in a deterministic
 hashed external archive. Its members and metadata were normalized, two builds
 were byte-identical, and a fresh extraction passed every manifest hash.
 
+The hash-retained raw archive is not currently a public download. Researchers
+requesting an audit copy can contact `hi@clusy.io`; redistribution remains
+subject to the source dataset and captured-content permissions.
+
 This is evidence for article-body extraction on AEB. It does not evaluate
 recursive discovery, JavaScript rendering, general-web document structure,
 HTTP-service behavior, reliability, cost, or live providers. The local

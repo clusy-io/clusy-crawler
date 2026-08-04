@@ -63,7 +63,7 @@ policy outside the application.
 ## Operator requirements
 
 1. Set `ENVIRONMENT=prod`.
-2. Set a non-empty `CRAWL4AI_API_TOKEN`.
+2. Set a non-empty `CRAWLER_API_TOKEN`.
 3. Set an independent high-entropy `SERVING_FINGERPRINT_KEY` with at least 32
    characters. Do not reuse the bearer token.
 4. Keep `CORS_ALLOW_ORIGINS` empty unless specific trusted browser origins
@@ -96,14 +96,14 @@ permits it. Exactly one supported sandbox path must be verified:
   executable on a non-`nosuid` mount and container policy must allow its
   privilege transition.
 
-`no-new-privileges` prevents the SUID fallback from working. Dropping every
-capability can also make that path unavailable. The checked-in browser Compose
-service therefore uses the custom seccomp profile but deliberately does not
-set `no-new-privileges` or a full capability drop.
-
-Do not copy static-container flags onto a browser deployment without testing
-the active sandbox path. Never recover a failed browser launch by setting
-`PLAYWRIGHT_DISABLE_SANDBOX=true`.
+The checked-in browser Compose policy uses `no-new-privileges`, drops every
+capability, adds only `SYS_CHROOT`, and applies the checked-in seccomp profile.
+It therefore requires Chromium's user-namespace sandbox path; the bundled
+SUID helper is not an active fallback under this policy. Verify unprivileged
+user namespaces on the deployment host. A host that prohibits them requires a
+separately reviewed platform-specific sandbox policy rather than an ad hoc
+weakening of the checked-in flags. Never recover a failed browser launch by
+setting `PLAYWRIGHT_DISABLE_SANDBOX=true`.
 
 The seccomp profile permits namespace syscalls required by Chromium. It is not
 a network boundary.

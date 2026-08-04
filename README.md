@@ -8,10 +8,11 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Rust 1.85](https://img.shields.io/badge/Rust-1.85-000000?logo=rust&logoColor=white)](native/Cargo.toml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache--2.0-4C1)](LICENSE)
-[![Release: Beta 3 Preview](https://img.shields.io/badge/release-beta_3_preview-F59E0B)](CHANGELOG.md)
+[![Release: Beta 4 Preview](https://img.shields.io/badge/release-beta_4_preview-F59E0B)](https://github.com/clusy-io/clusy-crawler/releases/tag/v0.2.0-beta.4)
 
 An Apache-2.0, self-hosted FastAPI service for turning HTTP(S) resources into
-clean Markdown, HTML, links, or schema-constrained JSON.
+source-derived Markdown, HTML, and links, plus optional model-assisted
+schema-constrained JSON.
 
 [Quick start](#quick-start) · [Architecture](#architecture) ·
 [API](#api) · [Evidence](#evidence-status) ·
@@ -20,7 +21,7 @@ clean Markdown, HTML, links, or schema-constrained JSON.
 </div>
 
 <p align="center">
-  <img src="docs/launch-card.png" alt="Clusy Crawler Beta 3 Preview" width="100%">
+  <img src="docs/launch-card.png" alt="Clusy Crawler Beta 4 Preview" width="100%">
 </p>
 
 ---
@@ -30,7 +31,14 @@ rendering, a native Rust/PyO3 extraction core, deterministic specialists,
 bounded recursive discovery, optional Redis caching, and explicit completeness
 provenance. The default extraction path is local and does not require a model.
 
-> **Release status: Beta 3 Preview**
+- **Deterministic by default.** The local extraction path needs no model or
+  third-party extraction API.
+- **Escalation is explicit.** Static, browser, and quality images keep their
+  dependency and runtime boundaries visible.
+- **Results carry context.** Route, rendering, completeness, truncation,
+  cache, timing, source identity, and service identity remain inspectable.
+
+> **Release status: Beta 4 Preview**
 >
 > The deterministic extraction and self-hosting paths are available for
 > evaluation. Pin a source commit or image digest: API and operational
@@ -47,8 +55,16 @@ provenance. The default extraction path is local and does not require a model.
 > **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
 
 The complete receipt and the limits of this Beta 2 comparison are versioned
-in the repository. Beta 3 adds runtime and source-serialization hardening
-without rewriting that historical result.
+in the repository. Beta 4 carries the Beta 3 runtime and source-serialization
+hardening plus documentation and release-integrity corrections, without
+rewriting that historical result.
+
+[Reproduce the exact historical run](bench/NEUTRAL_BENCHMARK.md#reproduce) ·
+[Frozen protocol](bench/evidence/aeb-article-body-trafilatura-2-1-77b8d00-beta2-public/PROTOCOL.md) ·
+[Compact report](bench/evidence/aeb-article-body-trafilatura-2-1-77b8d00-beta2-public/report.json) ·
+[Registry entry](bench/evidence/registry.json)
+
+Have a difficult page? [Open a minimal failing case](https://github.com/clusy-io/clusy-crawler/issues/new).
 
 ## Quick start
 
@@ -73,7 +89,7 @@ curl --fail --request POST http://127.0.0.1:11235/crawl \
 ```
 
 `.env.example` uses local mode with no bearer token. Before sharing the
-service, set `ENVIRONMENT=prod`, `CRAWL4AI_API_TOKEN`, an independent
+service, set `ENVIRONMENT=prod`, `CRAWLER_API_TOKEN`, an independent
 `SERVING_FINGERPRINT_KEY`, and an exact `GIT_SHA`. See
 [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md).
 
@@ -303,7 +319,7 @@ Required for production mode:
 
 - `ENVIRONMENT=prod`;
 - exact `GIT_SHA`;
-- non-empty `CRAWL4AI_API_TOKEN`; and
+- non-empty `CRAWLER_API_TOKEN`; and
 - an independent `SERVING_FINGERPRINT_KEY` with at least 32 characters.
 
 Set `IMAGE_DIGEST` to the immutable Docker config image ID for a host-local

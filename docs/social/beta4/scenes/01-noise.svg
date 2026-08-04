@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Your agent does not need the whole page</title>
+  <desc id="desc">A noisy synthetic web page beside the Clusy wordmark.</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffdfa"/>
+      <stop offset="1" stop-color="#f4eee7"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#8a4b22" stroke-opacity="0.055"/>
+    </pattern>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="145%">
+      <feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#3d2618" flood-opacity="0.14"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#paper)"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+  <circle cx="1815" cy="-15" r="330" fill="#8a4b22" opacity="0.045"/>
+  <circle cx="45" cy="1095" r="290" fill="#17d1a6" opacity="0.055"/>
+
+  <image href="clusy-logo.png" x="100" y="76" width="270" height="66" preserveAspectRatio="xMinYMid meet"/>
+  <g transform="translate(1518 78)">
+    <rect width="302" height="58" rx="29" fill="#fffdfa" stroke="#b9aa9c" stroke-width="2"/>
+    <circle cx="32" cy="29" r="7" fill="#17d1a6"/>
+    <text x="56" y="37" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="1.8">OPEN SOURCE · BETA 4</text>
+  </g>
+
+  <g transform="translate(100 260)">
+    <text x="0" y="0" fill="#8a4b22" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="3.5">WEB EXTRACTION, WITHOUT THE HAND-WAVING</text>
+    <text x="0" y="112" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="82" font-weight="800" letter-spacing="-3">YOUR AGENT DOESN’T</text>
+    <text x="0" y="204" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="82" font-weight="800" letter-spacing="-3">NEED THE WHOLE PAGE.</text>
+    <text x="3" y="284" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="35" font-weight="500">Navigation. Popups. Ads. Scripts. Boilerplate.</text>
+    <g transform="translate(0 380)">
+      <rect width="412" height="62" rx="31" fill="#0b0d10"/>
+      <text x="31" y="40" fill="#fffdfa" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24" font-weight="700">Watch Clusy find the signal</text>
+      <circle cx="374" cy="31" r="9" fill="#17d1a6"/>
+    </g>
+  </g>
+
+  <g transform="translate(1090 220)" filter="url(#shadow)">
+    <rect width="710" height="690" rx="34" fill="#fffdfa" stroke="#d8ccc2" stroke-width="2"/>
+    <rect width="710" height="72" rx="34" fill="#f4eee7"/>
+    <rect y="38" width="710" height="34" fill="#f4eee7"/>
+    <circle cx="38" cy="35" r="8" fill="#c97145"/>
+    <circle cx="66" cy="35" r="8" fill="#d7b66b"/>
+    <circle cx="94" cy="35" r="8" fill="#67aa86"/>
+    <rect x="142" y="19" width="480" height="33" rx="16" fill="#fffdfa" stroke="#d8ccc2"/>
+    <text x="163" y="41" fill="#8a8580" font-family="Menlo, SFMono-Regular, monospace" font-size="15">news.example.com/story</text>
+
+    <g font-family="Menlo, SFMono-Regular, monospace" font-size="17" fill="#8a8580">
+      <rect x="28" y="96" width="654" height="58" rx="13" fill="#eee7df"/>
+      <text x="49" y="131">&lt;nav&gt;  Home  Trending  Subscribe  Account  &lt;/nav&gt;</text>
+      <rect x="28" y="174" width="176" height="314" rx="16" fill="#eee7df"/>
+      <text x="49" y="208">&lt;aside&gt;</text>
+      <text x="49" y="245">related</text>
+      <text x="49" y="282">promoted</text>
+      <text x="49" y="319">popular</text>
+      <text x="49" y="356">topics</text>
+      <text x="49" y="393">newsletter</text>
+      <text x="49" y="430">&lt;/aside&gt;</text>
+      <rect x="224" y="174" width="458" height="314" rx="16" fill="#fffdfa" stroke="#d8ccc2"/>
+      <text x="252" y="211" fill="#8a4b22">&lt;article&gt;</text>
+      <rect x="252" y="234" width="374" height="25" rx="9" fill="#23211f" opacity="0.88"/>
+      <rect x="252" y="278" width="386" height="15" rx="7" fill="#8a8580" opacity="0.55"/>
+      <rect x="252" y="308" width="351" height="15" rx="7" fill="#8a8580" opacity="0.55"/>
+      <rect x="252" y="338" width="395" height="15" rx="7" fill="#8a8580" opacity="0.55"/>
+      <rect x="252" y="383" width="374" height="15" rx="7" fill="#8a8580" opacity="0.55"/>
+      <rect x="252" y="413" width="330" height="15" rx="7" fill="#8a8580" opacity="0.55"/>
+      <text x="252" y="465" fill="#8a4b22">&lt;/article&gt;</text>
+      <rect x="28" y="512" width="654" height="68" rx="14" fill="#e7ddd4"/>
+      <text x="49" y="553">COOKIE SETTINGS  Accept all  Manage choices</text>
+      <rect x="28" y="598" width="654" height="52" rx="13" fill="#eee7df"/>
+      <text x="49" y="631">&lt;script&gt; analytics · ads · personalization &lt;/script&gt;</text>
+    </g>
+  </g>
+
+  <text x="100" y="1012" fill="#8a8580" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22">Synthetic page · no publisher content used</text>
+</svg>

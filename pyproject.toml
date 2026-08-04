@@ -1,7 +1,7 @@
 [project]
 name = "clusy-crawler"
-version = "0.2.0b3"
-description = "Fast, permissive, self-hosted web content extraction service"
+version = "0.2.0b4"
+description = "Fast, bounded, self-hosted web content extraction service"
 requires-python = ">=3.12"
 dependencies = [
     # Native primary content extractor. The exact Rust dependency graph is
