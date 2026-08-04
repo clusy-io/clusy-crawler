@@ -15,6 +15,10 @@ diagnostic material only; they do not authorize a public result.
 
 > **Verified evidence — Article Extraction Benchmark · `article_body` · 181 pages.** Clusy F1 `0.972127`; exact Trafilatura 2.1.0 F1 `0.957546`; F1 delta `+0.014581`; F1 delta CI95 low `+0.005547`; F1 delta CI95 high `+0.025336`; paired-bootstrap win fraction `0.9996`; machine-local in-memory throughput `173.97 pages/s`. <!-- clusy-evidence: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31 -->
 
+The measured candidate uses a pinned `rs-trafilatura` descendant. This is a
+same-family implementation/version comparison with exact Python Trafilatura
+2.1.0, not evidence for an independently originated extraction algorithm.
+
 ### AEB claim boundary
 
 The registered run uses all public AEB pages, the pinned upstream evaluator,

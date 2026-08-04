@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
   <title id="title">One benchmark result we can defend</title>
-  <desc id="desc">Registered AEB article-body metrics for Clusy and exact Trafilatura 2.1.0.</desc>
+  <desc id="desc">Registered same-family AEB article-body comparison between the pinned rs-trafilatura candidate and exact Python Trafilatura 2.1.0.</desc>
   <metadata>Evidence claim: aeb.article-body.trafilatura-2-1.77b8d00-beta2-public.2026-07-31</metadata>
   <defs>
     <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
@@ -29,7 +29,7 @@
   <g transform="translate(100 430)" filter="url(#shadow)">
     <rect width="1080" height="390" rx="30" fill="#fffdfa" stroke="#d8ccc2" stroke-width="2"/>
     <g transform="translate(48 54)">
-      <text x="0" y="0" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="30" font-weight="750">Clusy</text>
+      <text x="0" y="0" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="30" font-weight="750">Clusy · pinned rs-trafilatura path</text>
       <text x="980" y="0" text-anchor="end" fill="#0b0d10" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="42" font-weight="800">0.972127 F1</text>
       <rect x="0" y="36" width="980" height="34" rx="17" fill="#eee7df"/>
       <rect x="0" y="36" width="953" height="34" rx="17" fill="#17d1a6"/>
@@ -55,7 +55,7 @@
 
   <g transform="translate(100 882)">
     <rect width="1720" height="112" rx="24" fill="#f4eee7" stroke="#d8ccc2"/>
-    <text x="34" y="44" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="700">Registered Beta 2 AEB · article_body · all 181 pages. Beta 4 carries the historical receipt; it does not restate it as a new run.</text>
-    <text x="34" y="79" fill="#8a8580" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="21">Throughput excludes network and service time. This is a scoped extraction result—not a universal SOTA claim.</text>
+    <text x="34" y="44" fill="#57534e" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="21" font-weight="700">Same-family comparison · pinned rs-trafilatura candidate vs exact Python Trafilatura 2.1.0 · registered Beta 2 AEB · all 181 pages.</text>
+    <text x="34" y="79" fill="#8a8580" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20">Historical receipt · local in-memory throughput excludes network and service time · not a universal SOTA claim.</text>
   </g>
 </svg>

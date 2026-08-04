@@ -19,6 +19,9 @@ No changes yet.
   commit and clarified the availability boundary for the retained raw archive.
 - Aligned the public package description and JSON-output language with the
   shipped deterministic and optional model-assisted paths.
+- Documented the Trafilatura-family native and Python engine lineage, including
+  the exact profile roles and the same-family scope of the registered AEB
+  comparison.
 
 ### Fixed
 
@@ -26,6 +29,8 @@ No changes yet.
   the tagged source and release assets.
 - Corrected the Chromium sandbox documentation to match the checked-in Compose
   capability and `no-new-privileges` policy.
+- Completed the vendored-engine modification notice and marked all five
+  currently modified upstream Rust source files.
 
 ### Evidence
 

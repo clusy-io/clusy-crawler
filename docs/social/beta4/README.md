@@ -27,6 +27,7 @@ The script writes:
 - `clusy-crawler-beta4-poster.png` — the final call-to-action frame; and
 - ignored intermediate scene PNGs under `rendered/`.
 
-The proof scene carries the registered historical scope and does not create a
-new benchmark claim. The canonical evidence remains in
+The proof scene carries the registered historical scope, explicitly labels the
+same-family `rs-trafilatura` versus Python Trafilatura comparison, and does not
+create a new benchmark claim. The canonical evidence remains in
 [`../../BENCHMARKS.md`](../../BENCHMARKS.md).

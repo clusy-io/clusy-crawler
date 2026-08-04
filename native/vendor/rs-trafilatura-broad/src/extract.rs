@@ -3,6 +3,9 @@
 //! This module contains the main extraction logic ported from go-trafilatura.
 //! It handles HTML parsing, content identification, boilerplate removal,
 //! and metadata extraction.
+//!
+//! Modified by Clusy on 2026-07-29 to defer fallback DOM work, reuse parsed
+//! DOM state, and make filtered-text ancestry tracking a single traversal.
 
 use crate::dom::{self, Document, Selection};
 use crate::error::{Error, Result};

@@ -3,6 +3,9 @@
 //! Provides go-shiori/dom-style operations using the `dom_query` crate.
 //! This adapter layer offers familiar function names that map to dom_query,
 //! establishing a consistent DOM manipulation API matching go-trafilatura's expectations.
+//!
+//! Modified by Clusy on 2026-07-29 to emit selected source roots once by DOM
+//! identity while preserving distinct source nodes with equal text.
 
 use std::collections::HashSet;
 
