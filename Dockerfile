@@ -187,7 +187,7 @@ RUN SOURCE_DATE_EPOCH=1774521487 uv build \
         --out-dir /quality-wheels \
         /build/mineru-html \
     && echo \
-        "ff55e06b0f463a89e5a87015a1afd8d8468759166931fb92661daf340cbd06fe  /quality-wheels/mineru_html-1.1.2-py3-none-any.whl" \
+        "249c26b939720bc3c29b7328263047627a11bc69e15b999b710a85f67e195801  /quality-wheels/mineru_html-1.1.2-py3-none-any.whl" \
         | sha256sum --check -
 
 

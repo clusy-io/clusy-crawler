@@ -347,7 +347,13 @@ def _extract_with_native(
     # callers that explicitly request article_body receive the separately
     # pinned precision-oriented candidate when one is available.
     article_selected = extraction_profile == "article_body" and bool(native.article_text)
-    text = (native.article_text if article_selected else native.plain_text).strip()
+    content_text = (native.article_text if article_selected else native.plain_text).strip()
+    # `plain_text` flattens headings, lists, and code fences, and its serializer
+    # joins descendant text nodes with a space, which corrupts syntax-highlighted
+    # source (`asyncio. sleep`, `HttpPee r`). Publish the structure-preserving
+    # rendering of the same selection instead. article_body stays on the
+    # separately pinned plain candidate that the AEB receipt replays.
+    text = content_text if article_selected else (native.markdown.strip() or content_text)
     if not text:
         return None
     return ExtractionResult(
@@ -355,7 +361,9 @@ def _extract_with_native(
         title=native.title,
         description=native.description,
         language=native.language,
-        word_count=_count_words(text),
+        # Score content words rather than Markdown punctuation so the cascade's
+        # acceptance gates stay comparable across strategies.
+        word_count=_count_words(content_text or text),
         strategy="rs-trafilatura",
         confidence=max(0.0, min(float(native.confidence), 1.0)),
         page_type="article" if article_selected else native.page_type,

@@ -3,6 +3,7 @@ from typing import Final, Literal
 class NativeExtraction:
     text: Final[str]
     plain_text: Final[str]
+    markdown: Final[str]
     article_text: Final[str]
     title: Final[str]
     description: Final[str]

@@ -2,6 +2,10 @@
 //!
 //! Functions for analyzing and cleaning the HTML tree before extraction.
 //! Port of `html-processing.go`.
+//!
+//! Modified by Clusy on 2026-08-10 to keep whitespace-only elements that sit
+//! inside a `<pre>` container, where they carry the separator between two
+//! adjacent highlighted tokens rather than being empty filler.
 
 use crate::dom::{self, Document, Selection};
 use crate::etree;
@@ -317,6 +321,25 @@ fn build_strip_selector(opts: &Options) -> Vec<String> {
     tags
 }
 
+/// Whether an element sits inside a whitespace-preserving container.
+///
+/// `<pre>` content is reproduced verbatim, so a blank element there is not
+/// filler: syntax highlighters emit the separator between two tokens as its
+/// own element (Pygments writes `<span class="w"> </span>`). Removing it
+/// concatenates the tokens around it.
+fn is_in_preformatted(sel: &Selection) -> bool {
+    let mut cur = sel.parent();
+    while cur.length() > 0 {
+        match dom::tag_name(&cur).as_deref() {
+            Some("pre") => return true,
+            Some("body" | "html") => return false,
+            _ => {}
+        }
+        cur = cur.parent();
+    }
+    false
+}
+
 /// Delete selected empty elements to save space and processing time
 ///
 /// Go equivalent: `pruneHTML(doc, opts)` (lines 123-138)
@@ -337,6 +360,12 @@ pub fn prune_html(doc: &Document, opts: &Options) {
         let children = dom::children(&sel);
         let text = etree::text(&sel);
         let tail = etree::tail(&sel);
+
+        // A blank—but not empty—element inside <pre> carries significant
+        // whitespace. Dropping it turns `import asyncio` into `importasyncio`.
+        if !text.is_empty() && text.trim().is_empty() && is_in_preformatted(&sel) {
+            continue;
+        }
 
         // Remove if empty (no children and no text content)
         if children.is_empty() && text.trim().is_empty() && tail.trim().is_empty() {
@@ -1173,6 +1202,25 @@ mod tests {
         // Empty p should be removed
         assert_eq!(doc.select("p").length(), 1);
         assert_eq!(doc.select("p").text().to_string(), "Content");
+    }
+
+    #[test]
+    fn test_prune_html_keeps_whitespace_spans_inside_pre() {
+        // Pygments emits the separator between two tokens as its own element.
+        // Removing it as "empty" concatenates the tokens.
+        let doc = dom::parse(concat!(
+            r#"<div><pre><span class="kn">import</span>"#,
+            r#"<span class="w"> </span>"#,
+            r#"<span class="nn">asyncio</span></pre>"#,
+            r#"<p><span> </span></p></div>"#,
+        ));
+        let opts = Options::default();
+
+        prune_html(&doc, &opts);
+
+        assert_eq!(doc.select("pre").text().to_string(), "import asyncio");
+        // Outside <pre> a blank span is still filler and stays removable.
+        assert_eq!(doc.select("p span").length(), 0);
     }
 
     #[test]

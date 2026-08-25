@@ -14,6 +14,7 @@ use rs_trafilatura_broad::{extract_with_options, Options};
 struct NativeExtraction {
     text: String,
     plain_text: String,
+    markdown: String,
     article_text: String,
     title: String,
     description: String,
@@ -45,6 +46,14 @@ fn extract_html(
         // exact pinned backend recorded by AEB.
         let clean_options = Options {
             url: (!source_url.is_empty()).then_some(source_url.clone()),
+            // Render the already-selected subtree as Markdown. This is a
+            // formatting pass over `content_html` only: it runs after
+            // selection, so `content_text` and the benchmarked candidate stay
+            // byte-identical. `include_links` deliberately keeps its default —
+            // enabling it adds `a` to the potential-tag set and changes which
+            // content is selected, which measurably reintroduced boilerplate
+            // on the broad WCXB corpus.
+            output_markdown: true,
             ..Options::default()
         };
         let clean = extract_with_options(&html, &clean_options)?;
@@ -63,10 +72,16 @@ fn extract_html(
         result.map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 
     let plain_text = result.content_text;
+    // Structure-preserving rendering of the same selection: headings, code
+    // fences, lists, and tables. The plain-text serializer joins descendant
+    // text nodes with a space, which silently corrupts syntax-highlighted
+    // source (`asyncio. sleep`, `HttpPee r`); the Markdown converter walks the
+    // DOM instead and concatenates inline runs verbatim.
+    let markdown = result.content_markdown.unwrap_or_default();
     let article_text = article_text.unwrap_or_default();
-    // Clean body text is valid Markdown. A second link-rich pass changed the
-    // selected content as well as its formatting and measurably reintroduced
-    // boilerplate on the broad WCXB corpus.
+    // `text` remains the plain candidate the extraction cascade scores and
+    // the benchmark harness replays. Callers that need publishable output read
+    // `markdown` and fall back to `plain_text` when it is empty.
     let text = if article_body && !article_text.is_empty() {
         article_text.clone()
     } else {
@@ -78,6 +93,7 @@ fn extract_html(
     Ok(NativeExtraction {
         text,
         plain_text,
+        markdown,
         article_text,
         title: metadata.title.unwrap_or_default(),
         description: metadata.description.unwrap_or_default(),

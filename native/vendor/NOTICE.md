@@ -58,7 +58,7 @@ baseline:
 
 The exact archive baseline is preserved in repository history before the
 separately reviewed changes in commits `f9da2c7`, `f5647e1`, `ffd61db`, and
-`95b3bbe`. The current tree modifies three files:
+`95b3bbe`. The current tree modifies four files:
 
 - `rs-trafilatura-broad/src/dom.rs` to identify a source node by its DOM tree
   identity plus `NodeId`, preserve document order, emit only outermost selected
@@ -68,11 +68,16 @@ separately reviewed changes in commits `f9da2c7`, `f5647e1`, `ffd61db`, and
   remove original-DOM work that cannot affect the returned candidate;
 - `rs-trafilatura-broad/src/extract.rs` to defer fallback cloning until it can
   contribute, reuse parsed DOM state, and replace repeated ancestor walks with
-  one stateful filtered-text traversal.
+  one stateful filtered-text traversal;
+- `rs-trafilatura-broad/src/html_processing.rs` to exempt whitespace-only
+  elements inside a `<pre>` container from empty-element pruning. Syntax
+  highlighters emit the separator between two tokens as its own element, so
+  removing it concatenates the tokens (`import asyncio` became
+  `importasyncio`). Content outside a preformatted container is unaffected.
 
 The source-root changes suppress only the same selected node or a selected
 descendant already covered by a selected ancestor. Distinct nodes with
-identical text remain distinct. These five currently modified upstream files
+identical text remain distinct. These six currently modified upstream files
 carry prominent modification notices; the original MIT and Apache-2.0 license
 texts remain unchanged. No other file in either current backend differs from
 its preserved pre-patch source baseline.

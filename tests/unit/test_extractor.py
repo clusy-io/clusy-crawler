@@ -272,7 +272,7 @@ class TestExtractContent:
     def test_balanced_profile_preserves_main_content_heading(self):
         result = extract_content(SAMPLE_HTML, "https://example.com/news/test-article")
         assert result.strategy == "rs-trafilatura"
-        assert result.text.startswith("Hello World")
+        assert result.text.startswith("# Hello World")
         assert "This is a test article" in result.text
 
     def test_handles_garbage(self):
@@ -618,3 +618,58 @@ def test_grounding_assessment_enforces_character_and_token_budgets() -> None:
     assert candidate.completeness_coverage == "source_prefix"
     assert candidate.completeness_score == 0.99
     assert "grounding_budget_limited" in candidate.completeness_reasons
+
+
+class TestNativeMarkdownSerialization:
+    """The native fast path must publish document structure, not flat text.
+
+    Both assertions below fail against the plain-text serializer: it emits no
+    ATX headings or code fences, and it drops the whitespace-only elements that
+    syntax highlighters place between two adjacent tokens.
+    """
+
+    _BODY = (
+        "<p>Body text long enough to clear the extractor's minimum content "
+        "threshold so the sample is selected as main content rather than "
+        "discarded as boilerplate.</p>"
+    )
+    _PAGE = (
+        "<html><body><article><h2>Coroutines</h2>"
+        + _BODY
+        + '<div class="highlight"><pre>'
+        '<span class="kn">import</span><span class="w"> </span>'
+        '<span class="nn">asyncio</span>\n'
+        '<span class="k">async</span><span class="w"> </span>'
+        '<span class="k">def</span><span class="w"> </span>'
+        '<span class="nf">main</span><span class="p">():</span>\n'
+        '    <span class="k">await</span><span class="w"> </span>'
+        '<span class="n">asyncio</span><span class="o">.</span>'
+        '<span class="n">sleep</span><span class="p">(</span>'
+        '<span class="mi">1</span><span class="p">)</span>\n'
+        "</pre></div>" + _BODY + "</article></body></html>"
+    )
+
+    def _extract(self) -> ExtractionResult:
+        pytest.importorskip("clusy_native")
+        result = extractor_module._extract_with_native(
+            self._PAGE,
+            "https://example.com/coroutines",
+            "balanced",
+        )
+        assert result is not None
+        return result
+
+    def test_headings_and_code_fences_reach_the_output(self):
+        text = self._extract().text
+
+        assert "## Coroutines" in text
+        assert "```" in text
+
+    def test_token_separators_inside_pre_are_preserved(self):
+        text = self._extract().text
+
+        # `<span class="w"> </span>` carries the separator between two tokens.
+        # Pruning it as an empty element produced `importasyncio`.
+        assert "import asyncio" in text
+        assert "async def main():" in text
+        assert "await asyncio.sleep(1)" in text
